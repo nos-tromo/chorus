@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+.python-version
+.remember
+docs
+tests
+var
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+.DS_Store

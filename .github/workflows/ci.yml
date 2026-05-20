@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    env:
+      PYTHON_VERSION: ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv python pin "$PYTHON_VERSION"
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy chorus
+        continue-on-error: true
+      - run: uv run pytest -q
+
+  build-images:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          tags: chorus-api:${{ env.IMAGE_TAG }}
+          push: false
+          load: true
+      - name: build ui
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.ui
+          tags: chorus-ui:${{ env.IMAGE_TAG }}
+          push: false
+          load: true
+
+  bundle:
+    needs: build-images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: ./scripts/build_wheelhouse.sh
+      - uses: docker/setup-buildx-action@v3
+      - name: build api for bundle
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          tags: chorus-api:${{ env.IMAGE_TAG }}
+          push: false
+          load: true
+      - name: build ui for bundle
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.ui
+          tags: chorus-ui:${{ env.IMAGE_TAG }}
+          push: false
+          load: true
+      - run: CHORUS_VERSION="$IMAGE_TAG" ./scripts/bundle_images.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chorus-airgap-${{ github.sha }}
+          path: |
+            dist/wheelhouse.tar.gz
+            dist/images.tar.gz
+          retention-days: 30

@@ -12,24 +12,23 @@ guitar effect. The latter is not load-bearing.
 
 ## Current state
 
-This repository is **pre-scaffolding**. The only files present are
-`main.py` (a hello-world stub), an empty `README.md`, `pyproject.toml`
-with no dependencies, and `.python-version`. None of the directories
-described below (`api/`, `queries/`, `ui/`, `migrations/`, `tests/`,
-`docker/`, `docs/`) exist yet — they describe the *target* layout. Do
-not navigate to or claim to have read paths under them; create them as
-work lands.
+Foundation is up. The app boots, applies Neo4j migrations, serves
+`/health`, and dispatches one reference tool (`posts_mentioning`)
+end-to-end with audit logging. See *Repository conventions* below for
+the live layout.
 
-Known inconsistencies to resolve when scaffolding begins (pick one and
-align the other two):
+Python: `pyproject.toml` accepts `>=3.11,<=3.13`; `.python-version`
+pins dev to `3.12`. CI should run across the full range.
 
-- `.python-version` → `3.12`
-- `pyproject.toml` → `requires-python = ">=3.13"`
-- Tech stack section below → "Python 3.12+"
-
-There is no `uv.lock` yet, no `Makefile`, no Dockerfiles, no CI config,
-and no `docs/decisions/` records. References to those throughout this
-document are forward-looking.
+Not yet landed (tracked in `docs/decisions/` / open tickets):
+- Ingestion pipeline beyond the adapter skeleton — postings/comments/
+  messages graph writes and the extraction/resolution stages
+- Connections (follower / friendship) ingestion — schema pending; see
+  ADR 0002
+- Docker + compose + Makefile
+- Tests, ADRs, CI
+- Real OIDC wiring (`principal.py` is the seam)
+- Retention sweeper job
 
 ## Common commands
 
@@ -84,7 +83,7 @@ redesign of the ingestion pipeline, not an incremental feature add.
 
 ## Tech stack
 
-- **Backend**: Python 3.12+, FastAPI, Uvicorn
+- **Backend**: Python 3.11+ (3.12 in dev), FastAPI, Uvicorn
 - **Frontend**: Streamlit (matches docint conventions)
 - **Graph DB**: Neo4j Community Edition (5.11+ for native vector indexes)
 - **Metadata + audit**: SQLite
@@ -481,37 +480,64 @@ Entity resolution thresholds are config, not constants.
 
 ## Repository conventions
 
+Chorus is a Python package. Everything under `chorus/` is importable code;
+infrastructure (Docker, Make, CI) and prose (`docs/`, `tests/`) sit
+alongside at repo root.
+
 ```
-chorus/
-  api/
-    main.py                  # FastAPI entrypoint
-    routers/
-    tools/                   # named retrieval tools (Python wrappers)
-    ingestion/
-      adapter.py             # upstream pull adapter
-      extraction.py          # GLiNER pipeline
-      resolution.py          # entity resolution stages
-    inference/
-      provider.py            # env-driven provider abstraction
+chorus/                      # top-level repo
+  chorus/                    # the importable package
+    __init__.py
+    api/
+      main.py                # FastAPI entrypoint (lifespan: logger → driver → migrations → audit)
+      auth/principal.py      # trusted-header principal seam (OIDC swap-in)
+      routers/               # health.py, tools.py
     audit/
-      logger.py              # §76 BDSG logging
-  queries/                   # Cypher templates, one file per tool
-    authors_connected_by_topic.cypher
-    posts_mentioning.cypher
-    ...
-  ui/
-    streamlit_app.py
-    pages/
-  migrations/                # Neo4j schema + constraints + indexes
-  tests/
+      logger.py              # §76 BDSG audit log (SQLite, append-only, trigger-enforced)
+      schema.sql
+    db/
+      neo4j.py               # driver factory + session() context manager
+    inference/
+      provider.py            # OpenAI client; chat/embed/rerank/extract_entities by `model` field
+    ingestion/
+      adapter.py             # UpstreamAdapter Protocol — the only place that knows the upstream schema
+      upstream.py            # concrete adapter
+      postings.py / comments.py / messages.py     # per-table DTOs + write functions
+      connections.py         # stub: NotImplementedError until upstream schema lands
+      orchestrator.py        # stage runner
+      extraction.py          # provider.extract_entities → :MENTIONS with provenance
+      resolution.py          # alias / embed-cluster / LLM tiebreak
+      raw_store.py           # separate SQLite, not the audit DB
+    migrations/
+      runner.py              # idempotent applier, tracked via (:_Migration {version})
+      cli.py                 # python -m chorus.migrations.cli {apply,status}
+      NNN_*.cypher           # one file per migration; ${EMBED_DIM} substituted at apply time
+    queries/                 # Cypher templates, one file per tool — never inline
+      posts_mentioning.cypher
+      ...
+    tools/                   # @audited Python wrappers around queries
+      _template_loader.py
+      _audit.py              # @audited + register_tool + TOOLS registry
+      posts_mentioning.py
+      ...
+    ui/
+      streamlit_app.py
+      client.py              # thin httpx wrapper over the FastAPI surface
+      pages/                 # one file per UI screen
+    utils/
+      env_cfg.py             # every env var loader as a frozen dataclass
+      logger_cfg.py          # loguru sinks (stderr + rotating file)
+  tests/                     # mirrors chorus/ subpackages
   docker/
-    compose.yaml             # app services only; no persistent volumes
-    Dockerfile.api
-    Dockerfile.ui
+    Dockerfile.api / Dockerfile.ui
+    compose.yaml             # app services only — NO persistent volumes
   docs/
-    architecture.md
-    retention.md
-    decisions/               # one file per significant decision
+    architecture.md / retention.md / compliance.md / airgap.md
+    decisions/               # ADRs, one file per significant decision
+  Makefile                   # network / build / up / stop / bundle / migrate / bootstrap
+  pyproject.toml + uv.lock
+  .pre-commit-config.yaml
+  .github/workflows/ci.yml
 ```
 
 ### Rules of thumb

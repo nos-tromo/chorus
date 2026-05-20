@@ -1,0 +1,56 @@
+### chorus app compose — app services only.
+###
+### NO persistent volumes. All graph + audit state lives in the data-plane
+### compose project (see docs/architecture.md). `docker compose down -v`
+### in this project is always safe.
+
+name: chorus
+
+networks:
+  chorus-net: {}
+  inference-net:
+    external: true   # owned by inference/ compose project
+
+services:
+  api:
+    image: chorus-api:${CHORUS_VERSION:-latest}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      NEO4J_URI: bolt://neo4j-chorus:7687
+      OPENAI_API_BASE: http://vllm-router:4000/v1
+      LOG_FORMAT: json
+      CHORUS_HOME: /var/lib/chorus
+    networks:
+      - chorus-net
+      - inference-net
+    expose:
+      - "8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  ui:
+    image: chorus-ui:${CHORUS_VERSION:-latest}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ui
+    environment:
+      CHORUS_API_URL: http://api:8000
+      CHORUS_UI_IDENTITY: dev
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - chorus-net
+    expose:
+      - "8501"
+    restart: unless-stopped
