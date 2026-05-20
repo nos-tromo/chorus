@@ -8,7 +8,7 @@
 CHORUS_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 export CHORUS_VERSION
 
-COMPOSE := docker compose -f docker/compose.yaml
+COMPOSE := docker compose -f docker/compose.yaml -f docker/compose.override.yaml
 
 help: ## list targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)

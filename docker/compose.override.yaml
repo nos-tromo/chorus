@@ -1,0 +1,15 @@
+### Dev-only override: publish API + UI to the host.
+###
+### Production fronts both services with Nginx and relies on the internal
+### `expose` ports in compose.yaml, so this file is intentionally *not*
+### loaded by direct `docker compose -f docker/compose.yaml` invocations.
+### The chorus Makefile passes both files explicitly so `make up` works
+### in dev; production deploy runbooks should not.
+
+services:
+  api:
+    ports:
+      - "8000:8000"
+  ui:
+    ports:
+      - "8501:8501"
