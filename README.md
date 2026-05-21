@@ -45,14 +45,15 @@ as a standalone container:
 
 ```bash
 docker run --rm -d \
-  --name neo4j-chorus \
+  --name neo4j \
+  --network inference-net \
   -p 7474:7474 -p 7687:7687 \
   -v chorus-neo4j-data:/data \
   -e NEO4J_AUTH=neo4j/devpassword \
   -e NEO4J_server_memory_pagecache_size=512M \
   -e NEO4J_server_memory_heap_initial__size=512M \
   -e NEO4J_server_memory_heap_max__size=1G \
-  neo4j:5.20-community
+  docker.io/library/neo4j:5.26.26-community@sha256:0b5d3ab6ec1b866890dbfb53bf4fe1cf039f9e03c96165599a403005b7e7bcc3
 ```
 
 Notes:
