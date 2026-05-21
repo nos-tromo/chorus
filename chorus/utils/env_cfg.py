@@ -61,19 +61,19 @@ _PROVIDER_API_BASE = {
 
 _PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "vllm": {
-        "chat_model": "Qwen/Qwen3.5-2B",
+        "TEXT_MODEL": "Qwen/Qwen3.5-2B",
         "embed_model": "BAAI/bge-m3",
         "rerank_model": "BAAI/bge-reranker-v2-m3",
         "ner_model": "gliner-community/gliner_large-v2.5",
     },
     "ollama": {
-        "chat_model": "gpt-oss:20b",
+        "TEXT_MODEL": "gpt-oss:20b",
         "embed_model": "bge-m3",
         "rerank_model": "bge-reranker-v2-m3",
         "ner_model": "gliner",
     },
     "openai": {
-        "chat_model": "gpt-4o",
+        "TEXT_MODEL": "gpt-4o",
         "embed_model": "text-embedding-3-small",
         "rerank_model": "bge-reranker-v2-m3",
         "ner_model": "gliner",
@@ -86,7 +86,7 @@ class InferenceConfig:
     provider: str
     api_base: str
     api_key: str
-    chat_model: str
+    TEXT_MODEL: str
     embed_model: str
     rerank_model: str
     ner_model: str
@@ -148,7 +148,7 @@ def load_inference_env() -> InferenceConfig:
         provider=provider,
         api_base=_env("OPENAI_API_BASE", _PROVIDER_API_BASE[provider]) or "",
         api_key=_env("OPENAI_API_KEY", "EMPTY") or "EMPTY",
-        chat_model=_env("CHAT_MODEL", defaults["chat_model"]) or defaults["chat_model"],
+        TEXT_MODEL=_env("TEXT_MODEL", defaults["TEXT_MODEL"]) or defaults["TEXT_MODEL"],
         embed_model=_env("EMBED_MODEL", defaults["embed_model"])
         or defaults["embed_model"],
         rerank_model=_env("RERANK_MODEL", defaults["rerank_model"])

@@ -52,7 +52,7 @@ def chat(
 ) -> str:
     """Return the assistant message content for a single completion."""
     resp = _client().chat.completions.create(
-        model=model or _config().chat_model,
+        model=model or _config().TEXT_MODEL,
         messages=messages,  # type: ignore[arg-type]
         **kwargs,
     )
