@@ -52,16 +52,16 @@ def run_once(
     raw.write_batch("comments", comment_rows)
     counts["comments"] = 0
     for row in comment_rows:
-        dto = comments_stage.from_row(row, retention)
-        comments_stage.write(driver, dto)
+        comment_dto = comments_stage.from_row(row, retention)
+        comments_stage.write(driver, comment_dto)
         counts["comments"] += 1
 
     message_rows = list(adapter.fetch_messages(since))
     raw.write_batch("messages", message_rows)
     counts["messages"] = 0
     for row in message_rows:
-        dto = messages_stage.from_row(row, retention)
-        messages_stage.write(driver, dto)
+        message_dto = messages_stage.from_row(row, retention)
+        messages_stage.write(driver, message_dto)
         counts["messages"] += 1
 
     try:

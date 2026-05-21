@@ -28,6 +28,7 @@ class _Auditable(Protocol):
 
 
 OutT = TypeVar("OutT", bound=BaseModel)
+FnT = TypeVar("FnT", bound=Callable[..., BaseModel])
 
 
 def audited(fn: Callable[..., OutT]) -> Callable[..., OutT]:
@@ -70,8 +71,8 @@ def register_tool(
     name: str,
     input_model: type[BaseModel],
     output_model: type[BaseModel],
-) -> Callable[[Callable[..., BaseModel]], Callable[..., BaseModel]]:
-    def _register(fn: Callable[..., BaseModel]) -> Callable[..., BaseModel]:
+) -> Callable[[FnT], FnT]:
+    def _register(fn: FnT) -> FnT:
         if name in TOOLS:
             raise RuntimeError(f"duplicate tool name: {name}")
         TOOLS[name] = ToolSpec(
