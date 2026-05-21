@@ -1,6 +1,6 @@
 """Shared pytest fixtures.
 
-`neo4j_url` spins up a single Neo4j 5.20 container per session — the
+`neo4j_url` spins up a single Neo4j 5.26.26 container per session — the
 vector-index features chorus uses landed in 5.11+, and the community
 image is sufficient. The fixture sets the chorus env vars and reloads
 the modules that snapshot them at import time, so each test sees a fresh
@@ -52,7 +52,7 @@ def _reload_chorus() -> None:
 
 @pytest.fixture(scope="session")
 def neo4j_container() -> Iterator[tuple[str, str, str]]:
-    with Neo4jContainer("neo4j:5.20-community") as c:
+    with Neo4jContainer("neo4j:5.26.26-community") as c:
         yield c.get_connection_url(), "neo4j", c.password
 
 

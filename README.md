@@ -190,7 +190,7 @@ uv run pytest tests/inference # unit tests only — no Docker needed
 uv run pytest tests/integration -k posts_mentioning   # a single case
 ```
 
-The first integration-test run pulls `neo4j:5.20-community`, which
+The first integration-test run pulls `neo4j:5.26.26-community`, which
 takes a minute. Subsequent runs reuse the image.
 
 ## Lint, format, type check
