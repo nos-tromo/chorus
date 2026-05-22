@@ -3,7 +3,7 @@
 ### Lifecycle ordering matters: data-plane must be healthy before the app
 ### comes up. `make bootstrap` runs the dependency check, then `make up`.
 
-.PHONY: help network build up stop down bundle migrate bootstrap fmt lint type test
+.PHONY: help network build up stop down bundle migrate bootstrap pre-commit test
 
 CHORUS_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 export CHORUS_VERSION
@@ -39,14 +39,8 @@ bundle: ## produce airgap delivery artifacts (images tarball + wheelhouse)
 	./scripts/build_wheelhouse.sh
 	./scripts/bundle_images.sh
 
-fmt: ## format
-	uv run ruff format .
-
-lint: ## lint
-	uv run ruff check .
-
-type: ## type check
-	uv run mypy .
+pre-commit:
+	uv run pre-commit run --all-files
 
 test: ## run pytest
 	uv run pytest -q
