@@ -25,3 +25,6 @@ __pypackages__/
 .env
 var/
 wheelhouse/
+
+# OS files
+.DS_Store
