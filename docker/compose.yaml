@@ -23,7 +23,7 @@ services:
     networks:
       chorus-net:
         aliases:
-          backend
+          - backend
       inference-net:
         aliases:
           - chorus-backend
