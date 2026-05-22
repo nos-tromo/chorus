@@ -572,7 +572,7 @@ chorus/                      # top-level repo
       logger_cfg.py          # loguru sinks (stderr + rotating file)
   tests/                     # mirrors chorus/ subpackages
   docker/
-    Dockerfile.api / Dockerfile.ui
+    Dockerfile.backend / Dockerfile.frontend
     compose.yaml             # app services only — NO persistent volumes
   docs/
     architecture.md / retention.md / compliance.md / airgap.md

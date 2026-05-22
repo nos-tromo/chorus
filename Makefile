@@ -3,7 +3,7 @@
 ### Lifecycle ordering matters: data-plane must be healthy before the app
 ### comes up. `make bootstrap` runs the dependency check, then `make up`.
 
-.PHONY: help network build up stop down bundle migrate bootstrap fmt lint type test
+.PHONY: help network build up stop down bundle migrate bootstrap pre-commit test
 
 CHORUS_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 export CHORUS_VERSION
@@ -17,10 +17,10 @@ network: ## create the shared inference-net + data-net (idempotent)
 	docker network create inference-net >/dev/null 2>&1 || true
 	docker network create data-net >/dev/null 2>&1 || true
 
-build: ## build api + ui images
+build: ## build backend + frontend images
 	DOCKER_BUILDKIT=1 $(COMPOSE) build
 
-up: ## start api + ui (assumes data-plane reachable on inference-net)
+up: ## start backend + frontend (assumes data-plane reachable on inference-net)
 	$(COMPOSE) up -d
 
 stop: ## stop containers without removing them
@@ -40,14 +40,8 @@ bundle: ## produce airgap delivery artifacts (images tarball + wheelhouse)
 	./scripts/build_wheelhouse.sh
 	./scripts/bundle_images.sh
 
-fmt: ## format
-	uv run ruff format .
-
-lint: ## lint
-	uv run ruff check .
-
-type: ## type check
-	uv run mypy .
+pre-commit:
+	uv run pre-commit run --all-files
 
 test: ## run pytest
 	uv run pytest -q

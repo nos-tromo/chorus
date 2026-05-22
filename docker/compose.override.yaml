@@ -1,4 +1,4 @@
-### Dev-only override: publish API + UI to the host.
+### Dev-only override: publish backend + frontend to the host.
 ###
 ### Production fronts both services with Nginx and relies on the internal
 ### `expose` ports in compose.yaml, so this file is intentionally *not*
@@ -7,9 +7,9 @@
 ### in dev; production deploy runbooks should not.
 
 services:
-  api:
+  backend:
     ports:
       - "8000:8000"
-  ui:
+  frontend:
     ports:
-      - "8501:8501"
+      - "${CHORUS_HOST_PORT:-8501}:8501"

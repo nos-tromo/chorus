@@ -20,7 +20,8 @@ retention sweeper are still to land — see *Current state* in
 - **[uv](https://docs.astral.sh/uv/)** for dependency and venv
   management. `uv.lock` is the source of truth — don't hand-edit
   `requirements.txt`.
-- **Docker** to run Neo4j (and, optionally, the app stack).
+- **Docker** to run the app stack. The data-plane compose project
+  (separate repo) owns Neo4j and must be up before starting chorus.
 - **(Optional) An inference endpoint.** The reference tool doesn't
   exercise inference, so you can defer this. When you do need it,
   point `OPENAI_API_BASE` at vllm-service's LiteLLM proxy (or any
@@ -37,38 +38,7 @@ uv sync
 This creates `.venv/` and installs both runtime and dev dependencies
 from the lockfile.
 
-### 2. Run Neo4j as a separate service
-
-Chorus does **not** manage Neo4j's lifecycle — graph state lives in
-the data plane, not in the app stack. For local development, run it
-as a standalone container:
-
-```bash
-docker run --rm -d \
-  --name neo4j \
-  --network inference-net \
-  -p 7474:7474 -p 7687:7687 \
-  -v chorus-neo4j-data:/data \
-  -e NEO4J_AUTH=neo4j/devpassword \
-  -e NEO4J_server_memory_pagecache_size=512M \
-  -e NEO4J_server_memory_heap_initial__size=512M \
-  -e NEO4J_server_memory_heap_max__size=1G \
-  docker.io/library/neo4j:5.26.26-community@sha256:0b5d3ab6ec1b866890dbfb53bf4fe1cf039f9e03c96165599a403005b7e7bcc3
-```
-
-Notes:
-
-- 5.11+ is required for native vector indexes; this README pins
-  `5.20-community` to match the testcontainer used in CI.
-- The named volume `chorus-neo4j-data` survives `docker rm` and
-  container restarts. Remove it explicitly (`docker volume rm
-  chorus-neo4j-data`) when you want a fresh graph.
-- The Neo4j browser is on <http://localhost:7474>; the bolt endpoint
-  is `bolt://localhost:7687`.
-- Wait a few seconds for the container to be ready before continuing
-  — `docker logs -f neo4j-chorus` should print `Started.`
-
-### 3. Configure environment
+### 2. Configure environment
 
 Copy the example file and adjust the Neo4j and auth knobs for a
 host-side process talking to a containerised Neo4j:
@@ -92,7 +62,7 @@ CHORUS_DEFAULT_IDENTITY=dev
 trusted-header principal seam. Leave it unset in production — without
 it, requests without an `X-Auth-User` header fail with 401.
 
-### 4. Apply migrations
+### 3. Apply migrations
 
 Migrations are idempotent and the app applies pending ones on
 startup, but it's useful to run them explicitly the first time and
@@ -103,7 +73,7 @@ uv run python -m chorus.migrations.cli apply
 uv run python -m chorus.migrations.cli status
 ```
 
-### 5. Start the API
+### 4. Start the API
 
 ```bash
 uv run uvicorn chorus.api.main:app --reload --port 8000
@@ -113,7 +83,7 @@ The lifespan opens the Neo4j driver, applies any remaining
 migrations, and initialises the audit log SQLite file under
 `./var/`.
 
-### 6. (Optional) Start the Streamlit UI
+### 5. (Optional) Start the Streamlit UI
 
 In a separate shell:
 
@@ -209,11 +179,9 @@ suite runs in CI, not in the hook.
 
 The app's compose project lives in `docker/` and is wired up via the
 top-level Makefile. It assumes Neo4j is already reachable on the
-shared `inference-net` Docker network as `neo4j-chorus:7687` — the
-data-plane compose project that will own that container is not in
-this repo yet, so for now the `docker run` above is the supported
-path. The compose path will become primary once the data-plane
-project lands (see *Orchestration topology* in `CLAUDE.md`).
+shared `inference-net` Docker network as `neo4j-chorus:7687` — bring
+the data-plane compose project up first (see *Orchestration topology*
+in `CLAUDE.md`), then:
 
 ```bash
 make network    # create the shared inference-net (idempotent)
