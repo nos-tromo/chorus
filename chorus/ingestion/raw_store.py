@@ -17,13 +17,13 @@ from pathlib import Path
 from typing import Any, Iterable, Literal
 
 
-Kind = Literal["postings", "comments", "messages", "connections"]
+Kind = Literal["postings", "comments", "messages", "profiles", "connections"]
 
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS raw_rows (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL CHECK (kind IN ('postings','comments','messages','connections')),
+  kind TEXT NOT NULL CHECK (kind IN ('postings','comments','messages','profiles','connections')),
   uuid TEXT,
   payload_json TEXT NOT NULL,
   fetched_at TEXT NOT NULL

@@ -1,8 +1,14 @@
 """Connections (follower/following + friendship) ingestion — STUB.
 
-The upstream `connections` table schema is not yet pinned down. Both
-entry points below raise `NotImplementedError` so the orchestrator can
-skip-and-log without silently dropping rows.
+This module handles the upstream's node-edge-node *edge* table — the
+social graph, one relationship per row. The upstream also emits a
+profile-per-row table under the same "connections" umbrella; that table
+is author-profile enrichment and is handled separately by `profiles.py`
+(see ADR 0006). Do not conflate the two.
+
+The upstream `connections` (edge-table) schema is not yet pinned down.
+Both entry points below raise `NotImplementedError` so the orchestrator
+can skip-and-log without silently dropping rows.
 
 Open questions to resolve before implementing (see ADR 0002):
 

@@ -44,13 +44,26 @@ class _FakeAdapter:
             "Network": "signal",
         }
 
+    def fetch_profiles(self, since: Any) -> Iterable[dict[str, Any]]:
+        yield {
+            "ID": "a-1",
+            "UUID": "prof-a-1",
+            "Name": "Alice Anderson",
+            "Vanity Name": "alice",
+            "Profile Type": "person",
+            "Network": "linkedin",
+            "Bio": "Berlin-based analyst",
+            "Date of Birth": "1990-03-15",
+            "Tags": "verified, staff",
+        }
+
     def fetch_connections(self, since: Any) -> Iterable[dict[str, Any]]:
         if self._connections_raises:
             raise NotImplementedError("schema pending")
         return iter(())
 
 
-def test_orchestrator_writes_three_artifacts(migrated_driver: Driver) -> None:
+def test_orchestrator_writes_all_stages(migrated_driver: Driver) -> None:
     from chorus.ingestion.orchestrator import run_once
     from chorus.ingestion.raw_store import RawStore
     from chorus.utils.env_cfg import load_path_env, load_retention_env
@@ -64,6 +77,7 @@ def test_orchestrator_writes_three_artifacts(migrated_driver: Driver) -> None:
         "postings": 1,
         "comments": 1,
         "messages": 1,
+        "profiles": 1,
         "connections": 0,
     }
     assert result["skipped"] == ["connections"]
@@ -79,6 +93,10 @@ def test_orchestrator_writes_three_artifacts(migrated_driver: Driver) -> None:
             ]
             == 1
         )
+        # the profiles stage enriched the author the posting created
+        author = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]
+        assert author["display_name"] == "Alice Anderson"
+        assert author["bio"] == "Berlin-based analyst"
 
 
 def test_connections_stage_skipped(migrated_driver: Driver) -> None:

@@ -245,7 +245,11 @@ Nodes:
   (:Post:Message   {uuid, text, timestamp, url, answers_count,
                     system_tags, retention_until, embedding})
 
-  (:Author         {id, handle, vanity_name, display_name, platform})
+  (:Author         {id, handle, vanity_name, display_name, platform,
+                    profile_uuid, url, network_object_id, crawled_at,
+                    last_updated, profile_type, system_tags, bio,
+                    date_of_birth, hometown, work_education,
+                    current_city, additional_details})
   (:Entity         {id, canonical_name, type, description, embedding})
   (:Hashtag        {tag})                      # extracted from text body
   (:Platform       {name})                     # network name
@@ -298,12 +302,22 @@ Edges:
   direction in Cypher (`MATCH (a)-[:FRIENDS_WITH]-(b)`). Do not duplicate
   friendship edges in both directions; the ingestion layer is responsible
   for picking a stable canonical direction (e.g. lower UUID → higher UUID).
+- **Author profile enrichment.** The artifact stages create thin
+  `:Author` nodes (`id`, `handle`, `display_name`, `platform`). The
+  `profiles` upstream table is the authoritative source for author
+  identity and enriches `:Author` with the remaining properties,
+  including personal fields (`bio`, `date_of_birth`, …). That personal
+  data is retained indefinitely — the retention sweep does not touch
+  `:Author`. See ADR 0006 and `docs/compliance.md`.
 
 ## Upstream data format
 
-Chorus ingests three table formats from the upstream system. **UUID** is the
-canonical identifier across all three and is the primary key into chorus —
-not the network-side post/comment/message ID.
+Chorus ingests several table formats from the upstream system: the three
+post artifacts (`postings`, `comments`, `messages`), a `profiles` table,
+and a `connections` social-graph table. **UUID** is the canonical
+identifier for the post artifacts and the primary key into chorus — not
+the network-side post/comment/message ID. The `profiles` table is the
+exception: it joins on the network author `ID` (see below).
 
 ### `postings` — top-level posts
 
@@ -348,12 +362,40 @@ label as posting/comment authors, no separate "sender" type. `Chat ID` +
 `Chat Group` map to a `(:Group)` node via `[:IN_CHAT]`. `Reply To` resolves
 to another `(:Post:Message)` via `[:REPLIES_TO]`.
 
+### `profiles` — author profiles
+
+```
+UUID, ID, URL, Network Object ID, Crawled at, Date Last Updated, Name,
+Vanity Name, Profile Type, Target Profile, Profile Owner, Groups,
+Postings, Co Author of Postings, Quoted in Postings, Chat Messages,
+Media Items, Comments, Friends, Connected Users, Tags, Network, Bio,
+Date of Birth, Hometown, Work/Education, Current City, Additional Details
+```
+
+Author-profile enrichment, **not** a social graph — one row per author
+profile. Each row enriches the existing `(:Author)` node; the join key is
+`ID` (the network author id, equal to the `Author ID` used as
+`:Author.id`), not `UUID` — `UUID` is kept as the `profile_uuid`
+property. Identity and personal fields (`Name`, `Vanity Name`,
+`Profile Type`, `Bio`, `Date of Birth`, `Hometown`, `Work/Education`,
+`Current City`, …) become `(:Author)` properties.
+
+The relationship and aggregate columns (`Friends`, `Connected Users`,
+`Postings`, `Comments`, `Groups`, `Media Items`, `Co Author of Postings`,
+`Quoted in Postings`, `Chat Messages`) are denormalized duplicates of
+edges the artifact tables and the `connections` edge table already own —
+they are **not** mapped to the graph; the raw store keeps the full row.
+`Target Profile` and `Profile Owner` have unclear semantics and are
+deferred (raw store only). See ADR 0006.
+
 ### `connections` — social graph (schema pending)
 
-The upstream system emits a fourth table for follower/following and
-friendship relationships between authors, parallel to the three artifact
-tables above. Column names are not yet pinned down — fill in when
-available. Expected mapping:
+The upstream emits a node-edge-node table for follower/following and
+friendship relationships between authors — one relationship per row.
+The vendor groups this and the `profiles` table above under a single
+"connections" label, but only this table is the social graph; the two
+are ingested as separate modules (see ADR 0006). Column names are not
+yet pinned down — fill in when available. Expected mapping:
 
 - Follower/following rows → `(:Author)-[:FOLLOWS]->(:Author)` edges,
   preserving direction.
@@ -503,7 +545,8 @@ chorus/                      # top-level repo
       adapter.py             # UpstreamAdapter Protocol — the only place that knows the upstream schema
       upstream.py            # concrete adapter
       postings.py / comments.py / messages.py     # per-table DTOs + write functions
-      connections.py         # stub: NotImplementedError until upstream schema lands
+      profiles.py            # author-profile enrichment → :Author (ADR 0006)
+      connections.py         # stub: node-edge-node edge table, schema pending (ADR 0002)
       orchestrator.py        # stage runner
       extraction.py          # provider.extract_entities → :MENTIONS with provenance
       resolution.py          # alias / embed-cluster / LLM tiebreak

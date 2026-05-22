@@ -36,6 +36,7 @@ _CHORUS_ENV_MODULES = (
     "chorus.ingestion.postings",
     "chorus.ingestion.comments",
     "chorus.ingestion.messages",
+    "chorus.ingestion.profiles",
     "chorus.ingestion.connections",
     "chorus.ingestion.extraction",
     "chorus.ingestion.resolution",

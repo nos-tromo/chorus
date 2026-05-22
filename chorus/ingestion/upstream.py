@@ -23,6 +23,9 @@ class StubUpstreamAdapter:
     def fetch_messages(self, since: datetime | None) -> Iterable[dict]:
         raise NotImplementedError("Wire up the real upstream client.")
 
+    def fetch_profiles(self, since: datetime | None) -> Iterable[dict]:
+        raise NotImplementedError("Wire up the real upstream client.")
+
     def fetch_connections(self, since: datetime | None) -> Iterable[dict]:
         raise NotImplementedError(
             "Connections ingestion is blocked on upstream schema — see ADR 0002."
