@@ -13,8 +13,9 @@ COMPOSE := docker compose -f docker/compose.yaml -f docker/compose.override.yaml
 help: ## list targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-network: ## create the shared inference-net (idempotent)
+network: ## create the shared inference-net + data-net (idempotent)
 	docker network create inference-net >/dev/null 2>&1 || true
+	docker network create data-net >/dev/null 2>&1 || true
 
 build: ## build api + ui images
 	DOCKER_BUILDKIT=1 $(COMPOSE) build

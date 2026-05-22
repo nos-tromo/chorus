@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Wait for the data-plane Neo4j (`neo4j-chorus`) to become reachable on
-# `inference-net` before bringing up the chorus app. Intended to be run
-# from the chorus repo root via `make bootstrap`.
+# Wait for the data-plane Neo4j (`neo4j`) to become reachable on `data-net`
+# before bringing up the chorus app. Intended to be run from the chorus repo
+# root via `make bootstrap`.
 
 set -euo pipefail
 
-NETWORK="${NETWORK:-inference-net}"
-SERVICE="${SERVICE:-neo4j-chorus}"
+NETWORK="${NETWORK:-data-net}"
+SERVICE="${SERVICE:-neo4j}"
 PORT="${PORT:-7687}"
 TIMEOUT="${TIMEOUT:-120}"
 

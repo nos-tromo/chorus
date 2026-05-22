@@ -9,7 +9,9 @@ name: chorus
 networks:
   chorus-net: {}
   inference-net:
-    external: true   # owned by inference/ compose project
+    external: true   # owned by the vllm-service compose project
+  data-net:
+    external: true   # owned by the data-plane compose project
 
 services:
   api:
@@ -28,6 +30,7 @@ services:
     networks:
       - chorus-net
       - inference-net
+      - data-net
     expose:
       - "8000"
     restart: unless-stopped
