@@ -16,10 +16,10 @@ help: ## list targets
 network: ## create the shared inference-net (idempotent)
 	docker network create inference-net >/dev/null 2>&1 || true
 
-build: ## build api + ui images
+build: ## build backend + frontend images
 	DOCKER_BUILDKIT=1 $(COMPOSE) build
 
-up: ## start api + ui (assumes data-plane reachable on inference-net)
+up: ## start backend + frontend (assumes data-plane reachable on inference-net)
 	$(COMPOSE) up -d
 
 stop: ## stop containers without removing them

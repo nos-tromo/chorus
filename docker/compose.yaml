@@ -6,17 +6,12 @@
 
 name: chorus
 
-networks:
-  chorus-net: {}
-  inference-net:
-    external: true   # owned by inference/ compose project
-
 services:
-  api:
-    image: chorus-api:${CHORUS_VERSION:-latest}
+  backend:
+    image: chorus-backend:${CHORUS_VERSION:-latest}
     build:
       context: ..
-      dockerfile: docker/Dockerfile.api
+      dockerfile: docker/Dockerfile.backend
     env_file:
       - path: ../.env
         required: false
@@ -26,8 +21,12 @@ services:
       LOG_FORMAT: json
       CHORUS_HOME: /var/lib/chorus
     networks:
-      - chorus-net
-      - inference-net
+      chorus-net:
+        aliases:
+          backend
+      inference-net:
+        aliases:
+          - chorus-backend
     expose:
       - "8000"
     restart: unless-stopped
@@ -38,19 +37,27 @@ services:
       retries: 3
       start_period: 30s
 
-  ui:
-    image: chorus-ui:${CHORUS_VERSION:-latest}
+  frontend:
+    image: chorus-frontend:${CHORUS_VERSION:-latest}
     build:
       context: ..
-      dockerfile: docker/Dockerfile.ui
+      dockerfile: docker/Dockerfile.frontend
     environment:
-      CHORUS_API_URL: http://api:8000
+      CHORUS_API_URL: http://backend:8000
       CHORUS_UI_IDENTITY: dev
     depends_on:
-      api:
+      backend:
         condition: service_healthy
     networks:
-      - chorus-net
+      chorus-net:
+        aliases:
+          - frontend
     expose:
       - "8501"
     restart: unless-stopped
+
+networks:
+  chorus-net: {}
+  inference-net:
+    external: true
+    name: ${INFERENCE_NET:-inference-net}

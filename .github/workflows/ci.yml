@@ -47,7 +47,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.api
+          file: docker/Dockerfile.backend
           tags: chorus-api:${{ env.IMAGE_TAG }}
           push: false
           load: true
@@ -55,7 +55,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.ui
+          file: docker/Dockerfile.frontend
           tags: chorus-ui:${{ env.IMAGE_TAG }}
           push: false
           load: true
@@ -78,7 +78,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.api
+          file: docker/Dockerfile.backend
           tags: chorus-api:${{ env.IMAGE_TAG }}
           push: false
           load: true
@@ -86,7 +86,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.ui
+          file: docker/Dockerfile.frontend
           tags: chorus-ui:${{ env.IMAGE_TAG }}
           push: false
           load: true
