@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help network build bundle up stop down migrate bootstrap pre-commit test
+.PHONY: help network build bundle up stop down migrate ingest bootstrap pre-commit test
 
 CHORUS_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 export CHORUS_VERSION
@@ -22,6 +22,7 @@ help:
 	@echo "  make stop       stop containers (keep them)"
 	@echo "  make down       stop + remove containers (never touches data-plane)"
 	@echo "  make migrate    apply pending Neo4j migrations"
+	@echo "  make ingest     run one ingestion pass from INGESTION_SOURCE_DIR"
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
 	@echo "  make pre-commit run pre-commit hooks (ruff + mypy)"
 	@echo "  make test       run pytest"
@@ -55,6 +56,10 @@ down:
 # Apply pending Neo4j migrations against the configured NEO4J_URI.
 migrate:
 	$(COMPOSE) run --rm backend python -m chorus.migrations.cli apply
+
+# Run one ingestion pass against the configured INGESTION_SOURCE_DIR.
+ingest:
+	$(COMPOSE) run --rm backend python -m chorus.ingestion.cli run
 
 # Wait for data-plane to be healthy, then bring the app up.
 bootstrap: network
