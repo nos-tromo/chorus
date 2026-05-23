@@ -259,6 +259,20 @@ class ResolutionConfig:
 
 
 @dataclass(frozen=True)
+class IngestionConfig:
+    """Ingestion source-directory configuration.
+
+    Attributes:
+        source_dir: Directory containing per-table CSV dumps the
+            file-backed upstream adapter reads from. One file per
+            table (``postings.csv``, ``comments.csv``,
+            ``messages.csv``, ``profiles.csv``).
+    """
+
+    source_dir: Path
+
+
+@dataclass(frozen=True)
 class PathConfig:
     """Filesystem paths used by the running app.
 
@@ -388,6 +402,21 @@ def load_resolution_env() -> ResolutionConfig:
         llm_tiebreak_enabled=_env_bool("RES_LLM_TIEBREAK", True),
         case_normalize=_env_bool("RES_CASE_NORMALIZE", True),
     )
+
+
+def load_ingestion_env() -> IngestionConfig:
+    """Load ingestion source-directory configuration from the environment.
+
+    Defaults to ``<CHORUS_HOME>/ingest`` so a fresh install has a
+    predictable drop point. ``INGESTION_SOURCE_DIR`` overrides; a
+    ``~`` prefix is expanded against ``$HOME``.
+
+    Returns:
+        A populated :class:`IngestionConfig`.
+    """
+    raw = _env("INGESTION_SOURCE_DIR")
+    src = Path(raw).expanduser() if raw else load_path_env().chorus_home / "ingest"
+    return IngestionConfig(source_dir=src)
 
 
 def load_path_env() -> PathConfig:
