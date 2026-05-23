@@ -16,8 +16,22 @@ from chorus.utils.env_cfg import load_path_env
 
 @lru_cache(maxsize=128)
 def load_template(name: str) -> str:
-    """Load a `.cypher` file from `chorus/queries/`. The `.cypher` suffix
-    is optional in `name`."""
+    """Load and cache a Cypher template from ``chorus/queries/``.
+
+    The ``.cypher`` suffix is appended automatically when absent. The
+    result is cached for the lifetime of the process — templates are
+    static files baked into the image, so reloading would only add I/O.
+
+    Args:
+        name: Template file name with or without the ``.cypher`` suffix
+            (e.g. ``"posts_mentioning"`` or ``"posts_mentioning.cypher"``).
+
+    Returns:
+        The file's text contents.
+
+    Raises:
+        FileNotFoundError: If the template does not exist on disk.
+    """
     if not name.endswith(".cypher"):
         name = f"{name}.cypher"
     path: Path = load_path_env().queries / name

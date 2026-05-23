@@ -23,8 +23,28 @@ from chorus.audit.logger import AuditLogger
 
 
 class _Auditable(Protocol):
-    def audit_entities(self) -> list[str]: ...
-    def audit_result_count(self) -> int: ...
+    """Structural interface for tool outputs that report audit metadata.
+
+    Tools whose output models implement this protocol can populate the
+    audit row with the entities they touched and the result count
+    automatically; otherwise the row is written with zero counts.
+    """
+
+    def audit_entities(self) -> list[str]:
+        """Return canonical entity ids the tool resolved during the call.
+
+        Returns:
+            Entity ids in arbitrary order. May be empty.
+        """
+        ...
+
+    def audit_result_count(self) -> int:
+        """Return the number of result rows the tool produced.
+
+        Returns:
+            A non-negative integer.
+        """
+        ...
 
 
 OutT = TypeVar("OutT", bound=BaseModel)
@@ -34,10 +54,21 @@ FnT = TypeVar("FnT", bound=Callable[..., BaseModel])
 def audited(fn: Callable[..., OutT]) -> Callable[..., OutT]:
     """Wrap a tool function with audit-log timing.
 
-    The wrapped callable must accept (driver, params, *, user, audit) and
-    return a Pydantic model. If the model implements `audit_entities` and
-    `audit_result_count`, those values are recorded; otherwise the row is
-    written with zero result_count and no entities_touched.
+    The wrapped callable must accept ``(driver, params, *, user,
+    audit)`` and return a Pydantic model. If the model implements
+    :meth:`_Auditable.audit_entities` and
+    :meth:`_Auditable.audit_result_count`, those values are written into
+    the audit row; otherwise the row is written with zero result count
+    and no entities touched. Exceptions raised by the wrapped function
+    are re-raised after the audit row is written with
+    ``status="error"``.
+
+    Args:
+        fn: Tool function to wrap. Its name is recorded as
+            ``tool_name`` on the audit row.
+
+    Returns:
+        A wrapped callable with the same signature as ``fn``.
     """
 
     @wraps(fn)
@@ -57,6 +88,15 @@ def audited(fn: Callable[..., OutT]) -> Callable[..., OutT]:
 
 @dataclass(frozen=True)
 class ToolSpec:
+    """Registry entry describing a single retrieval tool.
+
+    Attributes:
+        name: Unique tool name (matches the agent-facing identifier).
+        input_model: Pydantic model the tool accepts as ``params``.
+        output_model: Pydantic model the tool returns.
+        run: The wrapped tool function itself.
+    """
+
     name: str
     input_model: type[BaseModel]
     output_model: type[BaseModel]
@@ -72,7 +112,33 @@ def register_tool(
     input_model: type[BaseModel],
     output_model: type[BaseModel],
 ) -> Callable[[FnT], FnT]:
+    """Decorator that registers a tool in the global :data:`TOOLS` registry.
+
+    Apply this *outside* :func:`audited` so the wrapped (audited) function
+    is what ends up in the registry — the FastAPI router invokes
+    ``TOOLS[name].run`` directly, expecting audit logging to fire.
+
+    Args:
+        name: Unique registry key. Raises if already taken.
+        input_model: Pydantic model the tool accepts as ``params``.
+        output_model: Pydantic model the tool returns.
+
+    Returns:
+        A decorator that registers the function and returns it unchanged.
+    """
+
     def _register(fn: FnT) -> FnT:
+        """Register ``fn`` in :data:`TOOLS` under the closure's ``name``.
+
+        Args:
+            fn: Tool function to register.
+
+        Returns:
+            ``fn`` unchanged, so the decorator is composable.
+
+        Raises:
+            RuntimeError: If a tool is already registered under ``name``.
+        """
         if name in TOOLS:
             raise RuntimeError(f"duplicate tool name: {name}")
         TOOLS[name] = ToolSpec(
