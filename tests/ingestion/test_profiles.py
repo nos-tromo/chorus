@@ -34,6 +34,12 @@ _SAMPLE_ROW = {
 
 
 def test_from_row_maps_all_fields() -> None:
+    """Every upstream column maps to the expected DTO field.
+
+    Acts as the executable mapping spec for ``profiles.from_row``;
+    failures here usually mean either a column rename in the upstream
+    or a regression in the parser.
+    """
     from chorus.ingestion.profiles import from_row
 
     dto = from_row(_SAMPLE_ROW)
@@ -57,6 +63,11 @@ def test_from_row_maps_all_fields() -> None:
 
 
 def test_from_row_handles_missing_and_empty() -> None:
+    """Missing columns and empty strings normalize to ``None`` / empty lists.
+
+    Guards against a sparse upstream row inadvertently producing
+    truthy-but-empty values on the DTO.
+    """
     from chorus.ingestion.profiles import from_row
 
     dto = from_row({"ID": "a-9", "UUID": "prof-9", "Bio": "", "Tags": ""})
@@ -69,6 +80,14 @@ def test_from_row_handles_missing_and_empty() -> None:
 
 
 def test_write_creates_author(migrated_driver: Driver) -> None:
+    """``write`` MERGEs an :Author and sets every enrichment property.
+
+    Includes the temporal coercion check — ``crawled_at`` must land on
+    the node as a Neo4j temporal, not as the source string.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
     from chorus.ingestion.profiles import from_row, write
 
     write(migrated_driver, from_row(_SAMPLE_ROW))
@@ -87,6 +106,17 @@ def test_write_creates_author(migrated_driver: Driver) -> None:
 
 
 def test_write_enriches_existing_thin_author(migrated_driver: Driver) -> None:
+    """``write`` enriches a thin :Author left by the postings stage.
+
+    The postings stage uses ``ON CREATE SET`` (write-once); the profiles
+    stage uses ``SET`` (overwrite) and is the authoritative source for
+    identity. This test pins both behaviors: ``display_name`` is
+    overwritten by the profile, but the posting-set ``handle`` is left
+    intact.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
     from chorus.ingestion.profiles import from_row, write
 
     # a thin :Author as the postings stage would leave it
@@ -112,6 +142,11 @@ def test_write_enriches_existing_thin_author(migrated_driver: Driver) -> None:
 
 
 def test_write_is_idempotent(migrated_driver: Driver) -> None:
+    """Writing the same profile twice produces exactly one :Author node.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
     from chorus.ingestion.profiles import from_row, write
 
     dto = from_row(_SAMPLE_ROW)
@@ -124,6 +159,15 @@ def test_write_is_idempotent(migrated_driver: Driver) -> None:
 
 
 def test_write_sparse_row_does_not_wipe(migrated_driver: Driver) -> None:
+    """A sparse later crawl never clobbers properties an earlier crawl set.
+
+    Confirms the ``exclude_none`` strategy plus the empty-tags drop
+    keep previously-set personal fields intact when a subsequent crawl
+    omits them.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
     from chorus.ingestion.profiles import from_row, write
 
     write(migrated_driver, from_row(_SAMPLE_ROW))

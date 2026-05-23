@@ -23,6 +23,27 @@ def extract_for_post(
     *,
     labels: list[str] | None = None,
 ) -> list[dict[str, Any]]:
+    """Run NER over a single post and shape the spans for the graph writer.
+
+    The ``model_version`` is recorded on every span and propagated to
+    the ``:MENTIONS`` edge so re-extraction with a newer model can be
+    audited and rolled back.
+
+    Args:
+        text: Body of the post to extract from.
+        post_uuid: UUID of the source post, embedded in each span so
+            the writer can link spans to the right node.
+        model_version: NER model id used; passed both as the inference
+            ``model`` argument and recorded as ``model_version`` on
+            each span.
+        labels: Optional whitelist of GLiNER labels. ``None`` uses the
+            provider's default label set.
+
+    Returns:
+        One dict per extracted span with keys ``surface_form``,
+        ``label``, ``span_start``, ``span_end``, ``confidence``,
+        ``post_uuid``, and ``model_version``.
+    """
     spans = provider.extract_entities(text, labels=labels, model=model_version)
     return [
         {
@@ -43,9 +64,23 @@ def write_mentions(
     post_uuid: str,
     spans: list[dict[str, Any]],
 ) -> int:
-    """For each span: MERGE the alias node, ensure :RESOLVED_TO target
-    exists (resolution.resolve_alias_to_entity is the canonical mint),
-    then MERGE the :MENTIONS edge with provenance properties."""
+    """Write extracted spans as ``:MENTIONS`` edges with provenance.
+
+    For each span, MERGEs the ``:Alias`` node by surface form and
+    MERGEs the ``:MENTIONS`` edge from the post to the alias.
+    ``:RESOLVED_TO`` is left to :func:`resolution.resolve_alias_to_entity`
+    — this function only ensures the alias and provenance exist.
+
+    Args:
+        driver: Open Neo4j driver.
+        post_uuid: UUID of the post the spans were extracted from.
+        spans: Spans as produced by :func:`extract_for_post`. Empty
+            input is allowed and returns ``0``.
+
+    Returns:
+        Number of ``:MENTIONS`` edges visited by the query (created or
+        already present); ``0`` for an empty span list.
+    """
     if not spans:
         return 0
     cypher = """

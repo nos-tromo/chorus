@@ -15,12 +15,31 @@ import pytest
 
 
 def _make_fake_response(content: str) -> Any:
+    """Build a duck-typed OpenAI-shaped response wrapping ``content``.
+
+    Args:
+        content: The assistant message content the fake should return.
+
+    Returns:
+        An object with the minimal ``.choices[0].message.content``
+        attribute chain :mod:`chorus.inference.provider` reads.
+    """
     return SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
     )
 
 
 def test_extract_entities_uses_ner_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``extract_entities`` routes to ``NER_MODEL`` and forwards GLiNER args.
+
+    Reloads the provider module so the new ``NER_MODEL`` env var is
+    picked up, then patches the chat completions endpoint to capture
+    the outgoing kwargs and assert the model id, labels, and threshold
+    are forwarded correctly.
+
+    Args:
+        monkeypatch: pytest monkeypatch fixture.
+    """
     monkeypatch.setenv("NER_MODEL", "my-test-ner-model")
 
     # Reload so the lru_cache picks up the new env.
@@ -34,6 +53,15 @@ def test_extract_entities_uses_ner_model(monkeypatch: pytest.MonkeyPatch) -> Non
     captured: dict[str, Any] = {}
 
     def fake_create(**kwargs: Any) -> Any:
+        """Capture outbound kwargs and return a canned NER response.
+
+        Args:
+            **kwargs: Whatever the provider sent to
+                ``client.chat.completions.create``.
+
+        Returns:
+            A duck-typed response carrying one ``Berlin`` LOC span.
+        """
         captured.update(kwargs)
         return _make_fake_response(
             json.dumps(
@@ -62,6 +90,11 @@ def test_extract_entities_uses_ner_model(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_chat_returns_assistant_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``chat`` extracts the assistant message content from the response.
+
+    Args:
+        monkeypatch: pytest monkeypatch fixture.
+    """
     from chorus.inference import provider
 
     monkeypatch.setattr(
@@ -74,6 +107,11 @@ def test_chat_returns_assistant_content(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_embed_returns_one_vector_per_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``embed`` yields one vector per input text, in order.
+
+    Args:
+        monkeypatch: pytest monkeypatch fixture.
+    """
     from chorus.inference import provider
 
     fake = SimpleNamespace(

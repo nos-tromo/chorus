@@ -10,6 +10,20 @@ from chorus.migrations.runner import apply_all, applied_versions
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the migrations CLI.
+
+    Subcommands:
+        - ``apply``: apply any pending migrations and print each applied
+          version, or ``"up to date"`` when nothing was pending.
+        - ``status``: print the sorted list of applied migration versions.
+
+    Args:
+        argv: Argument vector to parse. ``None`` (the default) reads
+            from ``sys.argv``.
+
+    Returns:
+        Process exit code (``0`` on success, ``2`` on unknown command).
+    """
     p = argparse.ArgumentParser(prog="chorus-migrate")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("apply", help="apply any pending migrations")

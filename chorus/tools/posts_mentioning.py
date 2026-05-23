@@ -19,6 +19,20 @@ from chorus.tools._template_loader import load_template
 
 
 class PostsMentioningIn(BaseModel):
+    """Input parameters for the ``posts_mentioning`` tool.
+
+    The ``from`` alias keeps the public name aligned with the
+    documented tool surface even though ``from`` is a Python keyword.
+
+    Attributes:
+        entity: Canonical entity name or id to filter posts by.
+        from_: Inclusive lower bound on the post timestamp. ``None``
+            means no lower bound.
+        to: Inclusive upper bound on the post timestamp. ``None``
+            means no upper bound.
+        limit: Maximum number of hits to return, in [1, 500].
+    """
+
     entity: str
     from_: datetime | None = Field(default=None, alias="from")
     to: datetime | None = None
@@ -28,6 +42,17 @@ class PostsMentioningIn(BaseModel):
 
 
 class PostsMentioningHit(BaseModel):
+    """A single match returned by ``posts_mentioning``.
+
+    Attributes:
+        uuid: Canonical chorus identifier for the post.
+        text: Body of the matching post.
+        ts: Post timestamp (content creation time).
+        labels: Multi-label set on the post node (``["Post", "Posting"]``,
+            ``["Post", "Comment"]``, ``["Post", "Message"]``).
+        entity_id: Canonical id of the entity this post mentioned.
+    """
+
     uuid: str
     text: str
     ts: datetime
@@ -36,9 +61,20 @@ class PostsMentioningHit(BaseModel):
 
 
 class PostsMentioningOut(BaseModel):
+    """Output of the ``posts_mentioning`` tool.
+
+    Attributes:
+        hits: Matching posts in result order.
+    """
+
     hits: list[PostsMentioningHit]
 
     def audit_entities(self) -> list[str]:
+        """Return distinct entity ids touched by this result set.
+
+        Returns:
+            Entity ids in first-seen order, deduped.
+        """
         seen: list[str] = []
         for h in self.hits:
             if h.entity_id not in seen:
@@ -46,6 +82,11 @@ class PostsMentioningOut(BaseModel):
         return seen
 
     def audit_result_count(self) -> int:
+        """Return the number of hits in this result set.
+
+        Returns:
+            Length of :attr:`hits`.
+        """
         return len(self.hits)
 
 
@@ -62,6 +103,22 @@ def posts_mentioning(
     user: str,
     audit: AuditLogger,
 ) -> PostsMentioningOut:
+    """Return posts mentioning ``params.entity`` within an optional time range.
+
+    Loads the ``posts_mentioning.cypher`` template and runs it against
+    the graph. The ``@audited`` decorator records the invocation; this
+    function only owns the query execution and result shaping.
+
+    Args:
+        driver: Open Neo4j driver.
+        params: Validated input parameters.
+        user: Authenticated identity (consumed by ``@audited``).
+        audit: Active audit logger (consumed by ``@audited``).
+
+    Returns:
+        A populated :class:`PostsMentioningOut` with at most
+        ``params.limit`` hits.
+    """
     del user, audit  # the @audited decorator owns the audit write
     cypher = load_template("posts_mentioning")
     cypher_params: dict[str, Any] = {

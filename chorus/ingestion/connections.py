@@ -42,6 +42,23 @@ from neo4j import Driver
 
 
 def write_follows(driver: Driver, rows: Iterable[dict]) -> int:
+    """Stub for follower/following edge ingestion.
+
+    Raises so callers fail loudly until the upstream connections schema
+    is finalized.
+
+    Args:
+        driver: Open Neo4j driver (unused; documented for the eventual
+            signature).
+        rows: Raw connection rows from the upstream (unused; documented
+            for the eventual signature).
+
+    Returns:
+        Number of edges written — never reached in the stub.
+
+    Raises:
+        NotImplementedError: Always. See ADR 0002.
+    """
     raise NotImplementedError(
         "Connections ingestion blocked on upstream schema — see ADR 0002 "
         "for the open questions."
@@ -49,6 +66,25 @@ def write_follows(driver: Driver, rows: Iterable[dict]) -> int:
 
 
 def write_friendships(driver: Driver, rows: Iterable[dict]) -> int:
+    """Stub for friendship-edge ingestion.
+
+    Raises so callers fail loudly until the upstream connections schema
+    is finalized. The eventual implementation must pick a canonical
+    direction per pair, filter self-loops, and dedupe bidirectional
+    rows.
+
+    Args:
+        driver: Open Neo4j driver (unused; documented for the eventual
+            signature).
+        rows: Raw connection rows from the upstream (unused; documented
+            for the eventual signature).
+
+    Returns:
+        Number of edges written — never reached in the stub.
+
+    Raises:
+        NotImplementedError: Always. See ADR 0002.
+    """
     raise NotImplementedError(
         "Connections ingestion blocked on upstream schema — see ADR 0002 "
         "for the open questions."

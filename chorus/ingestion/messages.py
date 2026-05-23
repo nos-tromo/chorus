@@ -18,6 +18,31 @@ from chorus.utils.env_cfg import RetentionConfig
 
 
 class MessageDTO(BaseModel):
+    """Validated DTO for one upstream chat-message row.
+
+    Senders are stored as ``:Author`` nodes (same label as posting
+    authors). Chat groups are ``:Group`` nodes shared with posting
+    groups; only the relationship type distinguishes them (``IN_CHAT``
+    vs ``IN_GROUP``).
+
+    Attributes:
+        uuid: Canonical chorus identifier.
+        chat_id: Group/chat id this message belongs to.
+        chat_group: Human-readable chat group name, if known.
+        sender_id: Network sender id, joins to ``:Author.id``.
+        sender_display_name: Human-readable sender name.
+        text: Body of the message.
+        timestamp: Content creation time (drives retention).
+        url: Original message URL.
+        answers_count: Reply count reported by the upstream.
+        reply_to_uuid: UUID of the parent message when this is a
+            threaded reply; ``None`` for top-level messages.
+        network: Platform name (resolves to ``:Platform``).
+        system_tags: Upstream ``Tags`` field as a string list.
+        retention_until: Absolute time the nightly sweeper should
+            hard-delete this message.
+    """
+
     uuid: str
     chat_id: str
     chat_group: str | None = None
@@ -34,6 +59,22 @@ class MessageDTO(BaseModel):
 
 
 def from_row(row: dict[str, Any], retention: RetentionConfig) -> MessageDTO:
+    """Adapt one upstream message row to a :class:`MessageDTO`.
+
+    Args:
+        row: One raw row as returned by the upstream adapter, augmented
+            with ``Reply To UUID`` if applicable.
+        retention: Retention configuration, used to compute
+            ``retention_until``.
+
+    Returns:
+        A populated, validated :class:`MessageDTO`.
+
+    Raises:
+        KeyError: If a required upstream column is missing.
+        ValueError: If a timestamp column is malformed.
+        pydantic.ValidationError: If the resulting DTO fails validation.
+    """
     ts = _coerce_dt(row["Timestamp"])
     return MessageDTO(
         uuid=row["UUID"],
@@ -53,6 +94,16 @@ def from_row(row: dict[str, Any], retention: RetentionConfig) -> MessageDTO:
 
 
 def write(driver: Driver, dto: MessageDTO) -> None:
+    """Write one :class:`MessageDTO` to the graph idempotently.
+
+    MERGEs sender, platform, and chat group, then links the message
+    via ``[:AUTHORED]``, ``[:ON_PLATFORM]``, ``[:IN_CHAT]``, and
+    optionally ``[:REPLIES_TO]``.
+
+    Args:
+        driver: Open Neo4j driver.
+        dto: Validated message DTO to write.
+    """
     cypher = """
     MERGE (a:Author {id: $sender_id})
       ON CREATE SET a.display_name = $sender_display_name, a.platform = $network
@@ -82,18 +133,49 @@ def write(driver: Driver, dto: MessageDTO) -> None:
 
 
 def _coerce_dt(value: Any) -> datetime:
+    """Coerce ``value`` into an aware UTC :class:`datetime`.
+
+    Args:
+        value: A ``datetime``, ISO-8601 string, or anything stringifiable.
+
+    Returns:
+        A timezone-aware :class:`datetime`.
+
+    Raises:
+        ValueError: If ``value`` is a string that does not parse as ISO-8601.
+    """
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     return datetime.fromisoformat(str(value))
 
 
 def _int_or_none(value: Any) -> int | None:
+    """Coerce ``value`` to an int, or ``None`` when missing.
+
+    Args:
+        value: Candidate value.
+
+    Returns:
+        ``None`` for ``None``/empty inputs; ``int(value)`` otherwise.
+
+    Raises:
+        ValueError: If ``value`` is non-empty and not int-parseable.
+    """
     if value is None or value == "":
         return None
     return int(value)
 
 
 def _tags(value: Any) -> list[str]:
+    """Parse the upstream ``Tags`` column into a list of tag strings.
+
+    Args:
+        value: Either a list of stringifiable items, a comma-separated
+            string, or ``None``/empty for "no tags".
+
+    Returns:
+        Tag strings in source order, with empties removed.
+    """
     if value is None or value == "":
         return []
     if isinstance(value, list):

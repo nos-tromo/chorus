@@ -28,15 +28,33 @@ _FILE_RE = re.compile(r"^(\d{3,})_[\w\-]+\.cypher$")
 
 
 def _substitution_map() -> dict[str, str]:
+    """Build the ``${VAR}`` substitution map applied to every migration body.
+
+    Returns:
+        Mapping of template variable names to their substituted string
+        values. Currently exposes ``EMBED_DIM`` from the active
+        inference config so vector indexes can be sized at apply time.
+    """
     cfg = load_inference_env()
     return {"EMBED_DIM": str(cfg.embed_dim)}
 
 
 def _split_statements(body: str) -> list[str]:
-    """Split on `;` at statement boundaries, respecting string literals and
-    line comments. Cypher DDL statements rarely contain semicolons inside
-    literals; this implementation handles the simple case and treats
-    `//`-to-EOL as comments to strip."""
+    """Split a Cypher migration body into individual statements.
+
+    Splits on ``;`` at statement boundaries while respecting string
+    literals (``'``, ``"``, ``\\``) and stripping ``//`` line comments.
+    Cypher DDL statements rarely contain semicolons inside literals;
+    this implementation handles the simple case rather than maintaining
+    a full Cypher parser.
+
+    Args:
+        body: Raw text of the migration file, after env substitution.
+
+    Returns:
+        Cleaned statements in source order, with empty statements
+        discarded.
+    """
     stripped_lines = []
     for line in body.splitlines():
         # remove `//` line comments (Cypher); preserve content before them
@@ -87,6 +105,16 @@ def _split_statements(body: str) -> list[str]:
 
 
 def _discover() -> list[tuple[str, Path]]:
+    """Discover migration files in lexicographic version order.
+
+    Only files matching ``NNN_*.cypher`` (three or more leading digits,
+    followed by a name segment) are returned; everything else under the
+    migrations directory is ignored.
+
+    Returns:
+        ``(version, path)`` pairs sorted by version. ``version`` is the
+        file stem (e.g. ``"001_init"``).
+    """
     discovered: list[tuple[str, Path]] = []
     for p in MIGRATION_DIR.iterdir():
         m = _FILE_RE.match(p.name)
@@ -97,14 +125,38 @@ def _discover() -> list[tuple[str, Path]]:
 
 
 def applied_versions(driver: Driver) -> set[str]:
+    """Return the set of migration versions already recorded in Neo4j.
+
+    Args:
+        driver: Open Neo4j driver to query.
+
+    Returns:
+        Versions found on ``:_Migration`` nodes. Empty on a fresh
+        database.
+    """
     with driver.session() as s:
         result = s.run("MATCH (m:_Migration) RETURN m.version AS v")
         return {row["v"] for row in result}
 
 
 def apply_all(driver: Driver, *, only: Iterable[str] | None = None) -> list[str]:
-    """Apply migrations not yet recorded. Returns the list of versions applied
-    on this call (empty if up to date)."""
+    """Apply pending migrations and record them on ``:_Migration`` nodes.
+
+    Migrations already recorded in the graph are skipped. Each statement
+    is executed in auto-commit mode because Neo4j refuses DDL inside an
+    explicit transaction.
+
+    Args:
+        driver: Open Neo4j driver.
+        only: If provided, restrict application to versions in this
+            collection. Versions outside this set are still considered
+            for skipping if already applied, but are never freshly
+            applied.
+
+    Returns:
+        Versions newly applied on this call, in apply order. Empty when
+        the database is already up to date.
+    """
     subs = _substitution_map()
     applied = applied_versions(driver)
     target = set(only) if only is not None else None

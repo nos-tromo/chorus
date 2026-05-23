@@ -17,6 +17,41 @@ from chorus.utils.env_cfg import RetentionConfig
 
 
 class PostingDTO(BaseModel):
+    """Validated DTO for one upstream posting row.
+
+    Field naming follows snake_case after mapping from the upstream
+    table headers (see CLAUDE.md §Upstream data format). UUID is the
+    primary key; network-side ids are kept as properties for traceability.
+
+    Attributes:
+        uuid: Canonical chorus identifier.
+        network_posting_id: Upstream-side post id, kept for traceability.
+        url: Original post URL.
+        text: Body of the post.
+        timestamp: Content creation time (drives retention).
+        timezone_name: Source-supplied timezone label.
+        crawled_at: Ingestion-side timestamp.
+        last_updated: Content edit time (if known).
+        location: Source-supplied location string.
+        task: Upstream task label.
+        author_id: Network author id, joins to ``:Author.id``.
+        author_display_name: Human-readable author name.
+        vanity_name: Platform-specific slug (e.g. LinkedIn vanity).
+        co_author_id: Network id of a co-author, if any.
+        quoted_user_id: Network id of a quoted user (user reference only;
+            the graph cannot represent a quoted *post*).
+        expected_reactions: Reaction count the upstream expected to collect.
+        collected_reactions: Reaction count actually collected.
+        expected_comments: Comment count the upstream expected to collect.
+        collected_comments: Comment count actually collected.
+        network: Platform name (resolves to ``:Platform``).
+        posted_in_group: Group id when the post was made inside a group.
+        filename: Multimedia attachment filename, if present.
+        system_tags: Upstream ``Tags`` field as a string list.
+        retention_until: Absolute time the nightly sweeper should hard-delete
+            this post.
+    """
+
     uuid: str
     network_posting_id: str | None = None
     url: str | None = None
@@ -44,8 +79,25 @@ class PostingDTO(BaseModel):
 
 
 def from_row(row: dict[str, Any], retention: RetentionConfig) -> PostingDTO:
-    """Adapt one upstream row to a `PostingDTO`. Field-name mapping mirrors
-    the upstream table headers documented in CLAUDE.md §Upstream data format.
+    """Adapt one upstream posting row to a :class:`PostingDTO`.
+
+    Field-name mapping mirrors the upstream table headers documented in
+    CLAUDE.md §Upstream data format. ``retention_until`` is derived from
+    the post's ``Timestamp`` plus the configured default retention
+    window — not from ``Crawled at``.
+
+    Args:
+        row: One raw row as returned by the upstream adapter.
+        retention: Retention configuration, used to compute
+            ``retention_until``.
+
+    Returns:
+        A populated, validated :class:`PostingDTO`.
+
+    Raises:
+        KeyError: If a required upstream column is missing.
+        ValueError: If a timestamp column is malformed.
+        pydantic.ValidationError: If the resulting DTO fails validation.
     """
     ts = _coerce_dt(row["Timestamp"])
     return PostingDTO(
@@ -77,7 +129,17 @@ def from_row(row: dict[str, Any], retention: RetentionConfig) -> PostingDTO:
 
 
 def write(driver: Driver, dto: PostingDTO) -> None:
-    """Idempotent write: MERGE Author / Platform / (Group) / Posting; link."""
+    """Write one :class:`PostingDTO` to the graph idempotently.
+
+    MERGEs author, platform, optional group and attachment nodes, then
+    links them to the ``:Post:Posting`` node. Co-authors and quoted
+    users are MERGEd as additional ``:Author`` nodes. Safe to call
+    repeatedly with the same DTO.
+
+    Args:
+        driver: Open Neo4j driver.
+        dto: Validated posting DTO to write.
+    """
     cypher = """
     MERGE (a:Author {id: $author_id})
       ON CREATE SET a.handle = $vanity_name, a.display_name = $author_display_name,
@@ -127,30 +189,86 @@ def write(driver: Driver, dto: PostingDTO) -> None:
 
 
 def _coerce_dt(value: Any) -> datetime:
+    """Coerce ``value`` into an aware UTC :class:`datetime`.
+
+    Naive datetimes are assumed to be UTC. Strings are parsed via
+    :meth:`datetime.fromisoformat`.
+
+    Args:
+        value: A ``datetime``, ISO-8601 string, or anything stringifiable.
+
+    Returns:
+        A timezone-aware :class:`datetime`.
+
+    Raises:
+        ValueError: If ``value`` is a string that does not parse as ISO-8601.
+    """
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     return datetime.fromisoformat(str(value))
 
 
 def _coerce_dt_opt(value: Any) -> datetime | None:
+    """Coerce ``value`` to a datetime, or ``None`` when missing.
+
+    Args:
+        value: Candidate value (``None``, empty string, datetime, or
+            ISO-8601 string).
+
+    Returns:
+        ``None`` for missing/empty inputs; otherwise the result of
+        :func:`_coerce_dt`.
+    """
     if value is None or value == "":
         return None
     return _coerce_dt(value)
 
 
 def _str_or_none(value: Any) -> str | None:
+    """Coerce ``value`` to a string, or ``None`` when missing.
+
+    Args:
+        value: Candidate value.
+
+    Returns:
+        ``None`` for ``None``/empty inputs; ``str(value)`` otherwise.
+    """
     if value is None or value == "":
         return None
     return str(value)
 
 
 def _int_or_none(value: Any) -> int | None:
+    """Coerce ``value`` to an int, or ``None`` when missing.
+
+    Args:
+        value: Candidate value.
+
+    Returns:
+        ``None`` for ``None``/empty inputs; ``int(value)`` otherwise.
+
+    Raises:
+        ValueError: If ``value`` is non-empty and not int-parseable.
+    """
     if value is None or value == "":
         return None
     return int(value)
 
 
 def _tags(value: Any) -> list[str]:
+    """Parse the upstream ``Tags`` column into a list of tag strings.
+
+    Accepts either a pre-split list (used by the test fixtures) or a
+    comma-separated string (the upstream's native format). Whitespace
+    is trimmed and empty entries are dropped.
+
+    Args:
+        value: Either a list of stringifiable items, a comma-separated
+            string, or ``None``/empty for "no tags".
+
+    Returns:
+        Tag strings in source order, with empties removed.
+    """
     if value is None or value == "":
         return []
     if isinstance(value, list):

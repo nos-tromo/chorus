@@ -35,20 +35,58 @@ CREATE INDEX IF NOT EXISTS idx_raw_uuid ON raw_rows(uuid);
 
 
 class RawStore:
+    """SQLite-backed store for raw upstream rows.
+
+    One row per upstream record, stored as JSON. Acts as the canonical
+    record of "what the upstream told us, exactly" — independent from
+    the graph projection so re-ingestion is possible without re-fetching.
+    """
+
     def __init__(self, db_path: Path) -> None:
+        """Create the store and ensure the parent directory exists.
+
+        Args:
+            db_path: Path to the SQLite database file. The parent
+                directory is created if missing; the database itself is
+                created on first :meth:`init_schema` call.
+        """
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _connect(self) -> sqlite3.Connection:
+        """Open a SQLite connection with WAL journaling enabled.
+
+        Returns:
+            An autocommit connection (``isolation_level=None``) with
+            ``WAL`` journaling applied for concurrent ingestion workers.
+        """
         conn = sqlite3.connect(self.db_path, isolation_level=None)
         conn.execute("PRAGMA journal_mode = WAL;")
         return conn
 
     def init_schema(self) -> None:
+        """Apply the ``raw_rows`` table and indexes to the database.
+
+        Idempotent — the underlying DDL uses ``CREATE ... IF NOT EXISTS``
+        so this is safe to call on every boot.
+        """
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
 
     def write_batch(self, kind: Kind, rows: Iterable[dict[str, Any]]) -> int:
+        """Persist a batch of raw upstream rows to the store.
+
+        The ``UUID`` column is extracted out of each row for indexable
+        lookups; the full row (including ``UUID``) is also kept verbatim
+        in the JSON payload.
+
+        Args:
+            kind: Upstream table the rows belong to.
+            rows: Raw rows to persist. Consumed once.
+
+        Returns:
+            Number of rows written.
+        """
         now = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
         params = [
             (kind, row.get("UUID"), json.dumps(row, default=str, sort_keys=True), now)

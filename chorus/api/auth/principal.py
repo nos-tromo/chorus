@@ -17,6 +17,23 @@ from chorus.utils.env_cfg import load_principal_env
 
 
 def resolve_principal(request: Request) -> str:
+    """Return the authenticated principal for an incoming request.
+
+    Reads the trusted-header value set by the upstream reverse proxy
+    (Nginx + OIDC). Falls back to ``CHORUS_DEFAULT_IDENTITY`` only when
+    that env var is set — production deployments leave it unset, which
+    makes a missing header fail closed with ``401``.
+
+    Args:
+        request: The active FastAPI request.
+
+    Returns:
+        The authenticated user identity string.
+
+    Raises:
+        HTTPException: ``401 Unauthorized`` when neither the trusted
+            header nor a fallback identity is configured.
+    """
     cfg = load_principal_env()
     header_value = request.headers.get(cfg.header_name)
     if header_value:

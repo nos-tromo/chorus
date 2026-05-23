@@ -6,6 +6,11 @@ from neo4j import Driver
 
 
 def test_apply_is_idempotent(migrated_driver: Driver) -> None:
+    """Re-applying migrations on an up-to-date database is a no-op.
+
+    Args:
+        migrated_driver: Driver against an already-migrated database.
+    """
     from chorus.migrations.runner import apply_all
 
     second = apply_all(migrated_driver)
@@ -13,6 +18,14 @@ def test_apply_is_idempotent(migrated_driver: Driver) -> None:
 
 
 def test_constraints_present(migrated_driver: Driver) -> None:
+    """Every uniqueness constraint the data model relies on exists.
+
+    Acts as a regression guard against accidental migration ordering or
+    constraint-name drift.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
     expected = {
         "post_uuid",
         "author_id",
@@ -30,6 +43,11 @@ def test_constraints_present(migrated_driver: Driver) -> None:
 
 
 def test_vector_indexes_present(migrated_driver: Driver) -> None:
+    """Post and Entity vector indexes are created and sized by EMBED_DIM.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
     with migrated_driver.session() as s:
         rows = s.run(
             "SHOW INDEXES YIELD name, type WHERE type = 'VECTOR' RETURN name"
@@ -39,8 +57,14 @@ def test_vector_indexes_present(migrated_driver: Driver) -> None:
 
 
 def test_relationship_indexes_present(migrated_driver: Driver) -> None:
-    """Connections-ingestion-ready: FOLLOWS / FRIENDS_WITH edges have indexes
-    even though the ingestion path is stubbed."""
+    """Edge indexes for FOLLOWS / FRIENDS_WITH / MENTIONS are present.
+
+    Connections ingestion is stubbed but the indexes exist already so
+    the eventual bulk load is index-backed from day one.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
     with migrated_driver.session() as s:
         rows = s.run("SHOW INDEXES YIELD name, type RETURN name, type").data()
     names = {r["name"] for r in rows}
