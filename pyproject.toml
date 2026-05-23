@@ -6,7 +6,7 @@ authors = [
   { name = "nos-tromo" }
 ]
 readme = "README.md"
-requires-python = ">=3.11,<=3.13"
+requires-python = ">=3.11,<3.14"
 license = "Apache-2.0"
 dependencies = [
     "fastapi>=0.136.1",
@@ -37,3 +37,8 @@ dev = [
     "ruff>=0.15.13",
     "testcontainers[neo4j]>=4.14.2",
 ]
+
+[tool.mypy]
+ignore_missing_imports = true
+no_incremental = true
+disable_error_code = ["import-untyped"]
