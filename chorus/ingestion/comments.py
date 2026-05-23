@@ -18,6 +18,35 @@ from chorus.utils.env_cfg import RetentionConfig
 
 
 class CommentDTO(BaseModel):
+    """Validated DTO for one upstream comment row.
+
+    Comments are keyed by UUID. Parent references use the parent's
+    UUID, not the upstream-side comment/post id — the caller is
+    responsible for resolving those before building the DTO.
+
+    Attributes:
+        uuid: Canonical chorus identifier.
+        network_object_id: Upstream-side network object id.
+        network_comment_id: Upstream-side comment id.
+        url: Original comment URL.
+        text: Body of the comment.
+        timestamp: Content creation time (drives retention).
+        crawled_at: Ingestion-side timestamp.
+        author_id: Network author id, joins to ``:Author.id``.
+        author_display_name: Human-readable author name.
+        vanity_name: Platform-specific slug for the author.
+        replies_count: Reply count reported by the upstream.
+        reactions_count: Reaction count reported by the upstream.
+        parent_comment_uuid: UUID of the parent comment when this is a
+            threaded reply; ``None`` for top-level comments.
+        parent_posting_uuid: UUID of the posting this comment is attached
+            to. Required.
+        network: Platform name (resolves to ``:Platform``).
+        system_tags: Upstream ``Tags`` field as a string list.
+        retention_until: Absolute time the nightly sweeper should
+            hard-delete this comment.
+    """
+
     uuid: str
     network_object_id: str | None = None
     network_comment_id: str | None = None
@@ -38,6 +67,27 @@ class CommentDTO(BaseModel):
 
 
 def from_row(row: dict[str, Any], retention: RetentionConfig) -> CommentDTO:
+    """Adapt one upstream comment row to a :class:`CommentDTO`.
+
+    The caller must resolve parent posting and parent comment UUIDs
+    upstream (the raw rows carry the upstream's network ids, not chorus
+    UUIDs) and supply them as ``Parent Posting UUID`` / ``Parent
+    Comment UUID`` keys.
+
+    Args:
+        row: One raw row as returned by the upstream adapter, augmented
+            with the resolved parent UUIDs.
+        retention: Retention configuration, used to compute
+            ``retention_until``.
+
+    Returns:
+        A populated, validated :class:`CommentDTO`.
+
+    Raises:
+        KeyError: If a required upstream column is missing.
+        ValueError: If a timestamp column is malformed.
+        pydantic.ValidationError: If the resulting DTO fails validation.
+    """
     ts = _coerce_dt(row["Timestamp"])
     # Note: Posting ID / Parent Comment ID upstream are the upstream's
     # network IDs. Chorus keys on UUID, so the caller must supply the
@@ -65,6 +115,17 @@ def from_row(row: dict[str, Any], retention: RetentionConfig) -> CommentDTO:
 
 
 def write(driver: Driver, dto: CommentDTO) -> None:
+    """Write one :class:`CommentDTO` to the graph idempotently.
+
+    MERGEs author, platform, and the parent posting (creating a thin
+    ``:Post:Posting`` stub if it doesn't already exist), then links the
+    comment via ``[:AUTHORED]``, ``[:ON_PLATFORM]``, ``[:ON]``, and
+    optionally ``[:REPLIES_TO]``.
+
+    Args:
+        driver: Open Neo4j driver.
+        dto: Validated comment DTO to write.
+    """
     cypher = """
     MERGE (a:Author {id: $author_id})
       ON CREATE SET a.handle = $vanity_name, a.display_name = $author_display_name,
@@ -97,18 +158,55 @@ def write(driver: Driver, dto: CommentDTO) -> None:
 
 
 def _coerce_dt(value: Any) -> datetime:
+    """Coerce ``value`` into an aware UTC :class:`datetime`.
+
+    Naive datetimes are assumed to be UTC; strings are parsed via
+    :meth:`datetime.fromisoformat`.
+
+    Args:
+        value: A ``datetime``, ISO-8601 string, or anything stringifiable.
+
+    Returns:
+        A timezone-aware :class:`datetime`.
+
+    Raises:
+        ValueError: If ``value`` is a string that does not parse as ISO-8601.
+    """
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     return datetime.fromisoformat(str(value))
 
 
 def _int_or_none(value: Any) -> int | None:
+    """Coerce ``value`` to an int, or ``None`` when missing.
+
+    Args:
+        value: Candidate value.
+
+    Returns:
+        ``None`` for ``None``/empty inputs; ``int(value)`` otherwise.
+
+    Raises:
+        ValueError: If ``value`` is non-empty and not int-parseable.
+    """
     if value is None or value == "":
         return None
     return int(value)
 
 
 def _tags(value: Any) -> list[str]:
+    """Parse the upstream ``Tags`` column into a list of tag strings.
+
+    Accepts either a pre-split list or a comma-separated string;
+    whitespace is trimmed and empty entries are dropped.
+
+    Args:
+        value: Either a list of stringifiable items, a comma-separated
+            string, or ``None``/empty for "no tags".
+
+    Returns:
+        Tag strings in source order, with empties removed.
+    """
     if value is None or value == "":
         return []
     if isinstance(value, list):

@@ -38,7 +38,31 @@ def run_once(
     *,
     since: datetime | None = None,
 ) -> dict[str, Any]:
-    """Run all stages once. Returns per-stage counts and a skipped list."""
+    """Run every ingestion stage once, in dependency order.
+
+    Stage order is postings → comments → messages → profiles →
+    connections. Each stage writes raw rows to the raw store before
+    projecting them into the graph, so re-ingestion is possible without
+    re-fetching. The connections stage is currently stubbed: it logs
+    and records the stage in ``skipped`` rather than raising, so the
+    orchestrator can complete end-to-end against any upstream snapshot.
+
+    Args:
+        adapter: Upstream adapter to pull rows from.
+        driver: Open Neo4j driver for graph writes.
+        raw: Raw-row store for verbatim upstream rows.
+        retention: Retention configuration applied to each artifact DTO.
+        since: If provided, restrict the pull to rows newer than this
+            timestamp; ``None`` means a full pull.
+
+    Returns:
+        A dict with two keys:
+
+        - ``"counts"``: per-stage row counts written to the graph
+          (``{"postings": int, "comments": int, ...}``).
+        - ``"skipped"``: list of stage names that were skipped (e.g.
+          ``["connections"]``).
+    """
 
     counts: dict[str, int] = {}
     skipped: list[str] = []

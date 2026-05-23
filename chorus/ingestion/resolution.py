@@ -23,6 +23,19 @@ from chorus.utils.env_cfg import ResolutionConfig
 
 
 def normalize_surface(s: str, cfg: ResolutionConfig) -> str:
+    """Normalize a surface form for alias comparison.
+
+    Strips surrounding whitespace and, when configured, casefolds for
+    case-insensitive comparison. The output of this function is the
+    canonical key used in the ``:Alias.surface_form`` property.
+
+    Args:
+        s: Raw surface form as extracted by NER.
+        cfg: Resolution configuration controlling normalization toggles.
+
+    Returns:
+        Normalized surface form.
+    """
     out = s.strip()
     if cfg.case_normalize:
         out = out.casefold()
@@ -30,7 +43,16 @@ def normalize_surface(s: str, cfg: ResolutionConfig) -> str:
 
 
 def lookup_alias(driver: Driver, surface: str) -> str | None:
-    """Return the entity_id this surface form has been resolved to, if any."""
+    """Return the entity id this surface form was previously resolved to.
+
+    Args:
+        driver: Open Neo4j driver.
+        surface: Normalized surface form.
+
+    Returns:
+        The matching entity id, or ``None`` if this surface form has
+        never been resolved.
+    """
     cypher = """
     MATCH (a:Alias {surface_form: $surface})-[:RESOLVED_TO]->(e:Entity)
     RETURN e.id AS id LIMIT 1
@@ -47,14 +69,40 @@ def cluster_candidates(
     *,
     k: int = 5,
 ) -> list[str]:
-    """Vector-index lookup; returns entity ids whose cosine similarity is
-    above `threshold`."""
+    """Find candidate entity ids by vector similarity (stub).
+
+    Args:
+        driver: Open Neo4j driver (unused until implemented).
+        embedding: Query embedding vector with ``EMBED_DIM`` dimensions.
+        threshold: Minimum cosine similarity for an entity to count as
+            a candidate.
+        k: Maximum number of candidates to return.
+
+    Returns:
+        Entity ids whose cosine similarity is above ``threshold``,
+        sorted by descending similarity.
+
+    Raises:
+        NotImplementedError: Always; v1 resolution is pending.
+    """
     raise NotImplementedError("v1 resolution pending — see entity-resolution ticket")
 
 
 def llm_tiebreaker(surface: str, candidates: list[dict]) -> str | None:
-    """Call provider.chat with a small structured prompt; return the
-    chosen entity_id or None to indicate 'no confident match — mint new'."""
+    """Pick the best entity among candidates via an LLM call (stub).
+
+    Args:
+        surface: The unresolved surface form.
+        candidates: Candidate entities with at least ``id`` and
+            ``canonical_name`` keys.
+
+    Returns:
+        The chosen entity id, or ``None`` to signal "no confident
+        match — mint a new entity."
+
+    Raises:
+        NotImplementedError: Always; v1 resolution is pending.
+    """
     raise NotImplementedError("v1 resolution pending — see entity-resolution ticket")
 
 
@@ -64,5 +112,25 @@ def resolve_alias_to_entity(
     embedding: list[float],
     cfg: ResolutionConfig,
 ) -> str:
-    """End-to-end resolution. Returns an entity_id (existing or new)."""
+    """End-to-end resolution from surface form to entity id (stub).
+
+    Runs the full pipeline:
+    :func:`normalize_surface` → :func:`lookup_alias` →
+    :func:`cluster_candidates` → :func:`llm_tiebreaker` → mint new
+    entity if nothing else returns a confident match.
+
+    Args:
+        driver: Open Neo4j driver.
+        surface: Surface form to resolve.
+        embedding: Embedding vector for the surface form, used during
+            candidate clustering.
+        cfg: Resolution configuration.
+
+    Returns:
+        The entity id this surface form maps to (existing or newly
+        minted).
+
+    Raises:
+        NotImplementedError: Always; v1 resolution is pending.
+    """
     raise NotImplementedError("v1 resolution pending — see entity-resolution ticket")
