@@ -28,6 +28,20 @@ from chorus.utils.logger_cfg import init_logger
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """FastAPI lifespan handler: bring up dependencies, then tear them down.
+
+    Startup order is intentional and load-bearing — see the module
+    docstring. State that downstream handlers need (Neo4j driver,
+    audit logger) is stashed on ``app.state``.
+
+    Args:
+        app: The FastAPI application; ``app.state`` is populated with
+            ``driver`` and ``audit`` for downstream handlers.
+
+    Yields:
+        Nothing — control returns to FastAPI for the lifetime of the
+        application; the ``finally`` block runs at shutdown.
+    """
     init_logger()
     logger.info("chorus starting")
 
