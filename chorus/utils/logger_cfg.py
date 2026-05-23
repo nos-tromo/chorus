@@ -30,7 +30,24 @@ def init_logger(
     retention: int = 3,
     serialize: bool | None = None,
 ) -> Path:
-    """Install stderr + rotating-file sinks. Returns the log file path."""
+    """Install stderr + rotating-file loguru sinks.
+
+    Replaces any sinks loguru was started with. The stderr sink uses a
+    colorized human-readable format unless JSON output is requested via
+    ``LOG_FORMAT=json``; the file sink always serializes as JSON for
+    downstream log shippers.
+
+    Args:
+        rotation: Loguru rotation policy for the file sink (size or
+            timedelta-style string, e.g. ``"5 MB"`` or ``"1 day"``).
+        retention: Number of rotated files to keep.
+        serialize: Whether the stderr sink should emit JSON. When
+            ``None`` (the default), reads ``LOG_FORMAT`` from the
+            environment — ``LOG_FORMAT=json`` enables JSON.
+
+    Returns:
+        Absolute path to the active log file.
+    """
     log_path = load_path_env().logs
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
