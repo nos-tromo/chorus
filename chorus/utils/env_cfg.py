@@ -296,20 +296,15 @@ def load_inference_env() -> InferenceConfig:
     """
     provider = (_env("INFERENCE_PROVIDER", "vllm") or "vllm").lower()
     if provider not in _PROVIDER_DEFAULTS:
-        raise RuntimeError(
-            f"Unknown INFERENCE_PROVIDER={provider!r}; "
-            f"expected one of {sorted(_PROVIDER_DEFAULTS)}"
-        )
+        raise RuntimeError(f"Unknown INFERENCE_PROVIDER={provider!r}; expected one of {sorted(_PROVIDER_DEFAULTS)}")
     defaults = _PROVIDER_DEFAULTS[provider]
     return InferenceConfig(
         provider=provider,
         api_base=_env("OPENAI_API_BASE", _PROVIDER_API_BASE[provider]) or "",
         api_key=_env("OPENAI_API_KEY", "EMPTY") or "EMPTY",
         TEXT_MODEL=_env("TEXT_MODEL", defaults["TEXT_MODEL"]) or defaults["TEXT_MODEL"],
-        embed_model=_env("EMBED_MODEL", defaults["embed_model"])
-        or defaults["embed_model"],
-        rerank_model=_env("RERANK_MODEL", defaults["rerank_model"])
-        or defaults["rerank_model"],
+        embed_model=_env("EMBED_MODEL", defaults["embed_model"]) or defaults["embed_model"],
+        rerank_model=_env("RERANK_MODEL", defaults["rerank_model"]) or defaults["rerank_model"],
         ner_model=_env("NER_MODEL", defaults["ner_model"]) or defaults["ner_model"],
         embed_dim=_env_int("EMBED_DIM", 1024),
         timeout_s=_env_float("INFERENCE_TIMEOUT_S", 60.0),

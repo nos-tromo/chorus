@@ -8,8 +8,9 @@ write a second adapter — do not generalize this one.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Iterable, Protocol
+from typing import Any, Protocol
 
 
 class UpstreamAdapter(Protocol):
@@ -24,7 +25,7 @@ class UpstreamAdapter(Protocol):
     stream rows into the raw store without buffering the full table.
     """
 
-    def fetch_postings(self, since: datetime | None) -> Iterable[dict]:
+    def fetch_postings(self, since: datetime | None) -> Iterable[dict[str, Any]]:
         """Yield posting rows from the upstream system.
 
         Args:
@@ -37,7 +38,7 @@ class UpstreamAdapter(Protocol):
         """
         ...
 
-    def fetch_comments(self, since: datetime | None) -> Iterable[dict]:
+    def fetch_comments(self, since: datetime | None) -> Iterable[dict[str, Any]]:
         """Yield comment rows from the upstream system.
 
         Args:
@@ -49,7 +50,7 @@ class UpstreamAdapter(Protocol):
         """
         ...
 
-    def fetch_messages(self, since: datetime | None) -> Iterable[dict]:
+    def fetch_messages(self, since: datetime | None) -> Iterable[dict[str, Any]]:
         """Yield chat-message rows from the upstream system.
 
         Args:
@@ -61,7 +62,7 @@ class UpstreamAdapter(Protocol):
         """
         ...
 
-    def fetch_profiles(self, since: datetime | None) -> Iterable[dict]:
+    def fetch_profiles(self, since: datetime | None) -> Iterable[dict[str, Any]]:
         """Yield author-profile rows from the upstream system.
 
         Args:
@@ -73,7 +74,7 @@ class UpstreamAdapter(Protocol):
         """
         ...
 
-    def fetch_connections(self, since: datetime | None) -> Iterable[dict]:
+    def fetch_connections(self, since: datetime | None) -> Iterable[dict[str, Any]]:
         """Yield social-graph edge rows from the upstream system.
 
         Args:

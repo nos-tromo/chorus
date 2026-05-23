@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-
 router = APIRouter(tags=["health"])
 
 
@@ -37,9 +36,9 @@ def health(request: Request) -> dict[str, str]:
     try:
         with driver.session() as s:
             s.run("RETURN 1").consume()
-    except Exception as exc:  # noqa: BLE001 — surface the failure as 503
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"neo4j unreachable: {exc}",
-        )
+        ) from exc
     return {"status": "ok"}

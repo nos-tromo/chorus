@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from chorus.api.auth.principal import resolve_principal
 from chorus.tools import TOOLS
 
-
 router = APIRouter(prefix="/tools", tags=["tools"])
 
 
@@ -70,7 +69,7 @@ def invoke_tool(
     try:
         parsed = spec.input_model.model_validate(payload)
     except ValidationError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, exc.errors())
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, exc.errors()) from exc
     out = spec.run(
         request.app.state.driver,
         parsed,

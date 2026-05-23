@@ -15,14 +15,14 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
-
 
 _SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
@@ -143,7 +143,7 @@ class AuditLogger:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                    datetime.now(UTC).isoformat(timespec="milliseconds"),
                     r.user,
                     r.tool_name,
                     json.dumps(r.params, default=str, sort_keys=True),

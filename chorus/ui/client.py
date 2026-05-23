@@ -6,7 +6,7 @@ their own client with proper auth.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -49,7 +49,7 @@ class ChorusClient:
         """
         r = self._client.get("/health")
         r.raise_for_status()
-        return r.json()
+        return cast(dict[str, Any], r.json())
 
     def list_tools(self) -> list[dict[str, Any]]:
         """Call ``GET /tools`` and return the registered tools.
@@ -63,7 +63,7 @@ class ChorusClient:
         """
         r = self._client.get("/tools")
         r.raise_for_status()
-        return r.json()
+        return cast(list[dict[str, Any]], r.json())
 
     def call_tool(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Invoke a tool via ``POST /tools/{name}``.
@@ -82,7 +82,7 @@ class ChorusClient:
         """
         r = self._client.post(f"/tools/{name}", json=payload)
         r.raise_for_status()
-        return r.json()
+        return cast(dict[str, Any], r.json())
 
     def close(self) -> None:
         """Close the underlying HTTP connection pool."""

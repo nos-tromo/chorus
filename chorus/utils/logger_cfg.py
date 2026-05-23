@@ -15,7 +15,6 @@ from loguru import logger
 
 from chorus.utils.env_cfg import load_path_env
 
-
 _STDERR_FORMAT = (
     "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
     "<level>{level:<8}</level> | "

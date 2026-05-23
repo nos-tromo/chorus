@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from neo4j import Driver
-
 
 _SAMPLE_ROW = {
     "UUID": "prof-1",
@@ -58,8 +57,8 @@ def test_from_row_maps_all_fields() -> None:
     assert dto.work_education == "Acme Corp"
     assert dto.current_city == "Berlin"
     assert dto.additional_details == "misc"
-    assert dto.crawled_at == datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc)
-    assert dto.last_updated == datetime(2026, 5, 1, 9, 0, tzinfo=timezone.utc)
+    assert dto.crawled_at == datetime(2026, 5, 2, 10, 0, tzinfo=UTC)
+    assert dto.last_updated == datetime(2026, 5, 1, 9, 0, tzinfo=UTC)
 
 
 def test_from_row_handles_missing_and_empty() -> None:
@@ -93,7 +92,7 @@ def test_write_creates_author(migrated_driver: Driver) -> None:
     write(migrated_driver, from_row(_SAMPLE_ROW))
 
     with migrated_driver.session() as s:
-        a = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]
+        a = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]  # type: ignore[index]
         assert a["profile_uuid"] == "prof-1"
         assert a["display_name"] == "Alice Anderson"
         assert a["bio"] == "Berlin-based analyst"
@@ -101,7 +100,7 @@ def test_write_creates_author(migrated_driver: Driver) -> None:
         assert a["system_tags"] == ["verified", "staff"]
         # crawled_at coerced to a temporal type, not stored as a string
         assert a["crawled_at"].year == 2026
-        count = s.run("MATCH (a:Author) RETURN count(a) AS c").single()["c"]
+        count = s.run("MATCH (a:Author) RETURN count(a) AS c").single()["c"]  # type: ignore[index]
         assert count == 1
 
 
@@ -130,14 +129,14 @@ def test_write_enriches_existing_thin_author(migrated_driver: Driver) -> None:
     write(migrated_driver, from_row(_SAMPLE_ROW))
 
     with migrated_driver.session() as s:
-        a = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]
+        a = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]  # type: ignore[index]
         # profiles is authoritative — display_name overwritten
         assert a["display_name"] == "Alice Anderson"
         # the postings-set handle is left intact
         assert a["handle"] == "alice"
         # personal fields added
         assert a["bio"] == "Berlin-based analyst"
-        count = s.run("MATCH (a:Author) RETURN count(a) AS c").single()["c"]
+        count = s.run("MATCH (a:Author) RETURN count(a) AS c").single()["c"]  # type: ignore[index]
         assert count == 1
 
 
@@ -154,7 +153,7 @@ def test_write_is_idempotent(migrated_driver: Driver) -> None:
     write(migrated_driver, dto)
 
     with migrated_driver.session() as s:
-        count = s.run("MATCH (a:Author) RETURN count(a) AS c").single()["c"]
+        count = s.run("MATCH (a:Author) RETURN count(a) AS c").single()["c"]  # type: ignore[index]
         assert count == 1
 
 
@@ -175,7 +174,7 @@ def test_write_sparse_row_does_not_wipe(migrated_driver: Driver) -> None:
     write(migrated_driver, from_row({"ID": "a-1", "UUID": "prof-1"}))
 
     with migrated_driver.session() as s:
-        a = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]
+        a = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]  # type: ignore[index]
         assert a["bio"] == "Berlin-based analyst"
         assert a["system_tags"] == ["verified", "staff"]
         assert a["crawled_at"].year == 2026

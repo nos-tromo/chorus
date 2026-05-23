@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Literal
-
+from typing import Any, Literal
 
 Kind = Literal["postings", "comments", "messages", "profiles", "connections"]
 
@@ -87,17 +87,13 @@ class RawStore:
         Returns:
             Number of rows written.
         """
-        now = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-        params = [
-            (kind, row.get("UUID"), json.dumps(row, default=str, sort_keys=True), now)
-            for row in rows
-        ]
+        now = datetime.now(UTC).isoformat(timespec="milliseconds")
+        params = [(kind, row.get("UUID"), json.dumps(row, default=str, sort_keys=True), now) for row in rows]
         if not params:
             return 0
         with self._connect() as conn:
             conn.executemany(
-                "INSERT INTO raw_rows (kind, uuid, payload_json, fetched_at) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO raw_rows (kind, uuid, payload_json, fetched_at) VALUES (?, ?, ?, ?)",
                 params,
             )
         return len(params)

@@ -8,7 +8,7 @@ distinguishes (`IN_CHAT` vs `IN_GROUP`).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from neo4j import Driver
@@ -145,7 +145,7 @@ def _coerce_dt(value: Any) -> datetime:
         ValueError: If ``value`` is a string that does not parse as ISO-8601.
     """
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
     return datetime.fromisoformat(str(value))
 
 
