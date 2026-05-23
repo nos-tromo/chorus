@@ -8,6 +8,15 @@ from neo4j import Driver
 
 
 def test_posts_mentioning_empty(migrated_driver: Driver, in_memory_audit: Any) -> None:
+    """Empty database returns no hits and zero audit result count.
+
+    Verifies the tool degrades gracefully when nothing in the graph
+    matches the query, rather than raising.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+    """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
         posts_mentioning,
@@ -26,6 +35,16 @@ def test_posts_mentioning_empty(migrated_driver: Driver, in_memory_audit: Any) -
 def test_posts_mentioning_finds_seeded_post(
     migrated_driver: Driver, in_memory_audit: Any
 ) -> None:
+    """A seeded post + MENTIONS edge is found and reported by entity id.
+
+    Seeds a posting that mentions an entity named ``Berlin`` and
+    confirms the tool returns it with the entity id populated for
+    audit propagation.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+    """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
         posts_mentioning,
@@ -56,6 +75,12 @@ def test_posts_mentioning_finds_seeded_post(
 
 
 def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> None:
+    """One audit row is written per tool call, with the resolved user.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+    """
     import sqlite3
 
     from chorus.tools.posts_mentioning import (

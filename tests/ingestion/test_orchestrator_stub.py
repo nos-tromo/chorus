@@ -8,10 +8,34 @@ from neo4j import Driver
 
 
 class _FakeAdapter:
+    """In-memory :class:`UpstreamAdapter` used by orchestrator tests.
+
+    Yields one canned row per artifact stage so the orchestrator can be
+    exercised end-to-end without a real upstream.
+    """
+
     def __init__(self, *, connections_raises: bool = True) -> None:
+        """Configure the fake.
+
+        Args:
+            connections_raises: When ``True`` (the default), the
+                connections fetcher raises ``NotImplementedError`` to
+                exercise the orchestrator's skip path. ``False`` yields
+                an empty iterator so the "rows present but stubbed"
+                branch is covered instead.
+        """
         self._connections_raises = connections_raises
 
     def fetch_postings(self, since: Any) -> Iterable[dict[str, Any]]:
+        """Yield one canned posting row.
+
+        Args:
+            since: Ignored; documented for parity with the real adapter.
+
+        Yields:
+            A single row populated with the upstream column names the
+            postings DTO maps from.
+        """
         yield {
             "UUID": "p-1",
             "Text Content": "hello berlin",
@@ -24,6 +48,15 @@ class _FakeAdapter:
         }
 
     def fetch_comments(self, since: Any) -> Iterable[dict[str, Any]]:
+        """Yield one canned comment row.
+
+        Args:
+            since: Ignored; documented for parity with the real adapter.
+
+        Yields:
+            A single row referencing the canned posting via
+            ``Parent Posting UUID``.
+        """
         yield {
             "UUID": "c-1",
             "Text Content": "great post",
@@ -35,6 +68,15 @@ class _FakeAdapter:
         }
 
     def fetch_messages(self, since: Any) -> Iterable[dict[str, Any]]:
+        """Yield one canned chat-message row.
+
+        Args:
+            since: Ignored; documented for parity with the real adapter.
+
+        Yields:
+            A single row populated with the upstream column names the
+            messages DTO maps from.
+        """
         yield {
             "UUID": "m-1",
             "Chat ID": "chat-1",
@@ -45,6 +87,14 @@ class _FakeAdapter:
         }
 
     def fetch_profiles(self, since: Any) -> Iterable[dict[str, Any]]:
+        """Yield one canned author-profile row.
+
+        Args:
+            since: Ignored; documented for parity with the real adapter.
+
+        Yields:
+            A single row referencing the canned posting author by ``ID``.
+        """
         yield {
             "ID": "a-1",
             "UUID": "prof-a-1",
@@ -58,12 +108,35 @@ class _FakeAdapter:
         }
 
     def fetch_connections(self, since: Any) -> Iterable[dict[str, Any]]:
+        """Return an empty iterator or raise, per the constructor toggle.
+
+        Args:
+            since: Ignored; documented for parity with the real adapter.
+
+        Returns:
+            An empty iterator when ``connections_raises`` is ``False``.
+
+        Raises:
+            NotImplementedError: When ``connections_raises`` is ``True``
+                (the default), to exercise the orchestrator's skip path.
+        """
         if self._connections_raises:
             raise NotImplementedError("schema pending")
         return iter(())
 
 
 def test_orchestrator_writes_all_stages(migrated_driver: Driver) -> None:
+    """Every artifact + profile stage writes its row to the graph.
+
+    Runs the orchestrator against a fake adapter that yields one row
+    per stage and asserts the resulting graph contains the expected
+    node counts, the ``[:ON]`` edge from comment to posting, and the
+    profile enrichment landed on the author created by the postings
+    stage.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
     from chorus.ingestion.orchestrator import run_once
     from chorus.ingestion.raw_store import RawStore
     from chorus.utils.env_cfg import load_path_env, load_retention_env
@@ -100,6 +173,16 @@ def test_orchestrator_writes_all_stages(migrated_driver: Driver) -> None:
 
 
 def test_connections_stage_skipped(migrated_driver: Driver) -> None:
+    """Connections stage records itself as skipped without crashing.
+
+    The fake adapter raises ``NotImplementedError`` from the
+    connections fetcher; the orchestrator must catch this, log it,
+    and add ``"connections"`` to the ``skipped`` list rather than
+    propagating the exception.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
     from chorus.ingestion.orchestrator import run_once
     from chorus.ingestion.raw_store import RawStore
     from chorus.utils.env_cfg import load_path_env, load_retention_env
