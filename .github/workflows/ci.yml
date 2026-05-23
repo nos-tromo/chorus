@@ -16,7 +16,7 @@ concurrency:
 jobs:
   ci:
     # Pinned to v1 (latest stable v1.x.y).
-    uses: nos-tromo/.github/.github/workflows/python-app-ci.yml@v1
+    uses: nos-tromo/.github/.github/workflows/python-app-ci.yml@v2
     with:
       python-versions: '["3.11","3.12","3.13"]'
       uv-sync-args: '--frozen'
