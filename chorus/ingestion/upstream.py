@@ -7,8 +7,9 @@ adapter in tests without an accidental network call.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Iterable
+from typing import Any
 
 
 class StubUpstreamAdapter:
@@ -19,7 +20,7 @@ class StubUpstreamAdapter:
     fails loudly instead of silently no-oping.
     """
 
-    def fetch_postings(self, since: datetime | None) -> Iterable[dict]:
+    def fetch_postings(self, since: datetime | None) -> Iterable[dict[str, Any]]:
         """Raise — stub does not pull postings.
 
         Args:
@@ -30,7 +31,7 @@ class StubUpstreamAdapter:
         """
         raise NotImplementedError("Wire up the real upstream client.")
 
-    def fetch_comments(self, since: datetime | None) -> Iterable[dict]:
+    def fetch_comments(self, since: datetime | None) -> Iterable[dict[str, Any]]:
         """Raise — stub does not pull comments.
 
         Args:
@@ -41,7 +42,7 @@ class StubUpstreamAdapter:
         """
         raise NotImplementedError("Wire up the real upstream client.")
 
-    def fetch_messages(self, since: datetime | None) -> Iterable[dict]:
+    def fetch_messages(self, since: datetime | None) -> Iterable[dict[str, Any]]:
         """Raise — stub does not pull chat messages.
 
         Args:
@@ -52,7 +53,7 @@ class StubUpstreamAdapter:
         """
         raise NotImplementedError("Wire up the real upstream client.")
 
-    def fetch_profiles(self, since: datetime | None) -> Iterable[dict]:
+    def fetch_profiles(self, since: datetime | None) -> Iterable[dict[str, Any]]:
         """Raise — stub does not pull author profiles.
 
         Args:
@@ -63,7 +64,7 @@ class StubUpstreamAdapter:
         """
         raise NotImplementedError("Wire up the real upstream client.")
 
-    def fetch_connections(self, since: datetime | None) -> Iterable[dict]:
+    def fetch_connections(self, since: datetime | None) -> Iterable[dict[str, Any]]:
         """Raise — connections ingestion blocked on upstream schema.
 
         Args:
@@ -73,6 +74,4 @@ class StubUpstreamAdapter:
             NotImplementedError: Always. The connections schema is still
                 pending; see ADR 0002.
         """
-        raise NotImplementedError(
-            "Connections ingestion is blocked on upstream schema — see ADR 0002."
-        )
+        raise NotImplementedError("Connections ingestion is blocked on upstream schema — see ADR 0002.")

@@ -13,9 +13,10 @@ The wrapped function may update `slot.entities_touched` and
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -72,15 +73,13 @@ def audited(fn: Callable[..., OutT]) -> Callable[..., OutT]:
     """
 
     @wraps(fn)
-    def _wrapped(
-        driver: Any, params: BaseModel, *, user: str, audit: AuditLogger
-    ) -> OutT:
+    def _wrapped(driver: Any, params: BaseModel, *, user: str, audit: AuditLogger) -> OutT:
         with audit.time_tool(user, fn.__name__, params.model_dump(mode="json")) as slot:
             result = fn(driver, params, user=user, audit=audit)
             if isinstance(result, BaseModel) and hasattr(result, "audit_entities"):
-                slot.entities_touched = result.audit_entities()  # type: ignore[attr-defined]
+                slot.entities_touched = result.audit_entities()
             if isinstance(result, BaseModel) and hasattr(result, "audit_result_count"):
-                slot.result_count = result.audit_result_count()  # type: ignore[attr-defined]
+                slot.result_count = result.audit_result_count()
             return result
 
     return _wrapped
@@ -141,9 +140,7 @@ def register_tool(
         """
         if name in TOOLS:
             raise RuntimeError(f"duplicate tool name: {name}")
-        TOOLS[name] = ToolSpec(
-            name=name, input_model=input_model, output_model=output_model, run=fn
-        )
+        TOOLS[name] = ToolSpec(name=name, input_model=input_model, output_model=output_model, run=fn)
         return fn
 
     return _register

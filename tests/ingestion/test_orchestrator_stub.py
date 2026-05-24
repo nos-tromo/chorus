@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from neo4j import Driver
 
@@ -156,18 +157,13 @@ def test_orchestrator_writes_all_stages(migrated_driver: Driver) -> None:
     assert result["skipped"] == ["connections"]
 
     with migrated_driver.session() as s:
-        assert s.run("MATCH (p:Post) RETURN count(p) AS c").single()["c"] == 3
-        assert s.run("MATCH (p:Posting) RETURN count(p) AS c").single()["c"] == 1
-        assert s.run("MATCH (c:Comment) RETURN count(c) AS c").single()["c"] == 1
-        assert s.run("MATCH (m:Message) RETURN count(m) AS c").single()["c"] == 1
-        assert (
-            s.run("MATCH (:Comment)-[:ON]->(:Posting) RETURN count(*) AS c").single()[
-                "c"
-            ]
-            == 1
-        )
+        assert s.run("MATCH (p:Post) RETURN count(p) AS c").single()["c"] == 3  # type: ignore[index]
+        assert s.run("MATCH (p:Posting) RETURN count(p) AS c").single()["c"] == 1  # type: ignore[index]
+        assert s.run("MATCH (c:Comment) RETURN count(c) AS c").single()["c"] == 1  # type: ignore[index]
+        assert s.run("MATCH (m:Message) RETURN count(m) AS c").single()["c"] == 1  # type: ignore[index]
+        assert s.run("MATCH (:Comment)-[:ON]->(:Posting) RETURN count(*) AS c").single()["c"] == 1  # type: ignore[index]
         # the profiles stage enriched the author the posting created
-        author = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]
+        author = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]  # type: ignore[index]
         assert author["display_name"] == "Alice Anderson"
         assert author["bio"] == "Berlin-based analyst"
 

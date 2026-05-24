@@ -63,7 +63,6 @@ def run_once(
         - ``"skipped"``: list of stage names that were skipped (e.g.
           ``["connections"]``).
     """
-
     counts: dict[str, int] = {}
     skipped: list[str] = []
 
@@ -108,8 +107,7 @@ def run_once(
         counts["connections"] = 0
     else:
         logger.warning(
-            "connections rows present but ingest writer is stubbed — "
-            "{} rows stored in raw_store, not in graph",
+            "connections rows present but ingest writer is stubbed — {} rows stored in raw_store, not in graph",
             len(connection_rows),
         )
         skipped.append("connections")

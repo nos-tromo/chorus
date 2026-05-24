@@ -13,15 +13,14 @@ substitution map below before execution. Currently the only key is
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 from string import Template
-from typing import Iterable
 
 from neo4j import Driver
 
 from chorus.utils.env_cfg import load_inference_env
-
 
 MIGRATION_DIR = Path(__file__).resolve().parent
 _FILE_RE = re.compile(r"^(\d{3,})_[\w\-]+\.cypher$")
@@ -40,7 +39,7 @@ def _substitution_map() -> dict[str, str]:
 
 
 def _split_statements(body: str) -> list[str]:
-    """Split a Cypher migration body into individual statements.
+    r"""Split a Cypher migration body into individual statements.
 
     Splits on ``;`` at statement boundaries while respecting string
     literals (``'``, ``"``, ``\\``) and stripping ``//`` line comments.
@@ -174,7 +173,7 @@ def apply_all(driver: Driver, *, only: Iterable[str] | None = None) -> list[str]
             s.run(
                 "MERGE (m:_Migration {version: $v}) SET m.applied_at = $ts",
                 v=version,
-                ts=datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                ts=datetime.now(UTC).isoformat(timespec="milliseconds"),
             )
         newly.append(version)
     return newly

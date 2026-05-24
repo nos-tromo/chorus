@@ -8,7 +8,6 @@ import streamlit as st
 
 from chorus.ui.client import ChorusClient
 
-
 st.set_page_config(page_title="posts_mentioning — chorus")
 
 
@@ -49,7 +48,7 @@ if st.button("Search", disabled=not entity):
         payload["to"] = to_dt
     try:
         result = client.call_tool("posts_mentioning", payload)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         st.error(f"tool call failed: {exc}")
     else:
         hits = result.get("hits", [])

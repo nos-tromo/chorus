@@ -17,6 +17,8 @@ under a separate ticket.
 
 from __future__ import annotations
 
+from typing import Any
+
 from neo4j import Driver
 
 from chorus.utils.env_cfg import ResolutionConfig
@@ -88,7 +90,7 @@ def cluster_candidates(
     raise NotImplementedError("v1 resolution pending — see entity-resolution ticket")
 
 
-def llm_tiebreaker(surface: str, candidates: list[dict]) -> str | None:
+def llm_tiebreaker(surface: str, candidates: list[dict[str, Any]]) -> str | None:
     """Pick the best entity among candidates via an LLM call (stub).
 
     Args:

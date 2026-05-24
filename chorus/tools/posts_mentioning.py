@@ -133,9 +133,7 @@ def posts_mentioning(
             PostsMentioningHit(
                 uuid=row["uuid"],
                 text=row["text"],
-                ts=row["ts"].to_native()
-                if hasattr(row["ts"], "to_native")
-                else row["ts"],
+                ts=row["ts"].to_native() if hasattr(row["ts"], "to_native") else row["ts"],
                 labels=list(row["labels"]),
                 entity_id=row["entity_id"],
             )

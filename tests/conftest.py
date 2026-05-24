@@ -19,7 +19,6 @@ import pytest
 from neo4j import Driver
 from testcontainers.neo4j import Neo4jContainer
 
-
 _CHORUS_ENV_MODULES = (
     "chorus.utils.env_cfg",
     "chorus.utils.logger_cfg",
@@ -75,9 +74,7 @@ def neo4j_container() -> Iterator[tuple[str, str, str]]:
 
 
 @pytest.fixture
-def chorus_env(
-    neo4j_container: tuple[str, str, str], monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def chorus_env(neo4j_container: tuple[str, str, str], monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point every chorus env var at the testcontainer + a temp home.
 
     Sets ``NEO4J_*``, ``CHORUS_HOME``, and ``CHORUS_DEFAULT_IDENTITY``
@@ -127,9 +124,7 @@ def driver(chorus_env: Path) -> Iterator[Driver]:
         s.run("MATCH (n) DETACH DELETE n").consume()
         for record in s.run("SHOW CONSTRAINTS YIELD name").data():
             s.run(f"DROP CONSTRAINT {record['name']} IF EXISTS").consume()
-        for record in s.run(
-            "SHOW INDEXES YIELD name, type WHERE type <> 'LOOKUP'"
-        ).data():
+        for record in s.run("SHOW INDEXES YIELD name, type WHERE type <> 'LOOKUP'").data():
             s.run(f"DROP INDEX {record['name']} IF EXISTS").consume()
     yield d
     close_driver()
