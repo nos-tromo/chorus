@@ -21,8 +21,9 @@ Python: `pyproject.toml` accepts `>=3.11,<=3.13`; `.python-version`
 pins dev to `3.12`. CI should run across the full range.
 
 Not yet landed (tracked in `docs/decisions/` / open tickets):
-- Ingestion pipeline beyond the adapter skeleton — postings/comments/
-  messages graph writes and the extraction/resolution stages
+- Resolution stage — `MENTIONS → Alias` provenance is written by the
+  extraction step; `Alias → Entity` clustering / LLM tie-break still
+  pending
 - Connections (follower / friendship) ingestion — schema pending; see
   ADR 0002
 - Docker + compose + Makefile
@@ -540,15 +541,16 @@ chorus/                      # top-level repo
     db/
       neo4j.py               # driver factory + session() context manager
     inference/
-      provider.py            # OpenAI client; chat/embed/rerank/extract_entities by `model` field
+      provider.py            # OpenAI client; chat/embed/rerank by `model` field
+      ner_client.py          # GLiNER /gliner HTTP client (decoupled from `provider`)
     ingestion/
       adapter.py             # UpstreamAdapter Protocol — the only place that knows the upstream schema
       upstream.py            # concrete adapter
       postings.py / comments.py / messages.py     # per-table DTOs + write functions
       profiles.py            # author-profile enrichment → :Author (ADR 0006)
       connections.py         # stub: node-edge-node edge table, schema pending (ADR 0002)
-      orchestrator.py        # stage runner
-      extraction.py          # provider.extract_entities → :MENTIONS with provenance
+      orchestrator.py        # stage runner; inline NER per post (NER_ENABLED gates)
+      extraction.py          # ner_client.extract_entities → :MENTIONS with provenance
       resolution.py          # alias / embed-cluster / LLM tiebreak
       raw_store.py           # separate SQLite, not the audit DB
     migrations/
@@ -633,24 +635,35 @@ OPENAI_API_KEY=<token>
 TEXT_MODEL=...
 EMBED_MODEL=...
 RERANK_MODEL=...
-NER_MODEL=...    # when GLiNER lands in vllm-service
 ```
 
 No code outside this module references provider specifics. Swapping providers
 is an env change.
 
-All chorus inference traffic is OpenAI-protocol HTTP regardless of provider
+All chat/embed/rerank traffic is OpenAI-protocol HTTP regardless of provider
 mode. In production, every request lands at vllm-service's LiteLLM proxy
 (`http://vllm-router:4000/v1` in-network), which routes by the `model` field
 in each request body. Currently active routed tasks are `chat`, `embed`,
-`rerank` (always on), plus `audio` and `translate` (media profile only).
-NER for GLiNER is planned but not yet wired up in vllm-service — pending
-that, the chorus-side provider abstraction is designed for it. The proxy is
-the single ingress for inference traffic, and vllm-service sits behind
-network-level egress controls, so outbound traffic is structurally
+`rerank` (always on), plus `audio` and `translate` (media profile only). The
+proxy is the single ingress for inference traffic, and vllm-service sits
+behind network-level egress controls, so outbound traffic is structurally
 impossible. The `openai` provider mode points at this local proxy, not at
 `api.openai.com` — which is what makes it safe to use in production as well
 as in development.
+
+NER is the one task that does **not** go through `provider.py`. GLiNER on
+vllm-service is a Ray Serve pass-through with the GLiNER-native
+`{text, labels, threshold}` shape on `/gliner`, not a model-field-routed
+task. `inference/ner_client.py` owns that endpoint and is configured with
+its own env-var family (`NER_API_BASE`, `NER_API_KEY`, `NER_THRESHOLD`,
+`NER_TIMEOUT`). Keeping NER decoupled from `INFERENCE_PROVIDER` lets
+chorus mix providers — e.g. Ollama for chat/embed/rerank on a dev Mac,
+while NER still reaches vllm-service's ner-only stack. Two deployment
+shapes are supported by the same code:
+
+- Full vllm-service stack: `NER_API_BASE=http://vllm-router:4000` with
+  Bearer auth (`NER_API_KEY=$OPENAI_API_KEY`).
+- ner-only stack: `NER_API_BASE=http://gliner-ner:8000`, no auth.
 
 ## Compliance posture
 

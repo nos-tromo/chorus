@@ -125,19 +125,16 @@ _PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
         "TEXT_MODEL": "Qwen/Qwen3.5-2B",
         "embed_model": "BAAI/bge-m3",
         "rerank_model": "BAAI/bge-reranker-v2-m3",
-        "ner_model": "gliner-community/gliner_large-v2.5",
     },
     "ollama": {
         "TEXT_MODEL": "gpt-oss:20b",
         "embed_model": "bge-m3",
         "rerank_model": "bge-reranker-v2-m3",
-        "ner_model": "gliner",
     },
     "openai": {
         "TEXT_MODEL": "gpt-4o",
         "embed_model": "text-embedding-3-small",
         "rerank_model": "bge-reranker-v2-m3",
-        "ner_model": "gliner",
     },
 }
 
@@ -150,6 +147,10 @@ class InferenceConfig:
     OpenAI-compatible router). The provider abstraction is env-driven —
     swapping ``provider`` is the only knob callers should care about.
 
+    NER is decoupled from this config — it speaks the GLiNER-native
+    ``/gliner`` HTTP shape rather than the OpenAI protocol and so does
+    not flow through this provider. See :class:`NERClientConfig`.
+
     Attributes:
         provider: One of ``"vllm"``, ``"ollama"``, ``"openai"``.
         api_base: OpenAI-compatible base URL (e.g. ``http://vllm-router:4000/v1``).
@@ -158,7 +159,6 @@ class InferenceConfig:
         TEXT_MODEL: Model id used for chat/completion calls.
         embed_model: Model id used for embedding calls.
         rerank_model: Model id used for rerank calls.
-        ner_model: Model id used for entity-extraction calls.
         embed_dim: Vector dimensionality of the embedding model. Used to
             size Neo4j vector indexes at migration time.
         timeout_s: Per-request timeout in seconds.
@@ -171,10 +171,53 @@ class InferenceConfig:
     TEXT_MODEL: str
     embed_model: str
     rerank_model: str
-    ner_model: str
     embed_dim: int
     timeout_s: float
     max_retries: int
+
+
+@dataclass(frozen=True)
+class NERClientConfig:
+    """Configuration for the remote GLiNER NER service HTTP client.
+
+    NER lives on vllm-service and is reached over plain HTTP at
+    ``{api_base}/gliner`` with the GLiNER-native body shape
+    ``{text, labels, threshold}``. Two operator-side deployment shapes
+    are supported by the same client:
+
+    - Full vllm-service stack: ``api_base=http://vllm-router:4000`` with
+      Bearer auth (``NER_API_KEY=$OPENAI_API_KEY``).
+    - ner-only stack (e.g. Mac, CPU-only Linux running Ollama for chat
+      and embed): ``api_base=http://gliner-ner:8000`` with no auth.
+
+    Attributes:
+        enabled: When ``False``, the orchestrator skips the extraction
+            step entirely. The HTTP client itself does not consult this
+            field — it is a stage-level gate so a dev environment
+            without a reachable GLiNER service does not log a warning
+            per post.
+        api_base: Base URL of the NER service; the client appends
+            ``/gliner`` itself. Trailing slashes are stripped on load.
+        api_key: Bearer token sent as ``Authorization: Bearer ...`` when
+            set; omitted entirely when ``None``. Not auto-coupled to
+            ``OPENAI_API_KEY`` — operators set it explicitly to avoid
+            hidden coupling on multi-provider hosts.
+        threshold: GLiNER confidence cutoff passed per request, in [0, 1].
+        timeout: Per-request HTTP timeout in seconds.
+        model_version: Identifier of the GLiNER model the upstream is
+            serving, stamped on each ``:MENTIONS`` edge as provenance.
+            Operator-set to match what vllm-service actually loaded —
+            chorus does not introspect the service for this; it just
+            records whatever it was told. The ``/gliner`` endpoint
+            itself takes no model parameter.
+    """
+
+    enabled: bool
+    api_base: str
+    api_key: str | None
+    threshold: float
+    timeout: float
+    model_version: str
 
 
 @dataclass(frozen=True)
@@ -324,10 +367,56 @@ def load_inference_env() -> InferenceConfig:
         or defaults["embed_model"],
         rerank_model=_env("RERANK_MODEL", defaults["rerank_model"])
         or defaults["rerank_model"],
-        ner_model=_env("NER_MODEL", defaults["ner_model"]) or defaults["ner_model"],
         embed_dim=_env_int("EMBED_DIM", 1024),
         timeout_s=_env_float("INFERENCE_TIMEOUT_S", 60.0),
         max_retries=_env_int("INFERENCE_MAX_RETRIES", 2),
+    )
+
+
+def load_ner_client_env(
+    default_enabled: bool = True,
+    default_api_base: str = "http://vllm-router:4000",
+    default_threshold: float = 0.3,
+    default_timeout: float = 30.0,
+    default_model_version: str = "gliner-community/gliner_large-v2.5",
+) -> NERClientConfig:
+    """Load the remote NER client configuration from the environment.
+
+    The client POSTs to ``{api_base}/gliner`` with the GLiNER-native body
+    shape ``{text, labels, threshold}``. The default ``api_base`` matches
+    the LiteLLM router alias used by the full vllm-service stack; for the
+    ner-only deployment shape, override with
+    ``NER_API_BASE=http://gliner-ner:8000``.
+
+    ``NER_API_KEY`` is sent as a Bearer token when set and omitted
+    otherwise. It does **not** auto-fall-back to ``OPENAI_API_KEY``:
+    when a multi-provider host runs Ollama for chat/embed and
+    vllm-service for NER, the two keys are genuinely different and an
+    implicit alias would hide that.
+
+    Args:
+        default_enabled: Whether NER extraction runs by default.
+        default_api_base: Default base URL of the NER service.
+        default_threshold: Default GLiNER confidence threshold, in [0, 1].
+        default_timeout: Default per-request HTTP timeout in seconds.
+        default_model_version: Default GLiNER model identifier stamped
+            on ``:MENTIONS`` edges for provenance.
+
+    Returns:
+        A populated :class:`NERClientConfig` with trailing slashes
+        stripped from ``api_base``.
+    """
+    raw_key = _env("NER_API_KEY")
+    api_key = raw_key.strip() if raw_key and raw_key.strip() else None
+    api_base = (_env("NER_API_BASE", default_api_base) or default_api_base).rstrip("/")
+    return NERClientConfig(
+        enabled=_env_bool("NER_ENABLED", default_enabled),
+        api_base=api_base,
+        api_key=api_key,
+        threshold=_env_float("NER_THRESHOLD", default_threshold),
+        timeout=_env_float("NER_TIMEOUT", default_timeout),
+        model_version=_env("NER_MODEL_VERSION", default_model_version)
+        or default_model_version,
     )
 
 
