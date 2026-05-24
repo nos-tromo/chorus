@@ -151,6 +151,79 @@ def test_since_filter_overincludes_when_timestamp_unparseable(tmp_path: Path) ->
     assert {r["UUID"] for r in rows} == {"p-bogus", "p-missing"}
 
 
+def test_utf8_bom_does_not_pollute_first_column_name(tmp_path: Path) -> None:
+    """A leading UTF-8 BOM is stripped so the first header is clean.
+
+    Excel-style CSV exports frequently prepend ``\\ufeff`` to the file.
+    With plain ``utf-8`` decoding that codepoint ends up glued to the
+    first header (e.g. ``"\\ufeffUUID"``), and every downstream lookup
+    of ``row["UUID"]`` raises KeyError. ``utf-8-sig`` strips it.
+    """
+    path = tmp_path / "postings.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        b"\xef\xbb\xbfUUID,Text Content,Timestamp,Crawled at,Author ID,Network\n"
+        b"p-1,hi,2026-05-01T10:00:00+00:00,2026-05-02T10:00:00+00:00,a-1,linkedin\n"
+    )
+    from chorus.ingestion.upstream import FileUpstreamAdapter
+
+    rows = list(FileUpstreamAdapter(tmp_path).fetch_postings(None))
+    assert len(rows) == 1
+    assert "UUID" in rows[0]
+    assert rows[0]["UUID"] == "p-1"
+
+
+def test_semicolon_delimited_csv_is_parsed_correctly(tmp_path: Path) -> None:
+    """Semicolon-delimited CSVs (European-style exports) are auto-detected.
+
+    The upstream vendor occasionally delivers tables with ``;`` as the
+    delimiter and double-quoted fields. The adapter sniffs the dialect
+    from the file header so commas and semicolons both work without
+    operator intervention.
+    """
+    path = tmp_path / "postings.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        '"UUID";"Text Content";"Timestamp";"Crawled at";"Author ID";"Network"\n'
+        '"p-1";"hello";"2026-05-01T10:00:00+00:00";"2026-05-02T10:00:00+00:00";"a-1";"linkedin"\n',
+        encoding="utf-8",
+    )
+    from chorus.ingestion.upstream import FileUpstreamAdapter
+
+    rows = list(FileUpstreamAdapter(tmp_path).fetch_postings(None))
+    assert len(rows) == 1
+    assert rows[0]["UUID"] == "p-1"
+    assert rows[0]["Text Content"] == "hello"
+    assert rows[0]["Timestamp"] == "2026-05-01T10:00:00+00:00"
+
+
+def test_overflow_columns_are_dropped_not_yielded_under_none_key(
+    tmp_path: Path,
+) -> None:
+    """Rows wider than the header don't surface a ``None``-keyed entry.
+
+    ``csv.DictReader`` puts fields past the header width under the
+    ``restkey`` (default ``None``). Leaking that into the row dict
+    breaks ``raw_store.write_batch`` because ``json.dumps(...,
+    sort_keys=True)`` can't compare ``None`` against string keys —
+    so the adapter must strip it at the boundary.
+    """
+    path = tmp_path / "postings.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Hand-rolled CSV with one extra column per data row beyond the header.
+    path.write_text(
+        "UUID,Text Content,Timestamp,Crawled at,Author ID,Network\n"
+        "p-1,hi,2026-05-01T10:00:00+00:00,2026-05-02T10:00:00+00:00,a-1,linkedin,extra-overflow\n",
+        encoding="utf-8",
+    )
+    from chorus.ingestion.upstream import FileUpstreamAdapter
+
+    rows = list(FileUpstreamAdapter(tmp_path).fetch_postings(None))
+    assert len(rows) == 1
+    assert None not in rows[0]
+    assert rows[0]["UUID"] == "p-1"
+
+
 def test_missing_file_yields_empty_iterator(tmp_path: Path) -> None:
     """A missing per-table file is not an error — yields nothing."""
     from chorus.ingestion.upstream import FileUpstreamAdapter

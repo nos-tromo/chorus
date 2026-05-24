@@ -143,9 +143,34 @@ class FileUpstreamAdapter:
         if not path.exists():
             logger.warning("ingestion source file missing: {}", path)
             return
-        with path.open("r", newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
+        # ``utf-8-sig`` transparently strips a leading BOM if present —
+        # Excel-style exports often include one, which would otherwise
+        # contaminate the first header (e.g. ``"﻿UUID"``) and
+        # cause KeyError on the first column lookup downstream.
+        with path.open("r", newline="", encoding="utf-8-sig") as f:
+            # Sniff the delimiter from the first few KiB. Upstream
+            # exports occasionally use semicolons (German/European
+            # convention) rather than commas; we restrict the candidate
+            # set to the common single-char delimiters so the sniffer
+            # doesn't latch onto something unexpected. If sniffing
+            # fails (very short file, etc.) fall back to standard
+            # comma-separated.
+            sample = f.read(8192)
+            f.seek(0)
+            try:
+                dialect: type[csv.Dialect] | csv.Dialect = csv.Sniffer().sniff(
+                    sample, delimiters=",;\t|"
+                )
+            except csv.Error:
+                dialect = csv.excel
+            reader = csv.DictReader(f, dialect=dialect)
             for row in reader:
+                # csv.DictReader puts fields past the header width under
+                # a None key (default restkey). That trips json.dumps(
+                # sort_keys=True) downstream — None vs str is unorderable
+                # — and the overflow isn't meaningful since we have no
+                # header to label it. Drop it at the boundary.
+                row.pop(None, None)  # type: ignore[call-overload]
                 if since is not None and not self._after_cutoff(
                     row, since_column, since
                 ):
@@ -171,10 +196,10 @@ class FileUpstreamAdapter:
             for parseable values at or before the cutoff.
         """
         raw = row.get(column)
-        if not raw:
+        if not raw or not raw.strip():
             return True
         try:
-            ts = datetime.fromisoformat(raw)
+            ts = datetime.fromisoformat(raw.strip())
         except ValueError:
             return True
         return ts > since
