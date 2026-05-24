@@ -41,6 +41,7 @@ class FakeAdapter:
         """
         yield {
             "UUID": "p-1",
+            "Posting ID": "post-net-1",
             "Text Content": "hello berlin",
             "Timestamp": "2026-05-01T10:00:00+00:00",
             "Crawled at": "2026-05-02T10:00:00+00:00",
@@ -62,12 +63,17 @@ class FakeAdapter:
         """
         yield {
             "UUID": "c-1",
+            "Comment ID": "comment-net-1",
             "Text Content": "great post",
             "Timestamp": "2026-05-01T11:00:00+00:00",
             "Crawled at": "2026-05-02T11:00:00+00:00",
             "Author ID": "a-2",
             "Network": "linkedin",
-            "Parent Posting UUID": "p-1",
+            # Upstream references the parent posting by its own Posting ID
+            # (the postings table's primary key), not by chorus UUID. The
+            # orchestrator resolves this to ``Parent Posting UUID`` before
+            # the comment row reaches ``from_row``.
+            "Posting ID": "post-net-1",
         }
 
     def fetch_messages(self, since: Any) -> Iterable[dict[str, Any]]:

@@ -86,7 +86,11 @@ def from_row(row: dict[str, Any], retention: RetentionConfig) -> MessageDTO:
         timestamp=ts,
         url=row.get("URL"),
         answers_count=_int_or_none(row.get("Answers Count")),
-        reply_to_uuid=row.get("Reply To UUID"),
+        # The messages table has no separate Message ID column upstream —
+        # ``UUID`` is the only identifier. ``Reply To`` therefore IS the
+        # parent message's UUID and can be consumed directly. The
+        # ``Reply To UUID`` form is retained for callers that pre-resolve.
+        reply_to_uuid=row.get("Reply To UUID") or row.get("Reply To"),
         network=row["Network"],
         system_tags=_tags(row.get("Tags")),
         retention_until=ts + timedelta(days=retention.default_days),
