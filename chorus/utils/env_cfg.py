@@ -267,14 +267,12 @@ class PathConfig:
 
     Attributes:
         chorus_home: Writable root directory (defaults to ``<repo>/var``).
-        logs: Path to the rotating operational log file.
         queries: Directory containing Cypher query templates.
         migrations: Directory containing ordered Cypher migration files.
         raw_store: Path to the raw-store SQLite database.
     """
 
     chorus_home: Path
-    logs: Path
     queries: Path
     migrations: Path
     raw_store: Path
@@ -388,23 +386,20 @@ def load_resolution_env() -> ResolutionConfig:
 def load_path_env() -> PathConfig:
     """Resolve filesystem paths used by the running app.
 
-    ``CHORUS_HOME`` controls the writable root; ``LOG_PATH`` and
-    ``RAW_STORE_PATH`` may override individual children. The ``queries``
-    and ``migrations`` paths are package-relative and never overridable.
+    ``CHORUS_HOME`` controls the writable root; ``RAW_STORE_PATH`` may
+    override its child. The ``queries`` and ``migrations`` paths are
+    package-relative and never overridable.
 
     Returns:
         A populated :class:`PathConfig` with every field as an absolute path.
     """
     home_raw = _env("CHORUS_HOME")
     home = Path(home_raw).expanduser() if home_raw else _REPO_ROOT / "var"
-    logs_raw = _env("LOG_PATH")
-    logs = Path(logs_raw) if logs_raw else home / "logs" / "chorus.log"
     raw_store_raw = _env("RAW_STORE_PATH")
     raw_store = Path(raw_store_raw) if raw_store_raw else home / "raw.sqlite"
     pkg_root = Path(__file__).resolve().parent.parent
     return PathConfig(
         chorus_home=home,
-        logs=logs,
         queries=pkg_root / "queries",
         migrations=pkg_root / "migrations",
         raw_store=raw_store,
