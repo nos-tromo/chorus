@@ -3,17 +3,17 @@
 Operational logging only. The §76 BDSG audit logger lives in
 `chorus.audit.logger` and writes to SQLite — do not route audit records
 through loguru.
+
+A single stderr sink is configured; the container logging driver owns
+log retention and rotation (see ``docker/compose.yaml``).
 """
 
 from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
 from loguru import logger
-
-from chorus.utils.env_cfg import load_path_env
 
 _STDERR_FORMAT = (
     "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
@@ -23,33 +23,19 @@ _STDERR_FORMAT = (
 )
 
 
-def init_logger(
-    *,
-    rotation: str = "5 MB",
-    retention: int = 3,
-    serialize: bool | None = None,
-) -> Path:
-    """Install stderr + rotating-file loguru sinks.
+def init_logger(*, serialize: bool | None = None) -> None:
+    """Install a stderr loguru sink.
 
-    Replaces any sinks loguru was started with. The stderr sink uses a
-    colorized human-readable format unless JSON output is requested via
-    ``LOG_FORMAT=json``; the file sink always serializes as JSON for
-    downstream log shippers.
+    Replaces any sinks loguru was started with. Uses a colorized
+    human-readable format unless JSON output is requested via
+    ``LOG_FORMAT=json``. ``LOG_LEVEL`` selects the minimum level
+    (default ``INFO``).
 
     Args:
-        rotation: Loguru rotation policy for the file sink (size or
-            timedelta-style string, e.g. ``"5 MB"`` or ``"1 day"``).
-        retention: Number of rotated files to keep.
-        serialize: Whether the stderr sink should emit JSON. When
-            ``None`` (the default), reads ``LOG_FORMAT`` from the
-            environment — ``LOG_FORMAT=json`` enables JSON.
-
-    Returns:
-        Absolute path to the active log file.
+        serialize: Whether to emit JSON. When ``None`` (the default),
+            reads ``LOG_FORMAT`` from the environment —
+            ``LOG_FORMAT=json`` enables JSON.
     """
-    log_path = load_path_env().logs
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
     if serialize is None:
         serialize = os.environ.get("LOG_FORMAT", "").lower() == "json"
 
@@ -64,14 +50,3 @@ def init_logger(
         backtrace=False,
         diagnose=False,
     )
-    logger.add(
-        log_path,
-        level="DEBUG",
-        rotation=rotation,
-        retention=retention,
-        enqueue=True,
-        serialize=True,
-        backtrace=False,
-        diagnose=False,
-    )
-    return log_path
