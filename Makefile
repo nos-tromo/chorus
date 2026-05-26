@@ -10,7 +10,7 @@
 CHORUS_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 export CHORUS_VERSION
 
-COMPOSE := docker compose -f docker/compose.yaml -f docker/compose.override.yaml
+COMPOSE := docker compose --env-file .env -f docker/compose.yaml -f docker/compose.override.yaml
 
 help:
 	@echo "chorus — GraphRAG app (FastAPI backend + Streamlit frontend)."
