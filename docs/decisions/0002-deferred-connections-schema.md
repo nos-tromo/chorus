@@ -1,6 +1,6 @@
 # 0002 — Deferred connections schema
 
-Status: accepted
+Status: superseded by [0007](0007-connections-schema.md)
 Date: 2026-05-20
 
 ## Context
