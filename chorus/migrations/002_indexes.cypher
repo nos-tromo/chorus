@@ -1,7 +1,6 @@
 // 002_indexes — btree + relationship indexes.
-// FOLLOWS / FRIENDS_WITH indexes land now so the deferred connections
-// ingestion (see ADR 0002) finds an index-backed MERGE target when it
-// eventually runs against millions of rows.
+// FOLLOWS / FRIENDS_WITH indexes back the connections write path
+// (see ADR 0007) so bulk MERGE on millions of rows stays index-backed.
 
 CREATE INDEX post_timestamp IF NOT EXISTS
   FOR (p:Post) ON (p.timestamp);
