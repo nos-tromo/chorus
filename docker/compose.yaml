@@ -1,8 +1,11 @@
 ### chorus app compose — app services only.
 ###
-### NO persistent volumes. All graph + audit state lives in the data-plane
-### compose project (see docs/architecture.md). `docker compose down -v`
-### in this project is always safe.
+### Graph state lives in the data-plane compose project (Neo4j); chorus's
+### own state (audit log, raw store, operational logs) lives in the
+### external `chorus-state` volume mounted at $CHORUS_HOME. Both are
+### `external: true` so `docker compose down -v` in this project is
+### always safe — only `docker volume rm` against the named volume can
+### destroy chorus-local state. See docs/architecture.md.
 
 name: chorus
 
@@ -20,6 +23,8 @@ services:
       OPENAI_API_BASE: http://vllm-router:4000/v1
       LOG_FORMAT: json
       CHORUS_HOME: /var/lib/chorus
+    volumes:
+      - chorus-state:/var/lib/chorus
     networks:
       chorus-net:
         aliases:
@@ -65,3 +70,7 @@ networks:
     external: true   # owned by the vllm-service compose project
   data-net:
     external: true   # owned by the data-plane compose project
+
+volumes:
+  chorus-state:
+    external: true 
