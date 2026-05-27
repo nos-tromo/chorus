@@ -174,7 +174,7 @@ def _coerce_dt(value: Any) -> datetime:
     """
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=UTC)
-    return datetime.fromisoformat(str(value))
+    return datetime.fromisoformat(str(value).strip())
 
 
 def _int_or_none(value: Any) -> int | None:

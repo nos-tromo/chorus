@@ -186,7 +186,8 @@ in `CLAUDE.md`), then:
 ```bash
 make network    # create the shared inference-net (idempotent)
 make build      # build api + ui images
-make up         # start api + ui
+make up         # start api + ui (production shape, no host ports)
+make up-dev     # like 'up', but publishes backend + frontend ports on the host
 make migrate    # apply Neo4j migrations from inside the api container
 make down       # stop + remove containers (never touches graph data)
 ```

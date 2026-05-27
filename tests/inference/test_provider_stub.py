@@ -1,13 +1,13 @@
 """Unit tests for the inference provider.
 
-The provider is the only place that knows about provider specifics, so
-the test surface here is small: confirm `extract_entities` sends the
-configured `NER_MODEL` in the request body.
+The provider is the only place that knows about OpenAI-protocol
+specifics, so the test surface here is small: confirm `chat` and
+`embed` shape responses correctly. NER lives in
+:mod:`chorus.inference.ner_client` and is tested there.
 """
 
 from __future__ import annotations
 
-import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -25,66 +25,6 @@ def _make_fake_response(content: str) -> Any:
         attribute chain :mod:`chorus.inference.provider` reads.
     """
     return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
-
-
-def test_extract_entities_uses_ner_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``extract_entities`` routes to ``NER_MODEL`` and forwards GLiNER args.
-
-    Reloads the provider module so the new ``NER_MODEL`` env var is
-    picked up, then patches the chat completions endpoint to capture
-    the outgoing kwargs and assert the model id, labels, and threshold
-    are forwarded correctly.
-
-    Args:
-        monkeypatch: pytest monkeypatch fixture.
-    """
-    monkeypatch.setenv("NER_MODEL", "my-test-ner-model")
-
-    # Reload so the lru_cache picks up the new env.
-    import sys
-
-    for m in ("chorus.utils.env_cfg", "chorus.inference.provider"):
-        if m in sys.modules:
-            del sys.modules[m]
-    from chorus.inference import provider
-
-    captured: dict[str, Any] = {}
-
-    def fake_create(**kwargs: Any) -> Any:
-        """Capture outbound kwargs and return a canned NER response.
-
-        Args:
-            **kwargs: Whatever the provider sent to
-                ``client.chat.completions.create``.
-
-        Returns:
-            A duck-typed response carrying one ``Berlin`` LOC span.
-        """
-        captured.update(kwargs)
-        return _make_fake_response(
-            json.dumps(
-                [
-                    {
-                        "text": "Berlin",
-                        "label": "LOC",
-                        "start": 0,
-                        "end": 6,
-                        "confidence": 0.95,
-                    }
-                ]
-            )
-        )
-
-    monkeypatch.setattr(provider._client().chat.completions, "create", fake_create)
-
-    spans = provider.extract_entities("Berlin is great", labels=["LOC"], threshold=0.5)
-
-    assert captured["model"] == "my-test-ner-model"
-    assert captured["extra_body"]["gliner_labels"] == ["LOC"]
-    assert captured["extra_body"]["gliner_threshold"] == 0.5
-    assert len(spans) == 1
-    assert spans[0].text == "Berlin"
-    assert spans[0].label == "LOC"
 
 
 def test_chat_returns_assistant_content(monkeypatch: pytest.MonkeyPatch) -> None:

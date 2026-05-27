@@ -3,13 +3,21 @@
 ### Production fronts both services with Nginx and relies on the internal
 ### `expose` ports in compose.yaml, so this file is intentionally *not*
 ### loaded by direct `docker compose -f docker/compose.yaml` invocations.
-### The chorus Makefile passes both files explicitly so `make up` works
-### in dev; production deploy runbooks should not.
+### `make up-dev` layers both files so the dev shape is reachable on
+### localhost; `make up` runs compose.yaml alone (production shape).
 
 services:
   backend:
     ports:
       - "8000:8000"
+    volumes:
+      # Dev drop point for upstream CSV dumps. The container reads
+      # CHORUS_HOME/ingest (=/var/lib/chorus/ingest), which this mount
+      # shadows; the surrounding chorus-state volume (declared in
+      # compose.yaml) still backs everything else under CHORUS_HOME.
+      # Defaults to ~/chorus/ingest; override with INGEST_HOST_DIR in
+      # .env to point at a different host path.
+      - ${INGEST_HOST_DIR:-${HOME}/chorus/ingest}:/var/lib/chorus/ingest:ro
   frontend:
     ports:
       - "${CHORUS_HOST_PORT:-8501}:8501"

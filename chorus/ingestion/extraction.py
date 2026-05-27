@@ -1,7 +1,7 @@
 """Entity extraction stage.
 
-`extract_for_post(text, post_uuid, model_version)` calls the inference
-provider's NER endpoint and returns a list of dict-spans suitable for
+`extract_for_post(text, post_uuid, model_version)` calls the remote
+GLiNER NER service and returns a list of dict-spans suitable for
 `write_mentions`. The model version is recorded as a property on every
 `MENTIONS` edge so re-extraction with a newer model can be audited and
 rolled back.
@@ -13,7 +13,7 @@ from typing import Any
 
 from neo4j import Driver
 
-from chorus.inference import provider
+from chorus.inference import ner_client
 
 
 def extract_for_post(
@@ -27,24 +27,25 @@ def extract_for_post(
 
     The ``model_version`` is recorded on every span and propagated to
     the ``:MENTIONS`` edge so re-extraction with a newer model can be
-    audited and rolled back.
+    audited and rolled back. It is **not** sent to the NER service: the
+    ``/gliner`` endpoint serves a single configured model and chorus only
+    records which model id it asked against, for provenance.
 
     Args:
         text: Body of the post to extract from.
         post_uuid: UUID of the source post, embedded in each span so
             the writer can link spans to the right node.
-        model_version: NER model id used; passed both as the inference
-            ``model`` argument and recorded as ``model_version`` on
-            each span.
+        model_version: NER model id stamped onto each returned span as
+            ``model_version`` provenance metadata.
         labels: Optional whitelist of GLiNER labels. ``None`` uses the
-            provider's default label set.
+            service's default label set.
 
     Returns:
         One dict per extracted span with keys ``surface_form``,
         ``label``, ``span_start``, ``span_end``, ``confidence``,
         ``post_uuid``, and ``model_version``.
     """
-    spans = provider.extract_entities(text, labels=labels, model=model_version)
+    spans = ner_client.extract_entities(text, labels=labels)
     return [
         {
             "surface_form": span.text,
