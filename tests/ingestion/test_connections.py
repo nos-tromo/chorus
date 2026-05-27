@@ -188,8 +188,7 @@ def test_write_batch_creates_follows_in_correct_direction(migrated_driver: Drive
 
     with migrated_driver.session() as s:
         rec = s.run(
-            "MATCH (u:Author)-[r:FOLLOWS]->(t:Author) "
-            "RETURN u.id AS src, t.id AS dst, r.crawled_at AS at"
+            "MATCH (u:Author)-[r:FOLLOWS]->(t:Author) RETURN u.id AS src, t.id AS dst, r.crawled_at AS at"
         ).single()
         assert rec is not None
         assert rec["src"] == "49828621614"
