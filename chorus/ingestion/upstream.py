@@ -16,8 +16,8 @@ has no ``Crawled at`` column). When the cell is missing or
 unparseable the row is *kept* rather than dropped — silent loss is
 worse than over-inclusion.
 
-Connections ingestion is still blocked on the upstream schema and
-raises ``NotImplementedError`` (see ADR 0002).
+Connections ingestion reads ``connections.csv`` with the same dialect
+sniffing and since filter as the other tables (see ADR 0007).
 """
 
 from __future__ import annotations
@@ -36,8 +36,7 @@ class FileUpstreamAdapter:
 
     Reads one CSV per table from ``source_dir``:
     ``postings.csv``, ``comments.csv``, ``messages.csv``,
-    ``profiles.csv``. Connections is left as a raising stub until the
-    upstream schema is pinned (ADR 0002).
+    ``profiles.csv``, ``connections.csv``.
 
     Attributes:
         source_dir: Directory containing the per-table CSV dumps.
@@ -106,15 +105,16 @@ class FileUpstreamAdapter:
         return self._read("profiles.csv", since=since, since_column="Crawled at")
 
     def fetch_connections(self, since: datetime | None) -> Iterable[dict[str, Any]]:
-        """Raise — connections ingestion is blocked on the upstream schema.
+        """Yield social-graph edge rows from ``connections.csv``.
 
         Args:
-            since: Ignored.
+            since: Restrict to rows whose ``Crawled at`` is after this
+                cutoff. ``None`` means full backfill.
 
-        Raises:
-            NotImplementedError: Always; see ADR 0002.
+        Returns:
+            Iterable of raw upstream connection rows, keys verbatim.
         """
-        raise NotImplementedError("Connections ingestion is blocked on upstream schema — see ADR 0002.")
+        return self._read("connections.csv", since=since, since_column="Crawled at")
 
     def _read(
         self,

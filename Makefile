@@ -74,8 +74,12 @@ migrate:
 	$(COMPOSE) run --rm backend python -m chorus.migrations.cli apply
 
 # Run one ingestion pass against the configured INGESTION_SOURCE_DIR.
+# Uses the dev compose so the host bind mount of ~/chorus/ingest is
+# visible inside the container; without the override, the base
+# compose.yaml only sees the chorus-state named volume which is empty
+# in dev workflows.
 ingest:
-	$(COMPOSE) run --rm backend python -m chorus.ingestion.cli run
+	$(COMPOSE_DEV) run --rm backend python -m chorus.ingestion.cli run
 
 # Wait for data-plane to be healthy, then bring the app up.
 bootstrap: network volumes

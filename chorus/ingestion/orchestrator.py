@@ -14,9 +14,9 @@ disabled GLiNER service skips the step without aborting ingestion. It
 is gated by `NER_ENABLED` so dev environments without a reachable
 service can opt out cleanly rather than logging per-post warnings.
 
-Connections currently logs `skipped: schema pending` instead of raising,
-so the orchestrator can run end-to-end against any upstream snapshot
-even though that stage is stubbed.
+Connections projects social-graph edges (`:FOLLOWS`, `:FRIENDS_WITH`)
+between `:Author` nodes via `connections.write_batch`, batched with
+UNWIND; see ADR 0007.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from loguru import logger
 from neo4j import Driver
 
 from chorus.ingestion import comments as comments_stage
-from chorus.ingestion import connections as connections_stage  # noqa: F401
+from chorus.ingestion import connections as connections_stage
 from chorus.ingestion import extraction as extraction_stage
 from chorus.ingestion import messages as messages_stage
 from chorus.ingestion import postings as postings_stage
@@ -36,6 +36,8 @@ from chorus.ingestion import profiles as profiles_stage
 from chorus.ingestion.adapter import UpstreamAdapter
 from chorus.ingestion.raw_store import RawStore
 from chorus.utils.env_cfg import RetentionConfig, load_ner_client_env
+
+_CONNECTIONS_BATCH_SIZE = 500
 
 
 def run_once(
@@ -54,10 +56,10 @@ def run_once(
     re-fetching. After each post-like row lands in the graph, the
     extraction stage runs NER over its text and writes ``:MENTIONS``
     edges — unless ``NER_ENABLED=false``, in which case ``"mentions"``
-    appears in ``skipped``. The connections stage is similarly stubbed:
-    it logs and records itself in ``skipped`` rather than raising, so
-    the orchestrator can complete end-to-end against any upstream
-    snapshot.
+    appears in ``skipped``. The connections stage projects social-graph
+    edges in batches; ``counts["connections"]`` reports edges written
+    (not rows ingested), since a single row can produce zero, one, two,
+    or three edges depending on its Friend/Follower/Following flags.
 
     Args:
         adapter: Upstream adapter to pull rows from.
@@ -70,10 +72,11 @@ def run_once(
     Returns:
         A dict with two keys:
 
-        - ``"counts"``: per-stage row counts written to the graph
-          (``{"postings": int, "comments": int, ..., "mentions": int}``).
+        - ``"counts"``: per-stage counts (rows for postings/comments/
+          messages/profiles, ``:MENTIONS`` edges for mentions, social-
+          graph edges for connections).
         - ``"skipped"``: list of stage names that were skipped (e.g.
-          ``["connections"]`` or ``["mentions", "connections"]``).
+          ``["mentions"]`` when NER is disabled).
     """
     counts: dict[str, int] = {}
     skipped: list[str] = []
@@ -166,19 +169,21 @@ def run_once(
         profiles_stage.write(driver, profile_dto)
         counts["profiles"] += 1
 
-    try:
-        connection_rows = list(adapter.fetch_connections(since))
-        raw.write_batch("connections", connection_rows)
-    except NotImplementedError as exc:
-        logger.info("connections stage skipped: {}", exc)
-        skipped.append("connections")
-        counts["connections"] = 0
-    else:
-        logger.warning(
-            "connections rows present but ingest writer is stubbed — {} rows stored in raw_store, not in graph",
-            len(connection_rows),
-        )
-        skipped.append("connections")
-        counts["connections"] = 0
+    connection_rows = list(adapter.fetch_connections(since))
+    raw.write_batch("connections", connection_rows)
+    counts["connections"] = 0
+    connection_batch: list[connections_stage.ConnectionDTO] = []
+    for row in connection_rows:
+        connection_dto = connections_stage.from_row(row)
+        if connection_dto is None:
+            continue
+        connection_batch.append(connection_dto)
+        if len(connection_batch) >= _CONNECTIONS_BATCH_SIZE:
+            result = connections_stage.write_batch(driver, connection_batch)
+            counts["connections"] += result["follows"] + result["friends_with"]
+            connection_batch.clear()
+    if connection_batch:
+        result = connections_stage.write_batch(driver, connection_batch)
+        counts["connections"] += result["follows"] + result["friends_with"]
 
     return {"counts": counts, "skipped": skipped}

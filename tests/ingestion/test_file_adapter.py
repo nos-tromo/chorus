@@ -15,8 +15,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     """Write ``rows`` to ``path`` using the keys of the first row as headers."""
@@ -235,12 +233,31 @@ def test_missing_file_yields_empty_iterator(tmp_path: Path) -> None:
     assert list(adapter.fetch_profiles(None)) == []
 
 
-def test_fetch_connections_still_raises(tmp_path: Path) -> None:
-    """Connections is blocked on the upstream schema (ADR 0002)."""
+def test_fetch_connections_reads_csv(tmp_path: Path) -> None:
+    """``connections.csv`` is read row-by-row with the upstream column names verbatim (ADR 0007)."""
     from chorus.ingestion.upstream import FileUpstreamAdapter
 
-    with pytest.raises(NotImplementedError, match="ADR 0002"):
-        list(FileUpstreamAdapter(tmp_path).fetch_connections(None))
+    _write_csv(
+        tmp_path / "connections.csv",
+        [
+            {
+                "Network Object ID": "row-1",
+                "Network Object ID selected conn. User": "target-1",
+                "Vanity Name": "alice",
+                "Vanity Name selected conn. User": "afdimbundestag",
+                "Friend": "No",
+                "Follower": "Yes",
+                "Following": "No",
+                "Crawled at": "2026-05-26T02:31:43+00:00",
+                "Network": "Instagram",
+            }
+        ],
+    )
+
+    rows = list(FileUpstreamAdapter(tmp_path).fetch_connections(None))
+    assert len(rows) == 1
+    assert rows[0]["Network Object ID"] == "row-1"
+    assert rows[0]["Follower"] == "Yes"
 
 
 def test_profile_row_keys_match_profile_dto_expectations(tmp_path: Path) -> None:

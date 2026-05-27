@@ -17,17 +17,8 @@ class FakeAdapter:
     end-to-end without a real upstream source.
     """
 
-    def __init__(self, *, connections_raises: bool = True) -> None:
-        """Configure the fake.
-
-        Args:
-            connections_raises: When ``True`` (the default), the
-                connections fetcher raises ``NotImplementedError`` to
-                exercise the orchestrator's skip path. ``False`` yields
-                an empty iterator so the "rows present but stubbed"
-                branch is covered instead.
-        """
-        self._connections_raises = connections_raises
+    def __init__(self) -> None:
+        """Configure the fake. No options needed in the v1 contract."""
 
     def fetch_postings(self, since: Any) -> Iterable[dict[str, Any]]:
         """Yield one canned posting row.
@@ -117,18 +108,31 @@ class FakeAdapter:
         }
 
     def fetch_connections(self, since: Any) -> Iterable[dict[str, Any]]:
-        """Return an empty iterator or raise, per the constructor toggle.
+        """Yield one canned connection row.
+
+        The row places the canned posting author (``a-1``) as a
+        follower of a new target user (``a-2``), exercising the
+        :FOLLOWS edge writer plus the thin :Author upsert for the
+        previously-unknown target.
 
         Args:
             since: Ignored; documented for parity with the real adapter.
 
-        Returns:
-            An empty iterator when ``connections_raises`` is ``False``.
-
-        Raises:
-            NotImplementedError: When ``connections_raises`` is ``True``
-                (the default), to exercise the orchestrator's skip path.
+        Yields:
+            A single row populated with the upstream column names the
+            connections DTO maps from.
         """
-        if self._connections_raises:
-            raise NotImplementedError("schema pending")
-        return iter(())
+        yield {
+            "Network Object ID": "a-1",
+            "Network Object ID selected conn. User": "a-2",
+            "Vanity Name": "alice",
+            "Name": "Alice Anderson",
+            "Vanity Name selected conn. User": "bob",
+            "Friend": "No",
+            "Follower": "Yes",
+            "Following": "No",
+            "Crawled at": "2026-05-26T02:31:43+00:00",
+            "Network": "linkedin",
+            "Profile Type": "user",
+            "Url": "https://example.test/alice",
+        }

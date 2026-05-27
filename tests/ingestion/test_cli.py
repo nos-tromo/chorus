@@ -45,8 +45,7 @@ def test_run_invokes_orchestrator_and_prints_counts(
     assert "comments: 1" in out
     assert "messages: 1" in out
     assert "profiles: 1" in out
-    assert "connections: 0" in out
-    assert "connections" in out  # skipped list mention
+    assert "connections: 1" in out
 
 
 def test_run_parses_since_and_passes_to_orchestrator(

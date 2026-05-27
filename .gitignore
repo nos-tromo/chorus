@@ -28,3 +28,6 @@ wheelhouse/
 
 # OS files
 .DS_Store
+
+# Personal Claude Code settings (project-local hooks, permissions, etc.)
+.claude/

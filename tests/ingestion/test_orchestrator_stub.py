@@ -12,13 +12,14 @@ from tests.ingestion._fakes import FakeAdapter
 
 
 def test_orchestrator_writes_all_stages(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every artifact + profile stage writes its row to the graph.
+    """Every artifact + profile + connections stage writes its row to the graph.
 
     Runs the orchestrator against a fake adapter that yields one row
     per stage and asserts the resulting graph contains the expected
-    node counts, the ``[:ON]`` edge from comment to posting, and the
+    node counts, the ``[:ON]`` edge from comment to posting, the
     profile enrichment landed on the author created by the postings
-    stage. NER is disabled (no GLiNER service available in the test
+    stage, and the ``:FOLLOWS`` edge emitted by the connections stage.
+    NER is disabled (no GLiNER service available in the test
     environment), so ``"mentions"`` ends up in ``skipped`` with a
     zero count and the assertions stay focused on the structural
     stages.
@@ -43,10 +44,10 @@ def test_orchestrator_writes_all_stages(migrated_driver: Driver, monkeypatch: py
         "comments": 1,
         "messages": 1,
         "profiles": 1,
-        "connections": 0,
+        "connections": 1,
         "mentions": 0,
     }
-    assert set(result["skipped"]) == {"mentions", "connections"}
+    assert set(result["skipped"]) == {"mentions"}
 
     with migrated_driver.session() as s:
         assert s.run("MATCH (p:Post) RETURN count(p) AS c").single()["c"] == 3  # type: ignore[index]
@@ -58,6 +59,11 @@ def test_orchestrator_writes_all_stages(migrated_driver: Driver, monkeypatch: py
         author = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]  # type: ignore[index]
         assert author["display_name"] == "Alice Anderson"
         assert author["bio"] == "Berlin-based analyst"
+        # the connections stage projected the row's Follower=Yes flag
+        follows = s.run(
+            "MATCH (u:Author {id: 'a-1'})-[:FOLLOWS]->(t:Author {id: 'a-2'}) RETURN count(*) AS c"
+        ).single()["c"]  # type: ignore[index]
+        assert follows == 1
 
 
 def test_orchestrator_writes_mentions_when_ner_enabled(
@@ -164,14 +170,13 @@ def test_comment_with_unresolvable_parent_is_skipped(migrated_driver: Driver, mo
         assert s.run("MATCH (c:Comment) RETURN count(c) AS c").single()["c"] == 0  # type: ignore[index]
 
 
-def test_connections_stage_skipped(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Connections stage records itself as skipped without crashing.
+def test_connections_stage_drops_no_signal_rows(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rows with no Friend/Follower/Following flag set produce no edges.
 
-    The fake adapter raises ``NotImplementedError`` from the
-    connections fetcher; the orchestrator must catch this, log it,
-    and add ``"connections"`` to the ``skipped`` list rather than
-    propagating the exception. NER is disabled to keep the test off
-    the network.
+    The orchestrator delegates filtering to :func:`connections.from_row`,
+    which returns ``None`` for rows that carry no edge signal. The
+    stage completes without writing edges and is not added to
+    ``skipped``.
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
@@ -183,14 +188,26 @@ def test_connections_stage_skipped(migrated_driver: Driver, monkeypatch: pytest.
     from chorus.ingestion.raw_store import RawStore
     from chorus.utils.env_cfg import load_path_env, load_retention_env
 
+    class _NoFlagsAdapter(FakeAdapter):
+        """FakeAdapter variant whose connection row carries no flag."""
+
+        def fetch_connections(self, since: Any) -> Iterable[dict[str, Any]]:
+            yield {
+                "Network Object ID": "a-1",
+                "Network Object ID selected conn. User": "a-2",
+                "Friend": "No",
+                "Follower": "No",
+                "Following": "No",
+                "Crawled at": "2026-05-26T02:31:43+00:00",
+            }
+
     raw = RawStore(load_path_env().raw_store)
     raw.init_schema()
 
-    result = run_once(
-        FakeAdapter(connections_raises=True),
-        migrated_driver,
-        raw,
-        load_retention_env(),
-    )
-    assert "connections" in result["skipped"]
+    result = run_once(_NoFlagsAdapter(), migrated_driver, raw, load_retention_env())
+
     assert result["counts"]["connections"] == 0
+    assert "connections" not in result["skipped"]
+    with migrated_driver.session() as s:
+        assert s.run("MATCH ()-[r:FOLLOWS]->() RETURN count(r) AS c").single()["c"] == 0  # type: ignore[index]
+        assert s.run("MATCH ()-[r:FRIENDS_WITH]->() RETURN count(r) AS c").single()["c"] == 0  # type: ignore[index]

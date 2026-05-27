@@ -24,8 +24,6 @@ Not yet landed (tracked in `docs/decisions/` / open tickets):
 - Resolution stage — `MENTIONS → Alias` provenance is written by the
   extraction step; `Alias → Entity` clustering / LLM tie-break still
   pending
-- Connections (follower / friendship) ingestion — schema pending; see
-  ADR 0002
 - Docker + compose + Makefile
 - Tests, ADRs, CI
 - Real OIDC wiring (`principal.py` is the seam)
@@ -389,41 +387,71 @@ they are **not** mapped to the graph; the raw store keeps the full row.
 `Target Profile` and `Profile Owner` have unclear semantics and are
 deferred (raw store only). See ADR 0006.
 
-### `connections` — social graph (schema pending)
+### `connections` — social graph
 
-The upstream emits a node-edge-node table for follower/following and
-friendship relationships between authors — one relationship per row.
-The vendor groups this and the `profiles` table above under a single
-"connections" label, but only this table is the social graph; the two
-are ingested as separate modules (see ADR 0006). Column names are not
-yet pinned down — fill in when available. Expected mapping:
+```
+Account Linking, Name, Vanity Name, Groups, Postings, Co Author of Postings,
+Quoted in Postings, Chat Messages, Media Items, Comments, Friends,
+All Connected Users, Tags, Connections, Vanity Name selected conn. User,
+Network Object ID selected conn. User, Posting Conn., Comment Conn.,
+Reaction Conn., React. Like, React. Love, React. Haha, React. Wow, React. Sad,
+React. Angry, ChatMessage Conn., Media Conn., Friend, Follower, Following,
+Network Object ID, Crawled at, Profile Type, Url, Network, Target-Profile?,
+Hometown, Current City, Date of Birth, Place of Work/Education, Bio,
+Additional Details
+```
 
-- Follower/following rows → `(:Author)-[:FOLLOWS]->(:Author)` edges,
-  preserving direction.
-- Friendship rows → `(:Author)-[:FRIENDS_WITH]->(:Author)` edges, with
-  canonical direction picked at ingestion (see Design notes). If the
-  upstream emits friendships as two rows per pair (A→B and B→A), dedupe
-  at ingestion.
+Each row describes one connected user with respect to a constant
+target (the "selected conn. User" columns). A single `connections.csv`
+file may carry rows for many targets concatenated; each row stands on
+its own. The vendor groups this and the `profiles` table above under
+a single "connections" label, but only this table is the social
+graph; the two are ingested as separate modules (see ADR 0006).
 
-Decisions to make when the schema arrives:
+**Edge dispatch** (see ADR 0007):
 
-- **Edge properties.** At minimum a `crawled_at` timestamp. Ideally a
-  `created_at` if the upstream knows when the relationship started.
-- **Snapshot vs. delta semantics.** Does each crawl re-emit existing
-  relationships (snapshot) or only changes (delta)? With snapshots, chorus
-  can detect removals by diffing crawl runs; with deltas lacking explicit
-  removal events, chorus cannot distinguish "still active" from "no
-  longer reported." This shapes retention and any "active network at
-  time T" query.
-- **Unknown authors.** Connections will reference authors who don't
-  appear in the post/comment/message tables. Create thin `(:Author)`
-  nodes for them — multi-hop traversal queries depend on the graph being
-  structurally complete, not just populated where there's content.
-- **Self-loops.** Filter `A → A` rows at ingestion.
-- **Volume and indexing.** Connections may dwarf the artifact tables in
-  row count for organizations with rich social graphs. Ingestion must be
-  batched, and `Author.id` must be indexed before bulk load — Cypher
-  `MERGE` on millions of edges without an index degrades catastrophically.
+- `Follower=Yes` → `(row_user)-[:FOLLOWS]->(target)`.
+- `Following=Yes` → `(target)-[:FOLLOWS]->(row_user)`.
+- `Friend=Yes` → `(a)-[:FRIENDS_WITH]->(b)` where `a.id < b.id`
+  lexicographically — canonical direction picked at the DTO so
+  re-emission from either orientation dedupes by MERGE.
+
+Flags coexist on a single row: mutual follow → both `Follower=Yes`
+and `Following=Yes`, producing two `:FOLLOWS` edges. A row with all
+three flags `No` carries no signal and is dropped at `from_row`
+(self-loops on `Network Object ID` likewise).
+
+**Edge properties.** Only `crawled_at` in v1. The per-pair engagement
+columns (`Posting Conn.`, `React. Like`/`Love`/`Haha`/`Wow`/`Sad`/
+`Angry`, `Comment Conn.`, `ChatMessage Conn.`, `Media Conn.`) are
+preserved verbatim in the raw store but **not** projected to the
+graph — they are derivable from postings/comments/reactions once those
+land. Adding them as edge properties later is a non-breaking
+migration.
+
+**Owner identity columns** (`Name`, `Vanity Name`, `Bio`, `Hometown`,
+…) duplicate `profiles.csv` and are written with `ON CREATE SET` only
+— profiles remains authoritative per ADR 0006. The denormalized
+aggregate columns on the row user (`Postings`, `Comments`, `Friends`,
+`Connections` counts, …) are not mapped — they are derivable from
+the graph.
+
+**Re-crawl semantics.** Snapshot-additive: edges MERGE idempotently,
+`crawled_at` updates to the latest encounter via `SET`. Removed
+relationships are not detected; this is a known limitation. See
+ADR 0007.
+
+**Volume and indexing.** Connections may dwarf the artifact tables in
+row count for organizations with rich social graphs. The writer
+batches via `UNWIND` in chunks of 500 DTOs; `Author.id` is uniquely
+constrained (migration 001) and `:FOLLOWS` / `:FRIENDS_WITH` are
+indexed on `crawled_at` (migration 002), so the bulk load is
+index-backed from the first row.
+
+**Unknown authors.** Connections rows commonly reference authors who
+never appear in the post/comment/message tables (a follower who
+doesn't post). The writer MERGEs thin `:Author` nodes for them so
+multi-hop traversal queries find structurally complete paths.
 
 ### Field semantics worth pinning down
 
@@ -548,7 +576,7 @@ chorus/                      # top-level repo
       upstream.py            # concrete adapter
       postings.py / comments.py / messages.py     # per-table DTOs + write functions
       profiles.py            # author-profile enrichment → :Author (ADR 0006)
-      connections.py         # stub: node-edge-node edge table, schema pending (ADR 0002)
+      connections.py         # node-edge-node edge table: :FOLLOWS / :FRIENDS_WITH (ADR 0007)
       orchestrator.py        # stage runner; inline NER per post (NER_ENABLED gates)
       extraction.py          # ner_client.extract_entities → :MENTIONS with provenance
       resolution.py          # alias / embed-cluster / LLM tiebreak
