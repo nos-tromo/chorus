@@ -5,12 +5,13 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help network build bundle up stop down migrate bootstrap pre-commit test
+.PHONY: help network build bundle up up-dev stop down migrate bootstrap pre-commit test
 
 CHORUS_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 export CHORUS_VERSION
 
-COMPOSE := docker compose -f docker/compose.yaml -f docker/compose.override.yaml
+COMPOSE     := docker compose --env-file .env -f docker/compose.yaml
+COMPOSE_DEV := docker compose --env-file .env -f docker/compose.yaml -f docker/compose.override.yaml
 
 help:
 	@echo "chorus — GraphRAG app (FastAPI backend + Streamlit frontend)."
@@ -18,7 +19,8 @@ help:
 	@echo "  make network    create the shared inference-net + data-net"
 	@echo "  make build      build backend + frontend images"
 	@echo "  make bundle     produce airgap artifacts (images tarball + wheelhouse)"
-	@echo "  make up         start backend + frontend"
+	@echo "  make up         start backend + frontend (production shape, no host ports)"
+	@echo "  make up-dev     like 'up', but publishes backend + frontend ports on the host"
 	@echo "  make stop       stop containers (keep them)"
 	@echo "  make down       stop + remove containers (never touches data-plane)"
 	@echo "  make migrate    apply pending Neo4j migrations"
@@ -40,9 +42,15 @@ bundle:
 	./scripts/build_wheelhouse.sh
 	./scripts/bundle_images.sh
 
-# Start backend + frontend (assumes data-plane reachable on inference-net).
+# Start backend + frontend in production shape (no host ports).
+# Assumes data-plane is reachable on inference-net.
 up:
 	$(COMPOSE) up -d
+
+# Like 'up' but layers compose.override.yaml on top to publish the
+# backend (8000) and frontend (Streamlit) ports on the host.
+up-dev:
+	$(COMPOSE_DEV) up -d
 
 # Stop containers without removing them.
 stop:

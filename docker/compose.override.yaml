@@ -3,8 +3,8 @@
 ### Production fronts both services with Nginx and relies on the internal
 ### `expose` ports in compose.yaml, so this file is intentionally *not*
 ### loaded by direct `docker compose -f docker/compose.yaml` invocations.
-### The chorus Makefile passes both files explicitly so `make up` works
-### in dev; production deploy runbooks should not.
+### `make up-dev` layers both files so the dev shape is reachable on
+### localhost; `make up` runs compose.yaml alone (production shape).
 
 services:
   backend:
