@@ -15,7 +15,6 @@ import streamlit as st
 
 from chorus.ui.client import ChorusClient
 
-
 st.set_page_config(page_title="chorus", layout="wide")
 
 
@@ -47,7 +46,7 @@ with col_h:
     st.subheader("backend health")
     try:
         st.json(client.health())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         st.error(f"unreachable: {exc}")
 
 with col_t:
@@ -55,7 +54,7 @@ with col_t:
     try:
         tools = client.list_tools()
         st.write([t["name"] for t in tools])
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         st.error(f"unreachable: {exc}")
 
 st.info("Pick a tool from the sidebar (left) to explore the graph.")

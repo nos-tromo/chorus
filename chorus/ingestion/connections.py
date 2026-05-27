@@ -29,19 +29,20 @@ Open questions to resolve before implementing (see ADR 0002):
   rows per pair.
 - Self-loop filtering at ingestion.
 
-The Neo4j schema (migrations 001–002) already provisions the
+The Neo4j schema (migrations 001-002) already provisions the
 `:Author(id)` unique constraint and `:FOLLOWS / :FRIENDS_WITH` edge
 indexes so the eventual bulk load is index-backed from day one.
 """
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from neo4j import Driver
 
 
-def write_follows(driver: Driver, rows: Iterable[dict]) -> int:
+def write_follows(driver: Driver, rows: Iterable[dict[str, Any]]) -> int:
     """Stub for follower/following edge ingestion.
 
     Raises so callers fail loudly until the upstream connections schema
@@ -59,13 +60,10 @@ def write_follows(driver: Driver, rows: Iterable[dict]) -> int:
     Raises:
         NotImplementedError: Always. See ADR 0002.
     """
-    raise NotImplementedError(
-        "Connections ingestion blocked on upstream schema — see ADR 0002 "
-        "for the open questions."
-    )
+    raise NotImplementedError("Connections ingestion blocked on upstream schema — see ADR 0002 for the open questions.")
 
 
-def write_friendships(driver: Driver, rows: Iterable[dict]) -> int:
+def write_friendships(driver: Driver, rows: Iterable[dict[str, Any]]) -> int:
     """Stub for friendship-edge ingestion.
 
     Raises so callers fail loudly until the upstream connections schema
@@ -85,7 +83,4 @@ def write_friendships(driver: Driver, rows: Iterable[dict]) -> int:
     Raises:
         NotImplementedError: Always. See ADR 0002.
     """
-    raise NotImplementedError(
-        "Connections ingestion blocked on upstream schema — see ADR 0002 "
-        "for the open questions."
-    )
+    raise NotImplementedError("Connections ingestion blocked on upstream schema — see ADR 0002 for the open questions.")

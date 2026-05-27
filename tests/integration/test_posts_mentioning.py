@@ -32,9 +32,7 @@ def test_posts_mentioning_empty(migrated_driver: Driver, in_memory_audit: Any) -
     assert out.audit_result_count() == 0
 
 
-def test_posts_mentioning_finds_seeded_post(
-    migrated_driver: Driver, in_memory_audit: Any
-) -> None:
+def test_posts_mentioning_finds_seeded_post(migrated_driver: Driver, in_memory_audit: Any) -> None:
     """A seeded post + MENTIONS edge is found and reported by entity id.
 
     Seeds a posting that mentions an entity named ``Berlin`` and

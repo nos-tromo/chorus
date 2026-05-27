@@ -24,9 +24,7 @@ def _make_fake_response(content: str) -> Any:
         An object with the minimal ``.choices[0].message.content``
         attribute chain :mod:`chorus.inference.provider` reads.
     """
-    return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
-    )
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
 
 def test_chat_returns_assistant_content(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,9 +52,7 @@ def test_embed_returns_one_vector_per_input(monkeypatch: pytest.MonkeyPatch) -> 
     """
     from chorus.inference import provider
 
-    fake = SimpleNamespace(
-        data=[SimpleNamespace(embedding=[0.1, 0.2, 0.3]) for _ in range(3)]
-    )
+    fake = SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2, 0.3]) for _ in range(3)])
     monkeypatch.setattr(provider._client().embeddings, "create", lambda **kw: fake)
     out = provider.embed(["a", "b", "c"])
     assert len(out) == 3

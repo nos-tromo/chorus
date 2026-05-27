@@ -152,11 +152,11 @@ def test_since_filter_overincludes_when_timestamp_unparseable(tmp_path: Path) ->
 
 
 def test_utf8_bom_does_not_pollute_first_column_name(tmp_path: Path) -> None:
-    """A leading UTF-8 BOM is stripped so the first header is clean.
+    r"""A leading UTF-8 BOM is stripped so the first header is clean.
 
-    Excel-style CSV exports frequently prepend ``\\ufeff`` to the file.
+    Excel-style CSV exports frequently prepend ``\ufeff`` to the file.
     With plain ``utf-8`` decoding that codepoint ends up glued to the
-    first header (e.g. ``"\\ufeffUUID"``), and every downstream lookup
+    first header (e.g. ``"\ufeffUUID"``), and every downstream lookup
     of ``row["UUID"]`` raises KeyError. ``utf-8-sig`` strips it.
     """
     path = tmp_path / "postings.csv"

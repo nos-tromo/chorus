@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import Any
+
 import pytest
 from neo4j import Driver
 
 from tests.ingestion._fakes import FakeAdapter
 
 
-def test_orchestrator_writes_all_stages(
-    migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_orchestrator_writes_all_stages(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
     """Every artifact + profile stage writes its row to the graph.
 
     Runs the orchestrator against a fake adapter that yields one row
@@ -52,12 +53,7 @@ def test_orchestrator_writes_all_stages(
         assert s.run("MATCH (p:Posting) RETURN count(p) AS c").single()["c"] == 1  # type: ignore[index]
         assert s.run("MATCH (c:Comment) RETURN count(c) AS c").single()["c"] == 1  # type: ignore[index]
         assert s.run("MATCH (m:Message) RETURN count(m) AS c").single()["c"] == 1  # type: ignore[index]
-        assert (
-            s.run("MATCH (:Comment)-[:ON]->(:Posting) RETURN count(*) AS c").single()[
-                "c"
-            ]
-            == 1
-        )  # type: ignore[index]
+        assert s.run("MATCH (:Comment)-[:ON]->(:Posting) RETURN count(*) AS c").single()["c"] == 1  # type: ignore[index]
         # the profiles stage enriched the author the posting created
         author = s.run("MATCH (a:Author {id: 'a-1'}) RETURN a").single()["a"]  # type: ignore[index]
         assert author["display_name"] == "Alice Anderson"
@@ -92,9 +88,7 @@ def test_orchestrator_writes_mentions_when_ner_enabled(
     monkeypatch.setattr(
         ner_client,
         "extract_entities",
-        lambda text, **kw: [
-            EntitySpan(text="Berlin", label="loc", start=0, end=6, confidence=0.9)
-        ],
+        lambda text, **kw: [EntitySpan(text="Berlin", label="loc", start=0, end=6, confidence=0.9)],
     )
 
     raw = RawStore(load_path_env().raw_store)
@@ -120,9 +114,7 @@ def test_orchestrator_writes_mentions_when_ner_enabled(
         assert provenance == ["gliner-test-v9"]
 
 
-def test_comment_with_unresolvable_parent_is_skipped(
-    migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_comment_with_unresolvable_parent_is_skipped(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
     """A comment whose ``Posting ID`` is not in this batch is logged and skipped.
 
     The upstream emits the parent posting reference as ``Posting ID``
@@ -137,9 +129,6 @@ def test_comment_with_unresolvable_parent_is_skipped(
         monkeypatch: pytest monkeypatch fixture.
     """
     monkeypatch.setenv("NER_ENABLED", "false")
-
-    from collections.abc import Iterable
-    from typing import Any
 
     from chorus.ingestion.orchestrator import run_once
     from chorus.ingestion.raw_store import RawStore
@@ -175,9 +164,7 @@ def test_comment_with_unresolvable_parent_is_skipped(
         assert s.run("MATCH (c:Comment) RETURN count(c) AS c").single()["c"] == 0  # type: ignore[index]
 
 
-def test_connections_stage_skipped(
-    migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_connections_stage_skipped(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
     """Connections stage records itself as skipped without crashing.
 
     The fake adapter raises ``NotImplementedError`` from the

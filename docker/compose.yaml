@@ -9,12 +9,24 @@
 
 name: chorus
 
+##########################################################
+# Shared logging — the local driver rotates and compresses
+# per-container; tail with `docker compose logs -f <svc>`.
+##########################################################
+x-logging: &default-logging
+  driver: "local"
+  options:
+    max-size: "50m"
+    max-file: "5"
+    compress: "true"
+
 services:
   backend:
     image: chorus-backend:${CHORUS_VERSION:-latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
+    logging: *default-logging
     env_file:
       - path: ../.env
         required: false
@@ -50,6 +62,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
+    logging: *default-logging
     environment:
       CHORUS_API_URL: http://backend:8000
       CHORUS_UI_IDENTITY: dev

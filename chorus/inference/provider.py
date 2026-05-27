@@ -56,9 +56,7 @@ def _client() -> OpenAI:
     )
 
 
-def chat(
-    messages: list[dict[str, str]], *, model: str | None = None, **kwargs: Any
-) -> str:
+def chat(messages: list[dict[str, str]], *, model: str | None = None, **kwargs: Any) -> str:
     """Return the assistant message content for a single chat completion.
 
     Args:
@@ -140,9 +138,7 @@ def rerank(
     if top_n is not None:
         payload["top_n"] = top_n
     with httpx.Client(timeout=cfg.timeout_s) as h:
-        r = h.post(
-            url, json=payload, headers={"Authorization": f"Bearer {cfg.api_key}"}
-        )
+        r = h.post(url, json=payload, headers={"Authorization": f"Bearer {cfg.api_key}"})
     r.raise_for_status()
     data = r.json()
     results = data.get("results", [])

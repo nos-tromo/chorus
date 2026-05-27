@@ -49,9 +49,7 @@ def test_vector_indexes_present(migrated_driver: Driver) -> None:
         migrated_driver: Driver against a freshly-migrated database.
     """
     with migrated_driver.session() as s:
-        rows = s.run(
-            "SHOW INDEXES YIELD name, type WHERE type = 'VECTOR' RETURN name"
-        ).data()
+        rows = s.run("SHOW INDEXES YIELD name, type WHERE type = 'VECTOR' RETURN name").data()
     names = {r["name"] for r in rows}
     assert {"post_embedding", "entity_embedding"} <= names
 

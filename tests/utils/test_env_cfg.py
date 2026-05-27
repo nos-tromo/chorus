@@ -7,9 +7,7 @@ from pathlib import Path
 import pytest
 
 
-def test_load_ingestion_env_defaults_to_chorus_home_ingest(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_load_ingestion_env_defaults_to_chorus_home_ingest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """With no override, ``source_dir`` is ``<CHORUS_HOME>/ingest``.
 
     Pins the default drop point so a fresh install has a predictable
@@ -27,9 +25,7 @@ def test_load_ingestion_env_defaults_to_chorus_home_ingest(
     assert cfg.source_dir == tmp_path / "ingest"
 
 
-def test_load_ingestion_env_honors_explicit_override(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_load_ingestion_env_honors_explicit_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """``INGESTION_SOURCE_DIR`` wins over the chorus-home default."""
     explicit = tmp_path / "elsewhere"
     monkeypatch.setenv("CHORUS_HOME", str(tmp_path))
@@ -44,9 +40,7 @@ def test_load_ingestion_env_honors_explicit_override(
     assert cfg.source_dir == explicit
 
 
-def test_load_ingestion_env_expands_user(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_load_ingestion_env_expands_user(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A ``~``-prefixed override is expanded against ``$HOME``.
 
     Mirrors :func:`load_path_env`'s handling of ``CHORUS_HOME``.

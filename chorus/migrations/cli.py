@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from chorus.db.neo4j import close_driver, get_driver
-from chorus.migrations.runner import apply_all, applied_versions
+from chorus.migrations.runner import applied_versions, apply_all
 
 
 def main(argv: list[str] | None = None) -> int:

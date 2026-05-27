@@ -75,7 +75,6 @@ def run_once(
         - ``"skipped"``: list of stage names that were skipped (e.g.
           ``["connections"]`` or ``["mentions", "connections"]``).
     """
-
     counts: dict[str, int] = {}
     skipped: list[str] = []
     ner_cfg = load_ner_client_env()
@@ -96,9 +95,7 @@ def run_once(
         """
         if not ner_cfg.enabled or not text:
             return
-        spans = extraction_stage.extract_for_post(
-            text, post_uuid, ner_cfg.model_version
-        )
+        spans = extraction_stage.extract_for_post(text, post_uuid, ner_cfg.model_version)
         counts["mentions"] += extraction_stage.write_mentions(driver, post_uuid, spans)
 
     # The comments stage needs the parent posting's chorus UUID, but the
@@ -133,9 +130,7 @@ def run_once(
     counts["comments"] = 0
     for row in comment_rows:
         parent_pid = row.get("Posting ID")
-        parent_uuid = (
-            posting_id_to_uuid.get(str(parent_pid).strip()) if parent_pid else None
-        )
+        parent_uuid = posting_id_to_uuid.get(str(parent_pid).strip()) if parent_pid else None
         if not parent_uuid:
             logger.warning(
                 "comment {} skipped: parent posting (Posting ID={!r}) not in this batch",
@@ -148,9 +143,7 @@ def run_once(
         augmented["Parent Posting UUID"] = parent_uuid
         parent_cid = row.get("Parent Comment ID")
         if parent_cid:
-            augmented["Parent Comment UUID"] = comment_id_to_uuid.get(
-                str(parent_cid).strip()
-            )
+            augmented["Parent Comment UUID"] = comment_id_to_uuid.get(str(parent_cid).strip())
         comment_dto = comments_stage.from_row(augmented, retention)
         comments_stage.write(driver, comment_dto)
         counts["comments"] += 1
@@ -182,8 +175,7 @@ def run_once(
         counts["connections"] = 0
     else:
         logger.warning(
-            "connections rows present but ingest writer is stubbed — "
-            "{} rows stored in raw_store, not in graph",
+            "connections rows present but ingest writer is stubbed — {} rows stored in raw_store, not in graph",
             len(connection_rows),
         )
         skipped.append("connections")

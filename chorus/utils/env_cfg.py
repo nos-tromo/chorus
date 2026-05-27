@@ -324,14 +324,12 @@ class PathConfig:
 
     Attributes:
         chorus_home: Writable root directory (defaults to ``<repo>/var``).
-        logs: Path to the rotating operational log file.
         queries: Directory containing Cypher query templates.
         migrations: Directory containing ordered Cypher migration files.
         raw_store: Path to the raw-store SQLite database.
     """
 
     chorus_home: Path
-    logs: Path
     queries: Path
     migrations: Path
     raw_store: Path
@@ -353,20 +351,15 @@ def load_inference_env() -> InferenceConfig:
     """
     provider = (_env("INFERENCE_PROVIDER", "vllm") or "vllm").lower()
     if provider not in _PROVIDER_DEFAULTS:
-        raise RuntimeError(
-            f"Unknown INFERENCE_PROVIDER={provider!r}; "
-            f"expected one of {sorted(_PROVIDER_DEFAULTS)}"
-        )
+        raise RuntimeError(f"Unknown INFERENCE_PROVIDER={provider!r}; expected one of {sorted(_PROVIDER_DEFAULTS)}")
     defaults = _PROVIDER_DEFAULTS[provider]
     return InferenceConfig(
         provider=provider,
         api_base=_env("OPENAI_API_BASE", _PROVIDER_API_BASE[provider]) or "",
         api_key=_env("OPENAI_API_KEY", "EMPTY") or "EMPTY",
         TEXT_MODEL=_env("TEXT_MODEL", defaults["TEXT_MODEL"]) or defaults["TEXT_MODEL"],
-        embed_model=_env("EMBED_MODEL", defaults["embed_model"])
-        or defaults["embed_model"],
-        rerank_model=_env("RERANK_MODEL", defaults["rerank_model"])
-        or defaults["rerank_model"],
+        embed_model=_env("EMBED_MODEL", defaults["embed_model"]) or defaults["embed_model"],
+        rerank_model=_env("RERANK_MODEL", defaults["rerank_model"]) or defaults["rerank_model"],
         embed_dim=_env_int("EMBED_DIM", 1024),
         timeout_s=_env_float("INFERENCE_TIMEOUT_S", 60.0),
         max_retries=_env_int("INFERENCE_MAX_RETRIES", 2),
@@ -415,8 +408,7 @@ def load_ner_client_env(
         api_key=api_key,
         threshold=_env_float("NER_THRESHOLD", default_threshold),
         timeout=_env_float("NER_TIMEOUT", default_timeout),
-        model_version=_env("NER_MODEL_VERSION", default_model_version)
-        or default_model_version,
+        model_version=_env("NER_MODEL_VERSION", default_model_version) or default_model_version,
     )
 
 
@@ -511,23 +503,20 @@ def load_ingestion_env() -> IngestionConfig:
 def load_path_env() -> PathConfig:
     """Resolve filesystem paths used by the running app.
 
-    ``CHORUS_HOME`` controls the writable root; ``LOG_PATH`` and
-    ``RAW_STORE_PATH`` may override individual children. The ``queries``
-    and ``migrations`` paths are package-relative and never overridable.
+    ``CHORUS_HOME`` controls the writable root; ``RAW_STORE_PATH`` may
+    override its child. The ``queries`` and ``migrations`` paths are
+    package-relative and never overridable.
 
     Returns:
         A populated :class:`PathConfig` with every field as an absolute path.
     """
     home_raw = _env("CHORUS_HOME")
     home = Path(home_raw).expanduser() if home_raw else _REPO_ROOT / "var"
-    logs_raw = _env("LOG_PATH")
-    logs = Path(logs_raw) if logs_raw else home / "logs" / "chorus.log"
     raw_store_raw = _env("RAW_STORE_PATH")
     raw_store = Path(raw_store_raw) if raw_store_raw else home / "raw.sqlite"
     pkg_root = Path(__file__).resolve().parent.parent
     return PathConfig(
         chorus_home=home,
-        logs=logs,
         queries=pkg_root / "queries",
         migrations=pkg_root / "migrations",
         raw_store=raw_store,

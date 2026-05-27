@@ -93,9 +93,7 @@ def test_extract_entities_maps_gliner_response(
 
     from chorus.inference import ner_client
 
-    spans = ner_client.extract_entities(
-        "Alice works at Acme.", labels=["person", "org"]
-    )
+    spans = ner_client.extract_entities("Alice works at Acme.", labels=["person", "org"])
 
     assert len(spans) == 2
     assert spans[0].text == "Alice"

@@ -114,9 +114,7 @@ class FileUpstreamAdapter:
         Raises:
             NotImplementedError: Always; see ADR 0002.
         """
-        raise NotImplementedError(
-            "Connections ingestion is blocked on upstream schema — see ADR 0002."
-        )
+        raise NotImplementedError("Connections ingestion is blocked on upstream schema — see ADR 0002.")
 
     def _read(
         self,
@@ -158,9 +156,7 @@ class FileUpstreamAdapter:
             sample = f.read(8192)
             f.seek(0)
             try:
-                dialect: type[csv.Dialect] | csv.Dialect = csv.Sniffer().sniff(
-                    sample, delimiters=",;\t|"
-                )
+                dialect: type[csv.Dialect] | csv.Dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
             except csv.Error:
                 dialect = csv.excel
             reader = csv.DictReader(f, dialect=dialect)
@@ -170,10 +166,8 @@ class FileUpstreamAdapter:
                 # sort_keys=True) downstream — None vs str is unorderable
                 # — and the overflow isn't meaningful since we have no
                 # header to label it. Drop it at the boundary.
-                row.pop(None, None)  # type: ignore[call-overload]
-                if since is not None and not self._after_cutoff(
-                    row, since_column, since
-                ):
+                row.pop(None, None)
+                if since is not None and not self._after_cutoff(row, since_column, since):
                     continue
                 yield row
 

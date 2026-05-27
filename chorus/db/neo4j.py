@@ -6,13 +6,12 @@ not construct their own — use `get_driver()` and `session()`.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 from neo4j import Driver, GraphDatabase, Session
 
 from chorus.utils.env_cfg import load_neo4j_env
-
 
 _driver: Driver | None = None
 
