@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help network build bundle up up-dev stop down migrate bootstrap pre-commit test
+.PHONY: help network volumes build bundle up up-dev stop down migrate ingest bootstrap pre-commit test
 
 CHORUS_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 export CHORUS_VERSION
@@ -17,6 +17,7 @@ help:
 	@echo "chorus — GraphRAG app (FastAPI backend + Streamlit frontend)."
 	@echo
 	@echo "  make network    create the shared inference-net + data-net"
+	@echo "  make volumes    create the external chorus-state Docker volume"
 	@echo "  make build      build backend + frontend images"
 	@echo "  make bundle     produce airgap artifacts (images tarball + wheelhouse)"
 	@echo "  make up         start backend + frontend (production shape, no host ports)"
@@ -24,6 +25,7 @@ help:
 	@echo "  make stop       stop containers (keep them)"
 	@echo "  make down       stop + remove containers (never touches data-plane)"
 	@echo "  make migrate    apply pending Neo4j migrations"
+	@echo "  make ingest     run one ingestion pass from INGESTION_SOURCE_DIR"
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
 	@echo "  make pre-commit run pre-commit hooks (ruff + mypy)"
 	@echo "  make test       run pytest"
@@ -32,6 +34,13 @@ help:
 network:
 	docker network create inference-net >/dev/null 2>&1 || true
 	docker network create data-net >/dev/null 2>&1 || true
+
+# Create the external Docker volumes (one-time per host; idempotent).
+# chorus-state holds audit log, raw store, and operational logs under
+# CHORUS_HOME inside the container — survives `compose down -v`.
+volumes:
+	docker volume create chorus-state >/dev/null
+	@echo "Ensured Docker volume exists: chorus-state"
 
 # Build backend + frontend images.
 build:
@@ -64,8 +73,12 @@ down:
 migrate:
 	$(COMPOSE) run --rm backend python -m chorus.migrations.cli apply
 
+# Run one ingestion pass against the configured INGESTION_SOURCE_DIR.
+ingest:
+	$(COMPOSE) run --rm backend python -m chorus.ingestion.cli run
+
 # Wait for data-plane to be healthy, then bring the app up.
-bootstrap: network
+bootstrap: network volumes
 	@./scripts/check_dataplane_health.sh
 	$(MAKE) up
 

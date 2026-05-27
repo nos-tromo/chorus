@@ -31,6 +31,7 @@ _CHORUS_ENV_MODULES = (
     "chorus.tools._audit",
     "chorus.tools.posts_mentioning",
     "chorus.tools",
+    "chorus.inference.ner_client",
     "chorus.ingestion.raw_store",
     "chorus.ingestion.postings",
     "chorus.ingestion.comments",
@@ -148,16 +149,18 @@ def migrated_driver(driver: Driver) -> Driver:
 
 @pytest.fixture
 def fake_inference(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub the inference provider so unit tests don't reach the proxy.
+    """Stub the inference provider and NER client for unit tests.
 
-    Replaces ``chat``, ``embed``, ``rerank``, and ``extract_entities``
-    on :mod:`chorus.inference.provider` with deterministic stand-ins.
+    Replaces ``chat``, ``embed``, and ``rerank`` on
+    :mod:`chorus.inference.provider` plus ``extract_entities`` on
+    :mod:`chorus.inference.ner_client` with deterministic stand-ins so
+    nothing reaches the LiteLLM proxy or the GLiNER service.
 
     Args:
         monkeypatch: pytest monkeypatch fixture (used to scope the
             patches to this test).
     """
-    from chorus.inference import provider
+    from chorus.inference import ner_client, provider
 
     monkeypatch.setattr(provider, "chat", lambda *a, **kw: "stub")
     monkeypatch.setattr(
@@ -171,7 +174,7 @@ def fake_inference(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda query, docs, **kw: [(i, 1.0 - i * 0.01) for i in range(len(docs))],
     )
     monkeypatch.setattr(
-        provider,
+        ner_client,
         "extract_entities",
         lambda text, **kw: [],
     )

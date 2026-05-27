@@ -1,44 +1,25 @@
-"""Single OpenAI-protocol client for all inference tasks.
+"""Single OpenAI-protocol client for chat / embed / rerank.
 
-All chat / embed / rerank / NER traffic terminates at vllm-service's LiteLLM
-proxy and is routed by the `model` field. No provider branching outside this
-module — switching from `vllm` to `ollama` or `openai` is an env change.
+All traffic from this module terminates at an OpenAI-compatible endpoint —
+in production, vllm-service's LiteLLM proxy, routed by the ``model`` field.
+Switching from ``vllm`` to ``ollama`` or ``openai`` is an env change.
 
-GLiNER NER is treated as a routed task: the proxy is expected to accept
-`{"model": NER_MODEL, "input": text, "extra_body": {"labels": [...]}}`-shaped
-requests on `/v1/chat/completions` (work-in-progress on vllm-service); the
-chorus side is unaware of that routing and just calls `extract_entities`.
+NER is **not** handled here: GLiNER on vllm-service speaks its own
+``/gliner`` HTTP shape rather than the OpenAI protocol, so it lives in
+:mod:`chorus.inference.ner_client`. Keeping it separate lets chorus mix
+providers — e.g. Ollama for chat/embed/rerank, vllm-service ner-only for
+NER — without coupling the two configs.
 """
 
 from __future__ import annotations
 
-import json
 from functools import lru_cache
 from typing import Any
 
 import httpx
 from openai import OpenAI
-from pydantic import BaseModel
 
 from chorus.utils.env_cfg import InferenceConfig, load_inference_env
-
-
-class EntitySpan(BaseModel):
-    """One entity span extracted from a text body.
-
-    Attributes:
-        text: Surface form as it appears in the source text.
-        label: Entity type assigned by the NER model (e.g. ``"PERSON"``).
-        start: UTF-16 code-unit start offset into the source text.
-        end: UTF-16 code-unit end offset into the source text (exclusive).
-        confidence: Model-reported confidence in the prediction, in [0, 1].
-    """
-
-    text: str
-    label: str
-    start: int
-    end: int
-    confidence: float
 
 
 @lru_cache(maxsize=1)
@@ -162,46 +143,3 @@ def rerank(
     data = r.json()
     results = data.get("results", [])
     return [(int(item["index"]), float(item["relevance_score"])) for item in results]
-
-
-def extract_entities(
-    text: str,
-    *,
-    labels: list[str] | None = None,
-    model: str | None = None,
-    threshold: float = 0.5,
-) -> list[EntitySpan]:
-    """Run NER over ``text`` via the LiteLLM proxy.
-
-    The proxy is responsible for translating this chat-shaped call into
-    GLiNER's ``{text, labels, threshold}`` request shape and returning
-    entity spans as JSON in the assistant message.
-
-    Args:
-        text: Source text to extract entities from.
-        labels: Optional whitelist of GLiNER labels to request. ``None``
-            uses the proxy's default label set.
-        model: Model id to route to. Defaults to ``cfg.ner_model``.
-        threshold: Minimum confidence for the proxy to return a span,
-            in [0, 1].
-
-    Returns:
-        Extracted entity spans in document order.
-
-    Raises:
-        json.JSONDecodeError: If the proxy returns a non-JSON body.
-        pydantic.ValidationError: If a returned span is missing required
-            fields.
-    """
-    cfg = _config()
-    extra_body: dict[str, Any] = {"gliner_threshold": threshold}
-    if labels is not None:
-        extra_body["gliner_labels"] = labels
-    resp = _client().chat.completions.create(
-        model=model or cfg.ner_model,
-        messages=[{"role": "user", "content": text}],
-        extra_body=extra_body,
-    )
-    content = resp.choices[0].message.content or "[]"
-    raw = json.loads(content)
-    return [EntitySpan(**span) for span in raw]
