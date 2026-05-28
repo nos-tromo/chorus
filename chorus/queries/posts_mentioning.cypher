@@ -9,13 +9,15 @@ MATCH (p:Post)-[:MENTIONS]->(mention)
 OPTIONAL MATCH (mention:Alias)-[:RESOLVED_TO]->(e:Entity)
 WITH p, mention, e, labels(mention) AS mention_labels, trim($entity) AS entity_query
 WHERE (
-    "Entity" IN mention_labels
-    AND toLower(coalesce(mention.canonical_name, "")) = toLower(entity_query)
-) OR (
-    "Alias" IN mention_labels
-    AND (
-        toLower(coalesce(mention.surface_form, "")) = toLower(entity_query)
-        OR toLower(coalesce(e.canonical_name, "")) = toLower(entity_query)
+    (
+        "Entity" IN mention_labels
+        AND toLower(coalesce(mention.canonical_name, "")) = toLower(entity_query)
+    ) OR (
+        "Alias" IN mention_labels
+        AND (
+            toLower(coalesce(mention.surface_form, "")) = toLower(entity_query)
+            OR toLower(coalesce(e.canonical_name, "")) = toLower(entity_query)
+        )
     )
 )
   AND ($from IS NULL OR p.timestamp >= datetime($from))

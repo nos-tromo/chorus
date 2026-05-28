@@ -114,6 +114,54 @@ def test_posts_mentioning_finds_unresolved_alias(migrated_driver: Driver, in_mem
     assert out.audit_entities() == []
 
 
+def test_posts_mentioning_time_window_excludes_entity_branch_match(
+    migrated_driver: Driver, in_memory_audit: Any
+) -> None:
+    """Entity-branch hits outside the [from, to) window must be excluded.
+
+    Regression test: an earlier revision of the Cypher mixed ``AND``
+    and ``OR`` without grouping the OR branches, so the time-window
+    predicates only applied to the Alias branch. Posts matched via
+    the Entity branch were returned regardless of ``from_``/``to``.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+    """
+    from chorus.tools.posts_mentioning import (
+        PostsMentioningIn,
+        posts_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (e:Entity {id: 'ent-old'})
+              ON CREATE SET e.canonical_name = 'Berlin'
+            MERGE (p:Post:Posting {uuid: 'p-old'})
+              ON CREATE SET p.text = 'old entity-branch mention',
+                            p.timestamp = datetime('2026-01-01T10:00:00+00:00')
+            MERGE (p)-[:MENTIONS]->(e)
+            """
+        )
+
+    out = posts_mentioning(
+        migrated_driver,
+        PostsMentioningIn.model_validate(
+            {
+                "entity": "berlin",
+                "from": "2026-06-01T00:00:00+00:00",
+                "to": "2026-07-01T00:00:00+00:00",
+                "limit": 10,
+            }
+        ),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+
+    assert out.hits == []
+
+
 def test_posts_mentioning_finds_resolved_alias_by_canonical_name(migrated_driver: Driver, in_memory_audit: Any) -> None:
     """A canonical-name query resolves through Alias -> Entity when present.
 
