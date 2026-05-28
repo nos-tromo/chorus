@@ -114,9 +114,7 @@ def test_posts_mentioning_finds_unresolved_alias(migrated_driver: Driver, in_mem
     assert out.audit_entities() == []
 
 
-def test_posts_mentioning_finds_resolved_alias_by_canonical_name(
-    migrated_driver: Driver, in_memory_audit: Any
-) -> None:
+def test_posts_mentioning_finds_resolved_alias_by_canonical_name(migrated_driver: Driver, in_memory_audit: Any) -> None:
     """A canonical-name query resolves through Alias -> Entity when present.
 
     Seeds the graph shape expected after alias resolution lands and
