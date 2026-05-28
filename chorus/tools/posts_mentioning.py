@@ -25,7 +25,8 @@ class PostsMentioningIn(BaseModel):
     documented tool surface even though ``from`` is a Python keyword.
 
     Attributes:
-        entity: Canonical entity name or id to filter posts by.
+        entity: Entity canonical name or unresolved alias surface form
+            to filter posts by. Matching is case-insensitive.
         from_: Inclusive lower bound on the post timestamp. ``None``
             means no lower bound.
         to: Inclusive upper bound on the post timestamp. ``None``
@@ -50,14 +51,19 @@ class PostsMentioningHit(BaseModel):
         ts: Post timestamp (content creation time).
         labels: Multi-label set on the post node (``["Post", "Posting"]``,
             ``["Post", "Comment"]``, ``["Post", "Message"]``).
-        entity_id: Canonical id of the entity this post mentioned.
+        entity_id: Canonical id of the matched entity when the mention
+            has already been resolved, otherwise ``None`` for alias-only
+            hits.
+        matched_name: Canonical entity name or alias surface form that
+            matched the query.
     """
 
     uuid: str
     text: str
     ts: datetime
     labels: list[str]
-    entity_id: str
+    entity_id: str | None
+    matched_name: str
 
 
 class PostsMentioningOut(BaseModel):
@@ -70,14 +76,15 @@ class PostsMentioningOut(BaseModel):
     hits: list[PostsMentioningHit]
 
     def audit_entities(self) -> list[str]:
-        """Return distinct entity ids touched by this result set.
+        """Return distinct resolved entity ids touched by this result set.
 
         Returns:
-            Entity ids in first-seen order, deduped.
+            Entity ids in first-seen order, deduped. Unresolved alias
+            hits are omitted because they do not yet have canonical ids.
         """
         seen: list[str] = []
         for h in self.hits:
-            if h.entity_id not in seen:
+            if h.entity_id and h.entity_id not in seen:
                 seen.append(h.entity_id)
         return seen
 
@@ -136,6 +143,7 @@ def posts_mentioning(
                 ts=row["ts"].to_native() if hasattr(row["ts"], "to_native") else row["ts"],
                 labels=list(row["labels"]),
                 entity_id=row["entity_id"],
+                matched_name=row["matched_name"],
             )
             for row in result
         ]
