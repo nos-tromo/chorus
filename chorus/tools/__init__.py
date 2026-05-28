@@ -3,6 +3,7 @@
 # Self-register tools by importing their modules.
 from chorus.tools import (
     author_activity_summary,  # noqa: F401
+    authors_connected_by_topic,  # noqa: F401
     posts_mentioning,  # noqa: F401
     topic_co_occurrence,  # noqa: F401
 )

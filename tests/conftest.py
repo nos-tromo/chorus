@@ -32,6 +32,7 @@ _CHORUS_ENV_MODULES = (
     "chorus.tools.posts_mentioning",
     "chorus.tools.author_activity_summary",
     "chorus.tools.topic_co_occurrence",
+    "chorus.tools.authors_connected_by_topic",
     "chorus.tools",
     "chorus.inference.ner_client",
     "chorus.ingestion.raw_store",
