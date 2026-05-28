@@ -30,6 +30,7 @@ _CHORUS_ENV_MODULES = (
     "chorus.tools._template_loader",
     "chorus.tools._audit",
     "chorus.tools.posts_mentioning",
+    "chorus.tools.author_activity_summary",
     "chorus.tools",
     "chorus.inference.ner_client",
     "chorus.ingestion.raw_store",
