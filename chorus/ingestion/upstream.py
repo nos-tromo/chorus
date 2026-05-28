@@ -1,8 +1,8 @@
 """Concrete upstream adapter that reads from local CSV dumps.
 
-The vendor delivers each table as a CSV file dropped onto the host;
-chorus reads them from a configured source directory. This is the
-airgap-compatible counterpart to a future network adapter.
+The vendor delivers each table as one or more CSV files dropped onto
+the host; chorus reads them from a configured source directory. This
+is the airgap-compatible counterpart to a future network adapter.
 
 Rows are yielded as ``dict[str, str]`` keyed by the *exact* upstream
 column names (e.g. ``"UUID"``, ``"Text Content"``, ``"Author ID"``,
@@ -10,14 +10,17 @@ column names (e.g. ``"UUID"``, ``"Text Content"``, ``"Author ID"``,
 modules consume those keys unchanged; this adapter performs no
 renaming or type coercion.
 
-The ``since`` filter reads ``"Crawled at"`` for postings, comments,
-and profiles, and ``"Timestamp"`` for messages (the messages table
-has no ``Crawled at`` column). When the cell is missing or
-unparseable the row is *kept* rather than dropped — silent loss is
-worse than over-inclusion.
+Each table kind accepts the legacy single-file basename
+(``postings.csv``, ``comments.csv``, etc.) and segmented exports whose
+basenames end in ``_<table>.csv`` (for example,
+``2026-05_connections.csv``). All matching files for a table kind are
+read in deterministic name order.
 
-Connections ingestion reads ``connections.csv`` with the same dialect
-sniffing and since filter as the other tables (see ADR 0007).
+The ``since`` filter reads ``"Crawled at"`` for postings, comments,
+profiles, and connections, and ``"Timestamp"`` for messages (the
+messages table has no ``Crawled at`` column). When the cell is missing
+or unparseable the row is *kept* rather than dropped — silent loss is
+worse than over-inclusion.
 """
 
 from __future__ import annotations
@@ -34,9 +37,9 @@ from loguru import logger
 class FileUpstreamAdapter:
     """File-backed implementation of :class:`UpstreamAdapter`.
 
-    Reads one CSV per table from ``source_dir``:
-    ``postings.csv``, ``comments.csv``, ``messages.csv``,
-    ``profiles.csv``, ``connections.csv``.
+    Reads one or more CSVs per table kind from ``source_dir`` using the
+    legacy basename (for example ``connections.csv``) and segmented
+    ``*_<table>.csv`` exports.
 
     Attributes:
         source_dir: Directory containing the per-table CSV dumps.
@@ -54,7 +57,7 @@ class FileUpstreamAdapter:
         self.source_dir = source_dir
 
     def fetch_postings(self, since: datetime | None) -> Iterable[dict[str, Any]]:
-        """Yield posting rows from ``postings.csv``.
+        """Yield posting rows from all matching postings table files.
 
         Args:
             since: Restrict to rows whose ``Crawled at`` is after this
@@ -63,10 +66,10 @@ class FileUpstreamAdapter:
         Returns:
             Iterable of raw upstream posting rows, keys verbatim.
         """
-        return self._read("postings.csv", since=since, since_column="Crawled at")
+        return self._read_table("postings", since=since, since_column="Crawled at")
 
     def fetch_comments(self, since: datetime | None) -> Iterable[dict[str, Any]]:
-        """Yield comment rows from ``comments.csv``.
+        """Yield comment rows from all matching comments table files.
 
         Args:
             since: Restrict to rows whose ``Crawled at`` is after this
@@ -75,10 +78,10 @@ class FileUpstreamAdapter:
         Returns:
             Iterable of raw upstream comment rows, keys verbatim.
         """
-        return self._read("comments.csv", since=since, since_column="Crawled at")
+        return self._read_table("comments", since=since, since_column="Crawled at")
 
     def fetch_messages(self, since: datetime | None) -> Iterable[dict[str, Any]]:
-        """Yield chat-message rows from ``messages.csv``.
+        """Yield chat-message rows from all matching messages table files.
 
         The messages table has no ``Crawled at`` column; the since
         filter reads ``Timestamp`` instead.
@@ -90,10 +93,10 @@ class FileUpstreamAdapter:
         Returns:
             Iterable of raw upstream message rows, keys verbatim.
         """
-        return self._read("messages.csv", since=since, since_column="Timestamp")
+        return self._read_table("messages", since=since, since_column="Timestamp")
 
     def fetch_profiles(self, since: datetime | None) -> Iterable[dict[str, Any]]:
-        """Yield author-profile rows from ``profiles.csv``.
+        """Yield author-profile rows from all matching profiles table files.
 
         Args:
             since: Restrict to rows whose ``Crawled at`` is after this
@@ -102,10 +105,10 @@ class FileUpstreamAdapter:
         Returns:
             Iterable of raw upstream profile rows, keys verbatim.
         """
-        return self._read("profiles.csv", since=since, since_column="Crawled at")
+        return self._read_table("profiles", since=since, since_column="Crawled at")
 
     def fetch_connections(self, since: datetime | None) -> Iterable[dict[str, Any]]:
-        """Yield social-graph edge rows from ``connections.csv``.
+        """Yield social-graph edge rows from all matching connections files.
 
         Args:
             since: Restrict to rows whose ``Crawled at`` is after this
@@ -114,19 +117,19 @@ class FileUpstreamAdapter:
         Returns:
             Iterable of raw upstream connection rows, keys verbatim.
         """
-        return self._read("connections.csv", since=since, since_column="Crawled at")
+        return self._read_table("connections", since=since, since_column="Crawled at")
 
-    def _read(
+    def _read_table(
         self,
-        filename: str,
+        table_name: str,
         *,
         since: datetime | None,
         since_column: str,
     ) -> Iterator[dict[str, Any]]:
-        """Read and filter a single table file.
+        """Read and filter all files that belong to one table kind.
 
         Args:
-            filename: CSV basename inside ``source_dir``.
+            table_name: Table kind suffix such as ``"connections"``.
             since: Cutoff for the since filter; ``None`` disables filtering.
             since_column: Column whose value is parsed as the row's
                 timestamp for the since filter.
@@ -137,10 +140,47 @@ class FileUpstreamAdapter:
             parsed and is not after ``since`` are skipped; rows
             without a parseable value are always yielded.
         """
-        path = self.source_dir / filename
-        if not path.exists():
-            logger.warning("ingestion source file missing: {}", path)
+        paths = self._table_paths(table_name)
+        if not paths:
+            logger.warning(
+                "ingestion source files missing for table {} under {}",
+                table_name,
+                self.source_dir,
+            )
             return
+        for path in paths:
+            yield from self._read_file(path, since=since, since_column=since_column)
+
+    def _table_paths(self, table_name: str) -> tuple[Path, ...]:
+        """Return all source files for one table kind in deterministic order.
+
+        Args:
+            table_name: Table kind suffix such as ``"connections"``.
+
+        Returns:
+            Tuple of paths to all files that match the legacy basename or
+            segmented export pattern for the given table kind, in deterministic name
+            order. If no files match, returns an empty tuple.
+        """
+        legacy_path = self.source_dir / f"{table_name}.csv"
+        paths: list[Path] = []
+        if legacy_path.is_file():
+            paths.append(legacy_path)
+
+        segmented_paths = sorted(
+            path for path in self.source_dir.glob(f"*_{table_name}.csv") if path.is_file() and path != legacy_path
+        )
+        paths.extend(segmented_paths)
+        return tuple(paths)
+
+    def _read_file(
+        self,
+        path: Path,
+        *,
+        since: datetime | None,
+        since_column: str,
+    ) -> Iterator[dict[str, Any]]:
+        """Read and filter one CSV file."""
         # ``utf-8-sig`` transparently strips a leading BOM if present —
         # Excel-style exports often include one, which would otherwise
         # contaminate the first header (e.g. ``"﻿UUID"``) and
