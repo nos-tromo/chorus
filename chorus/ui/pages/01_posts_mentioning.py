@@ -33,7 +33,7 @@ client = _client()
 
 st.title("posts mentioning an entity")
 
-entity = st.text_input("Entity canonical name", value="")
+entity = st.text_input("Entity name or alias", value="")
 limit = st.slider("Limit", min_value=1, max_value=200, value=50)
 
 col_from, col_to = st.columns(2)
