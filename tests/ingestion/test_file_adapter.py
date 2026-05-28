@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     """Write ``rows`` to ``path`` using the keys of the first row as headers."""
@@ -52,6 +54,80 @@ def test_fetch_postings_yields_dicts_with_upstream_column_names(tmp_path: Path) 
     assert rows[0]["Text Content"] == "hello berlin"
     assert rows[0]["Crawled at"] == "2026-05-02T10:00:00+00:00"
     assert rows[0]["Tags"] == "news, politics"
+
+
+@pytest.mark.parametrize(
+    ("method_name", "table_name", "row"),
+    [
+        (
+            "fetch_postings",
+            "postings",
+            {
+                "UUID": "p-1",
+                "Text Content": "hello berlin",
+                "Timestamp": "2026-05-01T10:00:00+00:00",
+                "Crawled at": "2026-05-02T10:00:00+00:00",
+                "Author ID": "a-1",
+                "Network": "linkedin",
+            },
+        ),
+        (
+            "fetch_comments",
+            "comments",
+            {
+                "UUID": "c-1",
+                "Text Content": "hello",
+                "Crawled at": "2026-05-02T10:00:00+00:00",
+                "Network": "linkedin",
+            },
+        ),
+        (
+            "fetch_messages",
+            "messages",
+            {
+                "UUID": "m-1",
+                "Text": "hello",
+                "Timestamp": "2026-05-02T10:00:00+00:00",
+                "Network": "signal",
+            },
+        ),
+        (
+            "fetch_profiles",
+            "profiles",
+            {
+                "ID": "a-1",
+                "UUID": "prof-1",
+                "Name": "Alice",
+                "Crawled at": "2026-05-02T10:00:00+00:00",
+                "Network": "linkedin",
+            },
+        ),
+        (
+            "fetch_connections",
+            "connections",
+            {
+                "Network Object ID": "row-1",
+                "Network Object ID selected conn. User": "target-1",
+                "Follower": "Yes",
+                "Crawled at": "2026-05-02T10:00:00+00:00",
+                "Network": "instagram",
+            },
+        ),
+    ],
+)
+def test_fetch_methods_accept_segmented_table_names(
+    tmp_path: Path,
+    method_name: str,
+    table_name: str,
+    row: dict[str, Any],
+) -> None:
+    """Each fetch method accepts segmented ``*_<table>.csv`` exports."""
+    _write_csv(tmp_path / f"segment_01_{table_name}.csv", [row])
+    from chorus.ingestion.upstream import FileUpstreamAdapter
+
+    adapter = FileUpstreamAdapter(tmp_path)
+    rows = list(getattr(adapter, method_name)(None))
+    assert rows == [row]
 
 
 def test_fetch_messages_uses_timestamp_column(tmp_path: Path) -> None:
@@ -258,6 +334,39 @@ def test_fetch_connections_reads_csv(tmp_path: Path) -> None:
     assert len(rows) == 1
     assert rows[0]["Network Object ID"] == "row-1"
     assert rows[0]["Follower"] == "Yes"
+
+
+def test_fetch_connections_reads_all_segmented_tables_in_name_order(tmp_path: Path) -> None:
+    """Multiple segmented connections tables are concatenated deterministically."""
+    from chorus.ingestion.upstream import FileUpstreamAdapter
+
+    _write_csv(
+        tmp_path / "segment_b_connections.csv",
+        [
+            {
+                "Network Object ID": "row-b",
+                "Network Object ID selected conn. User": "target-1",
+                "Follower": "Yes",
+                "Crawled at": "2026-05-03T10:00:00+00:00",
+                "Network": "instagram",
+            }
+        ],
+    )
+    _write_csv(
+        tmp_path / "segment_a_connections.csv",
+        [
+            {
+                "Network Object ID": "row-a",
+                "Network Object ID selected conn. User": "target-1",
+                "Follower": "No",
+                "Crawled at": "2026-05-02T10:00:00+00:00",
+                "Network": "instagram",
+            }
+        ],
+    )
+
+    rows = list(FileUpstreamAdapter(tmp_path).fetch_connections(None))
+    assert [row["Network Object ID"] for row in rows] == ["row-a", "row-b"]
 
 
 def test_profile_row_keys_match_profile_dto_expectations(tmp_path: Path) -> None:
