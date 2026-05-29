@@ -85,11 +85,6 @@ def from_row(row: dict[str, Any], retention: RetentionConfig) -> MessageDTO:
         chat_id=str(row["Chat ID"]),
         chat_group=row.get("Chat Group"),
         sender_id=str(row["Sender"]),
-        # The messages table carries only ``Sender`` (no separate numeric
-        # id or display-name column); it is the sole human-readable
-        # identity the table provides, so it populates display_name as
-        # well as the (string) id. See ADR 0008 for the identity gap this
-        # leaves — message senders cannot be keyed on a network id.
         sender_display_name=row.get("Sender"),
         # X/Twitter status URLs encode the handle; the messages table has
         # no handle column otherwise. See ADR 0008.
