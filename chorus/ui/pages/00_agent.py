@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+import httpx
 import streamlit as st
 
 from chorus.ui.client import ChorusClient
@@ -79,6 +80,12 @@ if prompt := st.chat_input("Ask a question about the network…"):
         try:
             with st.spinner("Thinking…"):
                 result = client.agent_query(api_messages)
+        except httpx.HTTPStatusError as exc:
+            try:
+                detail = exc.response.json().get("detail")
+            except Exception:
+                detail = None
+            st.error(detail or f"agent call failed: {exc}")
         except Exception as exc:
             st.error(f"agent call failed: {exc}")
         else:

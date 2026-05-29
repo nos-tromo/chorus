@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
-from chorus.agent.loop import run_agent
+from chorus.agent.loop import ToolCallingUnsupportedError, run_agent
 from chorus.api.auth.principal import resolve_principal
 from chorus.utils.env_cfg import load_agent_env
 
@@ -64,14 +64,21 @@ def agent_query(
     Returns:
         The agent result serialized as JSON: ``answer``, ``trace``, and
         ``truncated``.
+
+    Raises:
+        HTTPException: ``502`` when the chat model rejects the tool-calling
+            request (it likely does not support function-calling).
     """
     cfg = load_agent_env()
-    result = run_agent(
-        request.app.state.driver,
-        request.app.state.audit,
-        user=user,
-        messages=[m.model_dump() for m in body.messages],
-        max_iterations=cfg.max_tool_iterations,
-        model=cfg.model,
-    )
+    try:
+        result = run_agent(
+            request.app.state.driver,
+            request.app.state.audit,
+            user=user,
+            messages=[m.model_dump() for m in body.messages],
+            max_iterations=cfg.max_tool_iterations,
+            model=cfg.model,
+        )
+    except ToolCallingUnsupportedError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return result.model_dump(mode="json")

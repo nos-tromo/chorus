@@ -188,3 +188,25 @@ def test_invalid_arguments_records_error(
     assert result.answer == "Let me try differently."
     assert len(result.trace) == 1
     assert result.trace[0].error is not None
+
+
+def test_tool_calling_unsupported_is_raised(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A backend that rejects the tools request surfaces ToolCallingUnsupportedError."""
+    import openai
+
+    from chorus.agent.loop import ToolCallingUnsupportedError, run_agent
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError("this model does not support tools")
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+    with pytest.raises(ToolCallingUnsupportedError):
+        run_agent(
+            migrated_driver,
+            in_memory_audit,
+            user="u",
+            messages=[{"role": "user", "content": "hi"}],
+        )

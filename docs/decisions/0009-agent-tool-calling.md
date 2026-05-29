@@ -36,14 +36,25 @@ registry:
 - The loop is bounded by `AGENT_MAX_ITERATIONS` (default 6). Unknown tools,
   invalid arguments, and tool exceptions are fed back as error messages so the
   model can recover; hitting the cap returns a `truncated` result.
+- **Model compatibility is fail-loud, not papered over.** If the inference
+  backend rejects the tool-calling request (a capability/4xx error or a
+  tool/function error message), `run_agent` raises
+  `ToolCallingUnsupportedError`; `POST /agent/query` returns a `502` with a
+  clear message and logs a warning. chorus does **not** implement a
+  prompted-JSON fallback (see Alternatives). The structured query tools are
+  unaffected — only the natural-language agent is unavailable.
 
 ## Alternatives considered
 
 - **Prompted-JSON / ReAct (model-agnostic).** Instruct the model to emit a JSON
   tool request that we parse ourselves. Works on any chat model, including ones
-  without native function-calling, but is more brittle (parsing/repair) and
-  needs more prompt upkeep. Retained as the documented fallback if the deployed
-  model lacks tool-calling.
+  without native function-calling, but is more brittle (parsing/repair), needs
+  ongoing prompt upkeep, and yields lower-quality tool use than native
+  function-calling where both are available. **Considered but not implemented:**
+  chorus targets an operator-controlled inference stack where the chat model is
+  chosen to support tool-calling, so an incompatible model is a deployment fix,
+  not a runtime case worth a brittle second code path. Revisit only if chorus
+  must support uncontrolled or heterogeneous models it does not choose.
 - **Free-form Cypher generation by the agent.** Rejected: violates the CLAUDE.md
   anti-scope and the §76/auditability posture. High-value queries stay as named,
   version-controlled, parameterized tools; `escape_hatch_cypher` remains behind a
@@ -58,8 +69,13 @@ registry:
   named tools (no Cypher); a complete §76 trail (NL query → tool calls);
   provider-swappable via env; no new services or airgap surface.
 - Negative: depends on the served chat model supporting OpenAI function-calling
-  through LiteLLM; tool selection is non-deterministic; latency scales with the
-  number of tool-call rounds.
-- Reversal trigger: if the deployed model cannot do native tool-calling, swap the
-  single `provider.chat_message` call in `loop.py` for the prompted-JSON strategy
-  — same registry, same audit, same endpoint, a localized change.
+  through LiteLLM — an incompatible model disables the agent (surfaced as a
+  logged warning + a `502`; the structured tools still work). Tool selection is
+  non-deterministic; latency scales with the number of tool-call rounds. The
+  *silent* case — a model that ignores `tools` and answers anyway — cannot be
+  reliably distinguished from a legitimate no-tool answer, so it is not detected
+  (documented limitation).
+- Reversal trigger: if a deployment must support a non-tool-calling model,
+  prefer configuring a compatible model; only if that is impossible, implement
+  the prompted-JSON strategy then — a localized change to the single
+  `provider.chat_message` call in `loop.py` (same registry, audit, endpoint).

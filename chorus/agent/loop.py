@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
+import openai
+from loguru import logger
 from neo4j import Driver
 from pydantic import BaseModel, ValidationError
 
@@ -22,6 +24,15 @@ from chorus.agent.prompts import SYSTEM_PROMPT
 from chorus.audit.logger import AuditLogger
 from chorus.inference import provider
 from chorus.tools import TOOLS
+
+
+class ToolCallingUnsupportedError(RuntimeError):
+    """Raised when the inference backend rejects a tool-calling request.
+
+    Signals that the configured chat model likely does not support
+    function-calling. The agent fails loud rather than silently degrading;
+    chorus does not ship a prompted-JSON fallback (see ADR 0009).
+    """
 
 
 class TraceStep(BaseModel):
@@ -87,7 +98,17 @@ def run_agent(
     trace: list[TraceStep] = []
     with audit.time_tool(user, "agent_query", {"messages": messages}) as slot:
         for _ in range(max_iterations):
-            msg = provider.chat_message(convo, model=model, tools=tools, tool_choice="auto")
+            try:
+                msg = provider.chat_message(convo, model=model, tools=tools, tool_choice="auto")
+            except openai.OpenAIError as err:
+                if _is_tool_calling_unsupported(err):
+                    logger.warning("agent: chat model rejected tool-calling request: {}", err)
+                    raise ToolCallingUnsupportedError(
+                        "The configured chat model rejected the tool-calling request and may "
+                        "not support function-calling (see ADR 0009). "
+                        f"Underlying error: {err}"
+                    ) from err
+                raise
             tool_calls = list(msg.tool_calls or [])
             if not tool_calls:
                 slot.result_count = len(trace)
@@ -161,3 +182,19 @@ def _execute_tool_call(tc: Any, driver: Driver, audit: AuditLogger, *, user: str
 def _tool_message(tc: Any, content: dict[str, Any]) -> dict[str, Any]:
     """Build an OpenAI ``tool`` result message linked to a tool-call id."""
     return {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(content)}
+
+
+def _is_tool_calling_unsupported(err: Exception) -> bool:
+    """Heuristically decide whether ``err`` means the model can't do tool-calling.
+
+    Uses the HTTP status when present (a 400/404/422 on a tools request is a
+    capability/validation failure) and falls back to message keywords. Other
+    inference errors (timeouts, 5xx, connection) are not classified here and
+    propagate unchanged.
+    """
+    status = getattr(err, "status_code", None)
+    if status in (400, 404, 422):
+        return True
+    text = str(err).lower()
+    keywords = ("tool", "not support", "unsupported", "function call", "function_call", "enable_auto_tool")
+    return any(kw in text for kw in keywords)

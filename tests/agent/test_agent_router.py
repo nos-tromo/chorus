@@ -70,3 +70,31 @@ def test_agent_query_endpoint_returns_answer_and_trace(
     assert body["answer"] == "One post mentions Berlin."
     assert body["trace"][0]["tool"] == "posts_mentioning"
     assert body["truncated"] is False
+
+
+def test_unsupported_model_returns_502(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the model rejects tool-calling, /agent/query returns a clear 502."""
+    import openai
+
+    from chorus.api.routers import agent as agent_router
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError("tool calling is not supported by this model")
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+
+    app = FastAPI()
+    app.include_router(agent_router.router)
+    app.state.driver = migrated_driver
+    app.state.audit = in_memory_audit
+
+    resp = TestClient(app).post(
+        "/agent/query",
+        json={"messages": [{"role": "user", "content": "hi"}]},
+        headers={"X-Auth-User": "analyst"},
+    )
+    assert resp.status_code == 502
+    assert "tool" in resp.json()["detail"].lower()
