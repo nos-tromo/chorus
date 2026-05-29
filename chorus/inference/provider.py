@@ -18,6 +18,7 @@ from typing import Any
 
 import httpx
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessage
 
 from chorus.utils.env_cfg import InferenceConfig, load_inference_env
 
@@ -77,6 +78,50 @@ def chat(messages: list[dict[str, str]], *, model: str | None = None, **kwargs: 
     )
     content = resp.choices[0].message.content or ""
     return content
+
+
+def chat_message(
+    messages: list[dict[str, Any]],
+    *,
+    model: str | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: Any = None,
+    **kwargs: Any,
+) -> ChatCompletionMessage:
+    """Return the full assistant message for a single chat completion.
+
+    Unlike :func:`chat`, this returns the message object itself so callers
+    can inspect ``message.tool_calls`` for OpenAI-style tool calling. All
+    traffic still terminates at the configured OpenAI-compatible endpoint
+    (the LiteLLM proxy in production), so this stays airgap-safe.
+
+    Args:
+        messages: OpenAI-style messages list — role/content items plus, in
+            a tool-calling loop, assistant tool-call turns and ``tool``
+            result messages.
+        model: Model id to route to. Defaults to ``cfg.TEXT_MODEL``.
+        tools: OpenAI tool definitions to advertise. Omitted from the
+            request when ``None``.
+        tool_choice: OpenAI ``tool_choice`` directive (e.g. ``"auto"``).
+            Omitted from the request when ``None``.
+        **kwargs: Extra keyword arguments forwarded to
+            ``client.chat.completions.create``.
+
+    Returns:
+        The assistant :class:`ChatCompletionMessage`, which may carry
+        ``content`` and/or ``tool_calls``.
+    """
+    extra: dict[str, Any] = dict(kwargs)
+    if tools is not None:
+        extra["tools"] = tools
+    if tool_choice is not None:
+        extra["tool_choice"] = tool_choice
+    resp = _client().chat.completions.create(
+        model=model or _config().TEXT_MODEL,
+        messages=messages,  # type: ignore[arg-type]
+        **extra,
+    )
+    return resp.choices[0].message
 
 
 def embed(texts: list[str], *, model: str | None = None) -> list[list[float]]:

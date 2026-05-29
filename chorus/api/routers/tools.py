@@ -27,6 +27,7 @@ def list_tools() -> list[dict[str, Any]]:
     return [
         {
             "name": spec.name,
+            "description": spec.description,
             "input_schema": spec.input_model.model_json_schema(),
             "output_schema": spec.output_model.model_json_schema(),
         }
