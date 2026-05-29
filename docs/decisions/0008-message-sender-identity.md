@@ -129,25 +129,62 @@ messages export.
 ## Recommendation
 
 Phased, because the immediate correctness fix, the cheap enrichment,
-and the structural fix have very different costs and risks:
+and the structural fix have very different costs and risks. Steps 1–2
+have landed; this ADR stays `proposed` until the step-3 decision (the
+canonical key and the merge modeling) is signed off.
 
-1. **Now (landed with this ADR):** populate `display_name` from
+1. **Landed — `display_name` fix.** Populate `display_name` from
    `Sender`. Pure correctness; no identity change.
-2. **Short term — Option B's *extraction*, not its re-key:** during
-   ingestion, derive the network-scoped handle from the message URL
-   where the URL format is known, and set `:Author.handle` +
-   `platform`. Keep keying on the `Sender` name (no destructive
-   re-key). Cheap, improves the export immediately, and produces the
-   deterministic join key resolution will need. Handle parsing lives
-   behind the adapter / a pure-string normalizer (airgap-safe — no
-   network calls).
-3. **Medium term — Option C:** implement author identity resolution as
-   an extension of the resolution stage. This is the actual fix for the
-   identity split and for `author_id` semantics.
-4. **In parallel — Option D:** raise the missing stable sender id with
-   the upstream provider. If it ever arrives, identity collapses to the
-   network-id key and resolution keeps only its fuzzy, cross-platform
-   role.
+2. **Landed — handle extraction (Option B's *extraction*, not its
+   re-key).** `messages.from_row` derives the handle from the message
+   URL via a conservative host+path parser (`_handle_from_url`); the
+   `:Author` write records it. Identity fields (`display_name`,
+   `handle`) backfill `ON MATCH` so a re-ingest repairs nodes the
+   pre-fix code left null, without a wipe. Keying stays on the `Sender`
+   name — no destructive re-key. Verified on the real export: 510
+   message rows, 115 distinct senders, **100% now carry a handle, no
+   sender mapped to conflicting handles.** This is the deterministic
+   join key step 3 needs. Parsing is pure string work (airgap-safe);
+   non-X hosts return `None` rather than a guessed handle, and other
+   platforms are added by host as their URL grammars are confirmed
+   against real exports.
+3. **Pending decision — Option C: author identity resolution.** The
+   actual fix for the identity split and for `author_id` semantics;
+   concrete shape proposed below. Gated on the open questions and a
+   DSFA review (it links a person's chat activity to their profiled
+   identity).
+4. **In parallel — Option D: upstream ask.** Raise the missing stable
+   sender id with the provider. If it ever arrives, identity collapses
+   to the network-id key and resolution keeps only its fuzzy,
+   cross-platform role.
+
+### Proposed shape for step 3 (for the decision)
+
+A non-destructive, reversible pass in `chorus/ingestion/resolution.py`,
+mirroring the entity-resolution tiers:
+
+- **Match (deterministic tier):** for each name-keyed message-sender
+  `:Author`, find a posting/comment `:Author` whose
+  `(platform, vanity_name)` equals the message author's
+  `(platform, handle)`, compared case-insensitively (X handles are
+  case-insensitive; postings set `handle = Vanity Name`, messages now
+  set `handle` from the URL). Exact match — no embedding or LLM needed
+  for this tier.
+- **Link, don't merge (v1):** record
+  `(:Author)-[:SAME_AS]->(:Author)` from the name-keyed node to the
+  network-id node (the proposed canonical, consistent with profiles
+  joining on the numeric `ID`). Non-destructive and trivially
+  reversible — undoing a bad link deletes one edge; no `:Post` or edge
+  is rewired. Network/topic queries resolve through `SAME_AS` to the
+  canonical node.
+- **Ambiguity:** when a handle matches zero or many candidates, fall
+  back to the `normalize → cluster → llm_tiebreak` tiers already
+  stubbed in `resolution.py`, thresholds in `ResolutionConfig`. When
+  still unresolved, leave the node standalone — never guess.
+- **Physical merge is deferred.** Collapsing the two nodes into one
+  (APOC `mergeNodes` or a hand-written relationship rewire) is heavier
+  and harder to reverse; defer until `SAME_AS`-aware queries prove
+  insufficient.
 
 ## Consequences
 
@@ -161,9 +198,11 @@ and the structural fix have very different costs and risks:
   `author_id` reads as a display name. This limitation should be
   surfaced in any analytical output over message-derived authors, the
   way the quoting and expected-vs-collected caveats already are.
-- Negative: handle extraction is network-specific; it must stay behind
-  the adapter boundary (CLAUDE.md: only the adapter knows the upstream
-  schema) and remain pure string parsing.
+- Note: handle extraction is network-specific. It lives in the
+  per-table mapping (`messages.from_row` / `_handle_from_url`) — the
+  existing schema-aware layer — while the file adapter keeps yielding
+  rows verbatim, and it is pure string parsing (airgap-safe). New
+  platforms are added by host as their URL grammars are confirmed.
 - Compliance: unifying chat activity with a profiled person is exactly
   the kind of linkage the DSFA scopes. Author resolution (step 3) must
   be reviewed against `docs/compliance.md` before it links message
@@ -177,8 +216,13 @@ and the structural fix have very different costs and risks:
 
 ## Open questions
 
-- Is the URL handle reliably present and unique per network? (X: yes;
-  Telegram and others: to confirm against real exports.)
+The proposed shape for step 3 takes a position on the canonical key
+(numeric network id) and the modeling (`SAME_AS` pointer, link-not-merge);
+both stand as recommendations until accepted.
+
+- Is the URL handle reliably present and unique per network? (X: yes —
+  510/510 rows, 115/115 senders, no conflicts; Telegram and others: to
+  confirm against real exports.)
 - What is the single canonical author key once resolution exists — the
   numeric network id (as today, where present) with handle as the
   bridge, or `(platform, handle)`? Postings and profiles assume the
