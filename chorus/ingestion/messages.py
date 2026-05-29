@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 from neo4j import Driver
 from pydantic import BaseModel, Field
@@ -31,6 +32,8 @@ class MessageDTO(BaseModel):
         chat_group: Human-readable chat group name, if known.
         sender_id: Network sender id, joins to ``:Author.id``.
         sender_display_name: Human-readable sender name.
+        handle: Author handle derived from the message URL (X/Twitter),
+            or ``None`` when it cannot be derived. See ADR 0008.
         text: Body of the message.
         timestamp: Content creation time (drives retention).
         url: Original message URL.
@@ -48,6 +51,7 @@ class MessageDTO(BaseModel):
     chat_group: str | None = None
     sender_id: str
     sender_display_name: str | None = None
+    handle: str | None = None
     text: str
     timestamp: datetime
     url: str | None = None
@@ -81,7 +85,10 @@ def from_row(row: dict[str, Any], retention: RetentionConfig) -> MessageDTO:
         chat_id=str(row["Chat ID"]),
         chat_group=row.get("Chat Group"),
         sender_id=str(row["Sender"]),
-        sender_display_name=row.get("Sender Display Name"),
+        sender_display_name=row.get("Sender"),
+        # X/Twitter status URLs encode the handle; the messages table has
+        # no handle column otherwise. See ADR 0008.
+        handle=_handle_from_url(row.get("URL")),
         text=row.get("Text") or "",
         timestamp=ts,
         url=row.get("URL"),
@@ -110,7 +117,10 @@ def write(driver: Driver, dto: MessageDTO) -> None:
     """
     cypher = """
     MERGE (a:Author {id: $sender_id})
-      ON CREATE SET a.display_name = $sender_display_name, a.platform = $network
+      ON CREATE SET a.display_name = $sender_display_name, a.platform = $network,
+                    a.handle = $handle
+      ON MATCH SET a.display_name = coalesce(a.display_name, $sender_display_name),
+                   a.handle = coalesce(a.handle, $handle)
     MERGE (pl:Platform {name: $network})
     MERGE (g:Group {id: $chat_id})
       ON CREATE SET g.name = $chat_group, g.platform = $network
@@ -134,6 +144,59 @@ def write(driver: Driver, dto: MessageDTO) -> None:
     """
     with driver.session() as s:
         s.run(cypher, **dto.model_dump(mode="json"))
+
+
+# X/Twitter hosts whose status URLs encode the author handle as the first
+# path segment (``/<handle>/status/<id>``). Extend this set as other
+# platforms' URL grammars are confirmed against real exports (ADR 0008).
+_X_STATUS_HOSTS = frozenset(
+    {
+        "x.com",
+        "www.x.com",
+        "mobile.x.com",
+        "twitter.com",
+        "www.twitter.com",
+        "mobile.twitter.com",
+    }
+)
+# First path segments on those hosts that are routes, not handles.
+_X_RESERVED_SEGMENTS = frozenset({"i", "home", "search", "hashtag", "intent", "messages", "notifications"})
+
+
+def _handle_from_url(url: str | None) -> str | None:
+    """Derive the author handle latent in a chat-message URL.
+
+    The messages table has no handle column, but X/Twitter status URLs
+    encode it as the first path segment
+    (``https://x.com/<handle>/status/<id>``). Extraction is deliberately
+    conservative: it fires only on a recognized host with a
+    ``/<handle>/status/`` shape and rejects reserved route segments, so a
+    handle is never invented where the URL grammar is unknown. Other
+    platforms are supported by extending :data:`_X_STATUS_HOSTS` once
+    their URL shapes are confirmed. See ADR 0008.
+
+    Args:
+        url: The message URL, or ``None``.
+
+    Returns:
+        The handle string (case preserved), or ``None`` when it cannot
+        be derived confidently.
+    """
+    if not url:
+        return None
+    try:
+        parsed = urlparse(url.strip())
+    except ValueError:
+        return None
+    if (parsed.hostname or "").lower() not in _X_STATUS_HOSTS:
+        return None
+    segments = [seg for seg in parsed.path.split("/") if seg]
+    if len(segments) >= 2 and segments[1].lower() == "status":
+        handle = segments[0]
+        if handle.lower() in _X_RESERVED_SEGMENTS:
+            return None
+        return handle
+    return None
 
 
 def _coerce_dt(value: Any) -> datetime:

@@ -68,3 +68,30 @@ def test_messages_from_row_strips_whitespace_padded_timestamps() -> None:
     dto = from_row(row, RetentionConfig(default_days=30))
     assert dto.uuid == "m-1"
     assert dto.timestamp.year == 2026
+
+
+def test_messages_from_row_populates_display_name_from_sender() -> None:
+    """``display_name`` for a chat-message sender comes from ``Sender``.
+
+    The upstream messages table carries only a ``Sender`` column (real
+    header: ``UUID;Chat ID;Sender;Timestamp;Text;Tags;URL;Chat Group;
+    Answers Count;Reply To;Network``) — there is no separate
+    display-name column. ``Sender`` is the only human-readable identity
+    the table provides, so it must populate ``display_name``. Reading a
+    non-existent ``"Sender Display Name"`` column instead left every
+    message-sender ``:Author`` with a null ``display_name`` (regression
+    surfaced by an ``authors_connected_by_topic`` export, 2026-05-29;
+    see ADR 0008).
+    """
+    from chorus.ingestion.messages import from_row
+
+    row = {
+        "UUID": "m-1",
+        "Chat ID": "chat-1",
+        "Sender": "Gunnar Scherf",
+        "Text": "hi",
+        "Timestamp": "2026-02-13 15:58:07+00",
+        "Network": "X",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30))
+    assert dto.sender_display_name == "Gunnar Scherf"
