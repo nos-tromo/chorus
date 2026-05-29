@@ -27,6 +27,7 @@ _CHORUS_ENV_MODULES = (
     "chorus.api.auth.principal",
     "chorus.api.routers.health",
     "chorus.api.routers.tools",
+    "chorus.api.routers.agent",
     "chorus.tools._template_loader",
     "chorus.tools._audit",
     "chorus.tools.posts_mentioning",
