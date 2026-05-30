@@ -95,3 +95,70 @@ def test_llm_tiebreaker_picks_and_abstains(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(provider, "chat", lambda messages, **kw: "e-1 or maybe e-2")
     assert llm_tiebreaker("President Biden", candidates) is None
+
+
+def test_resolve_alias_mints_when_no_candidates(migrated_driver: Driver) -> None:
+    """With an empty entity set, an alias mints a typed entity (method=minted)."""
+    from chorus.ingestion.resolution import resolve_alias_to_entity
+    from chorus.utils.env_cfg import load_resolution_env
+
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: 'Solingen'})")
+    eid, method = resolve_alias_to_entity(
+        migrated_driver,
+        "Solingen",
+        _vec(0.3, 0.7),
+        load_resolution_env(),
+        entity_type="LOCATION",
+        embed_model="bge-m3",
+    )
+    assert method == "minted"
+    with migrated_driver.session() as s:
+        rec = s.run(
+            "MATCH (a:Alias {surface_form: 'Solingen'})-[r:RESOLVED_TO]->(e:Entity {id: $id}) "
+            "RETURN r.method AS m, e.type AS t",
+            id=eid,
+        ).single()
+    assert rec is not None
+    assert rec["m"] == "minted"
+    assert rec["t"] == "LOCATION"
+
+
+def test_resolve_alias_attaches_to_single_candidate(migrated_driver: Driver) -> None:
+    """An alias close to one same-type entity attaches (method=vector_single)."""
+    from chorus.ingestion.resolution import resolve_alias_to_entity
+    from chorus.utils.env_cfg import load_resolution_env
+
+    _seed_entity(migrated_driver, "e-berlin", "Berlin", "LOCATION", _vec(1.0))
+    _await_vector(migrated_driver, "e-berlin", _vec(0.99, 0.01))
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: 'Berlin '})")
+
+    eid, method = resolve_alias_to_entity(
+        migrated_driver,
+        "Berlin ",
+        _vec(0.99, 0.01),
+        load_resolution_env(),
+        entity_type="LOCATION",
+        embed_model="bge-m3",
+    )
+    assert eid == "e-berlin"
+    assert method == "vector_single"
+
+
+def test_resolve_alias_is_idempotent(migrated_driver: Driver) -> None:
+    """Re-resolving an already-resolved alias is a no-op returning method=skipped."""
+    from chorus.ingestion.resolution import resolve_alias_to_entity
+    from chorus.utils.env_cfg import load_resolution_env
+
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: 'Aachen'})")
+    cfg = load_resolution_env()
+    eid1, _ = resolve_alias_to_entity(
+        migrated_driver, "Aachen", _vec(0.2, 0.9), cfg, entity_type="LOCATION", embed_model="bge-m3"
+    )
+    eid2, method2 = resolve_alias_to_entity(
+        migrated_driver, "Aachen", _vec(0.2, 0.9), cfg, entity_type="LOCATION", embed_model="bge-m3"
+    )
+    assert eid2 == eid1
+    assert method2 == "skipped"

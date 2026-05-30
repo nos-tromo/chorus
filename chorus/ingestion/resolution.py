@@ -161,26 +161,89 @@ def resolve_alias_to_entity(
     surface: str,
     embedding: list[float],
     cfg: ResolutionConfig,
-) -> str:
-    """End-to-end resolution from surface form to entity id (stub).
+    *,
+    entity_type: str | None = None,
+    embed_model: str = "",
+) -> tuple[str, str]:
+    """End-to-end resolution from surface form to entity id.
 
     Runs the full pipeline:
-    :func:`normalize_surface` → :func:`lookup_alias` →
-    :func:`cluster_candidates` → :func:`llm_tiebreaker` → mint new
-    entity if nothing else returns a confident match.
+    :func:`lookup_alias` (cache) → :func:`cluster_candidates` →
+    :func:`llm_tiebreaker` → mint a new entity if nothing returns a
+    confident match — then writes the ``:RESOLVED_TO`` edge.
 
     Args:
         driver: Open Neo4j driver.
-        surface: Surface form to resolve.
+        surface: Surface form to resolve (its :Alias node must exist).
         embedding: Embedding vector for the surface form, used during
-            candidate clustering.
+            candidate clustering and stored on a minted entity.
         cfg: Resolution configuration.
+        entity_type: Alias label; restricts matching to the same type and
+            stamps a minted entity's ``type``.
+        embed_model: Embedding model id, recorded on the edge for provenance.
 
     Returns:
-        The entity id this surface form maps to (existing or newly
-        minted).
-
-    Raises:
-        NotImplementedError: Always; v1 resolution is pending.
+        ``(entity_id, method)`` — the entity this surface maps to and how it
+        was decided: ``skipped`` (already resolved), ``minted``,
+        ``vector_single``, ``vector_llm``, or ``vector_topk``.
     """
-    raise NotImplementedError("v1 resolution pending — see entity-resolution ticket")
+    existing = lookup_alias(driver, surface)
+    if existing is not None:
+        return existing, "skipped"
+
+    candidates = cluster_candidates(
+        driver, embedding, cfg.embed_cluster_threshold, k=cfg.vector_k, entity_type=entity_type
+    )
+    score: float | None
+    if not candidates:
+        entity_id = mint_entity(driver, surface, embedding, entity_type=entity_type)
+        method, score = "minted", None
+    elif len(candidates) == 1:
+        entity_id, method, score = candidates[0]["id"], "vector_single", candidates[0]["score"]
+    else:
+        chosen = llm_tiebreaker(surface, candidates) if cfg.llm_tiebreak_enabled else None
+        if chosen is not None:
+            entity_id, method = chosen, "vector_llm"
+            score = next((c["score"] for c in candidates if c["id"] == chosen), None)
+        else:
+            entity_id, method, score = candidates[0]["id"], "vector_topk", candidates[0]["score"]
+
+    _write_resolved_to(driver, surface, entity_id, method=method, score=score, embed_model=embed_model)
+    return entity_id, method
+
+
+def _write_resolved_to(
+    driver: Driver,
+    surface: str,
+    entity_id: str,
+    *,
+    method: str,
+    score: float | None,
+    embed_model: str,
+) -> None:
+    """MERGE the :RESOLVED_TO edge from an alias to an entity with provenance.
+
+    Args:
+        driver: Open Neo4j driver.
+        surface: Surface form of the (already-existing) :Alias node.
+        entity_id: Target :Entity id.
+        method: How the resolution was decided (recorded on the edge).
+        score: Vector similarity score, when applicable.
+        embed_model: Embedding model id used, for provenance.
+    """
+    cypher = """
+    MATCH (a:Alias {surface_form: $surface})
+    MATCH (e:Entity {id: $entity_id})
+    MERGE (a)-[r:RESOLVED_TO]->(e)
+    SET r.method = $method, r.score = $score,
+        r.embed_model = $embed_model, r.resolved_at = datetime()
+    """
+    with driver.session() as session:
+        session.run(
+            cypher,
+            surface=surface,
+            entity_id=entity_id,
+            method=method,
+            score=score,
+            embed_model=embed_model,
+        ).consume()
