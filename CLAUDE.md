@@ -25,8 +25,10 @@ pins dev to `3.12`. CI should run across the full range.
 
 Not yet landed (tracked in `docs/decisions/` / open tickets):
 - Resolution stage — `MENTIONS → Alias` provenance is written by the
-  extraction step; `Alias → Entity` clustering / LLM tie-break still
-  pending
+  extraction step; `Alias → Entity` clustering / LLM tie-break is
+  **spec'd + planned but not yet built** (branch `feat/entity-resolution`):
+  see `docs/superpowers/specs/2026-05-30-entity-resolution-design.md` and
+  `docs/superpowers/plans/2026-05-30-entity-resolution.md`
 - Docker + compose + Makefile
 - Tests, ADRs, CI
 - Real OIDC wiring (`principal.py` is the seam)
