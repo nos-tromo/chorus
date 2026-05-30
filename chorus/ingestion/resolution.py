@@ -128,21 +128,32 @@ def mint_entity(
 
 
 def llm_tiebreaker(surface: str, candidates: list[dict[str, Any]]) -> str | None:
-    """Pick the best entity among candidates via an LLM call (stub).
+    """Pick the candidate entity that matches ``surface`` via an LLM call.
 
     Args:
         surface: The unresolved surface form.
-        candidates: Candidate entities with at least ``id`` and
-            ``canonical_name`` keys.
+        candidates: Candidate entities with at least ``id``,
+            ``canonical_name``, and ``type`` keys.
 
     Returns:
-        The chosen entity id, or ``None`` to signal "no confident
-        match — mint a new entity."
-
-    Raises:
-        NotImplementedError: Always; v1 resolution is pending.
+        The chosen entity id, or ``None`` to signal "no confident match"
+        (the caller then falls back to the top-score candidate). The model
+        response must contain exactly one known candidate id; otherwise the
+        result is ``None``.
     """
-    raise NotImplementedError("v1 resolution pending — see entity-resolution ticket")
+    from chorus.inference import provider
+
+    lines = [f"{i + 1}. id={c['id']} name={c['canonical_name']!r} type={c['type']}" for i, c in enumerate(candidates)]
+    prompt = (
+        "You are resolving an entity reference to a canonical entity.\n"
+        f"Surface form: {surface!r}\n"
+        "Candidates:\n" + "\n".join(lines) + "\n\n"
+        "Reply with ONLY the id of the candidate that refers to the same "
+        "real-world entity as the surface form, or NONE if none of them do."
+    )
+    text = provider.chat([{"role": "user", "content": prompt}]).strip()
+    matched = [c["id"] for c in candidates if c["id"] in text]
+    return matched[0] if len(matched) == 1 else None
 
 
 def resolve_alias_to_entity(

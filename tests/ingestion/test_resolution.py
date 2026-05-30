@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 
+import pytest
 from neo4j import Driver
 
 EMBED_DIM = 1024
@@ -75,3 +76,22 @@ def test_mint_entity_creates_typed_entity(migrated_driver: Driver) -> None:
     assert rec["n"] == "Bratwurst"
     assert rec["t"] == "FOOD"
     assert rec["d"] is None
+
+
+def test_llm_tiebreaker_picks_and_abstains(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tie-breaker returns a chosen id, or None on abstain/ambiguous output."""
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import llm_tiebreaker
+
+    candidates = [
+        {"id": "e-1", "canonical_name": "Joe Biden", "type": "PERSON", "score": 0.9},
+        {"id": "e-2", "canonical_name": "Jill Biden", "type": "PERSON", "score": 0.88},
+    ]
+    monkeypatch.setattr(provider, "chat", lambda messages, **kw: "e-1")
+    assert llm_tiebreaker("President Biden", candidates) == "e-1"
+
+    monkeypatch.setattr(provider, "chat", lambda messages, **kw: "NONE")
+    assert llm_tiebreaker("President Biden", candidates) is None
+
+    monkeypatch.setattr(provider, "chat", lambda messages, **kw: "e-1 or maybe e-2")
+    assert llm_tiebreaker("President Biden", candidates) is None
