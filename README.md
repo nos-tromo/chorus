@@ -7,12 +7,34 @@ queries against it.
 
 ## What works today
 
-The foundation is up: the FastAPI app boots, applies Neo4j migrations
-on startup, exposes `/health`, and dispatches one reference tool
-(`posts_mentioning`) end-to-end with audit logging. Ingestion beyond
-the adapter skeleton, the data-plane compose project, and the
-retention sweeper are still to land — see *Current state* in
-`CLAUDE.md` for the punch list.
+The FastAPI app boots, applies Neo4j migrations on startup, and exposes
+`/health`. On top of that, the following is working and stable on `main`:
+
+- **Four graph retrieval tools** dispatched end-to-end with §76 BDSG
+  audit logging: `posts_mentioning`, `author_activity_summary`,
+  `topic_co_occurrence`, and `authors_connected_by_topic`. Each has a
+  Pydantic input/output schema and version-controlled Cypher under
+  `chorus/queries/`. The registry is served at `/tools`.
+- **A natural-language agent** at `POST /agent/query` (ADR 0009). It
+  selects and calls the registered tools via OpenAI tool-calling to
+  answer a free-text question — it never writes Cypher itself.
+- **An ingestion pipeline CLI** (`python -m chorus.ingestion.cli run`)
+  that pulls the upstream tables (postings, comments, messages,
+  profiles, connections), persists rows to the SQLite raw store, and
+  projects them into the graph. Entity extraction (GLiNER NER) runs
+  inline per post and writes `:MENTIONS` edges with provenance when
+  `NER_ENABLED` is set.
+- **A Streamlit UI** with one page per tool plus an agent page.
+- **Migrations** (constraints, indexes, vector indexes) applied in order
+  and idempotently, with a CLI (`apply` / `status`).
+- **App compose project + Makefile** for building and running the api
+  and ui services.
+
+Still on the roadmap — entity resolution (alias clustering / LLM
+tie-break), `semantic_search` / `network_around` / `escape_hatch_cypher`
+tools, the retention sweeper job, and real OIDC wiring — is tracked in
+`docs/` and `docs/decisions/`. See *Current state* in `CLAUDE.md` for
+the punch list.
 
 ## Prerequisites
 
@@ -22,10 +44,11 @@ retention sweeper are still to land — see *Current state* in
   `requirements.txt`.
 - **Docker** to run the app stack. The data-plane compose project
   (separate repo) owns Neo4j and must be up before starting chorus.
-- **(Optional) An inference endpoint.** The reference tool doesn't
-  exercise inference, so you can defer this. When you do need it,
-  point `OPENAI_API_BASE` at vllm-service's LiteLLM proxy (or any
-  OpenAI-compatible endpoint).
+- **(Optional) An inference endpoint.** The four graph tools don't
+  exercise inference, so you can defer this. The agent (`/agent/query`)
+  and inline NER during ingestion do need it: point `OPENAI_API_BASE` at
+  vllm-service's LiteLLM proxy (or any OpenAI-compatible endpoint), and
+  `NER_API_BASE` at a GLiNER service.
 
 ## Quick start
 
@@ -112,8 +135,9 @@ and that the container is up.
 curl -s http://localhost:8000/tools | jq
 ```
 
-Lists every registered tool with its Pydantic input/output schemas.
-Today that's `posts_mentioning`.
+Lists every registered tool with its Pydantic input/output schemas:
+`posts_mentioning`, `author_activity_summary`, `topic_co_occurrence`,
+and `authors_connected_by_topic`.
 
 ### Seed a posting and an entity
 
@@ -146,6 +170,45 @@ call writes one row to the audit log:
 sqlite3 var/audit.sqlite \
   "SELECT user, tool_name, result_count, status FROM audit_log;"
 ```
+
+The other three tools (`author_activity_summary`, `topic_co_occurrence`,
+`authors_connected_by_topic`) are invoked the same way — `POST
+/tools/<name>` with the body matching the schema from `/tools`.
+
+### Ask the agent
+
+The agent answers free-text questions by selecting and calling those
+tools. The server is stateless, so the client sends the visible
+conversation on each request. This path needs a reachable, OpenAI-compatible
+inference endpoint that supports tool-calling (`OPENAI_API_BASE` /
+`TEXT_MODEL`):
+
+```bash
+curl -s -X POST http://localhost:8000/agent/query \
+  -H 'Content-Type: application/json' \
+  -H 'X-Auth-User: dev' \
+  -d '{"messages": [{"role": "user", "content": "Which posts mention Berlin?"}]}' | jq
+```
+
+The response carries the agent's `answer`, a `trace` of the tool calls
+it made, and a `truncated` flag. The turn is logged as a parent
+`agent_query` audit row; each tool it calls writes its own row.
+
+## Ingesting data
+
+The ingestion pipeline reads CSV dumps of the upstream tables from
+`INGESTION_SOURCE_DIR`, writes them to the SQLite raw store, and projects
+them into the graph:
+
+```bash
+uv run python -m chorus.ingestion.cli run             # one full pass
+uv run python -m chorus.ingestion.cli run --since 2026-01-01T00:00:00
+```
+
+`--since` restricts the pull to rows newer than the cutoff. Entity
+extraction runs inline per post when `NER_ENABLED=true` and a GLiNER
+endpoint is configured (`NER_API_BASE`); leave it off in dev
+environments without one to avoid a connect-failure warning per post.
 
 ## Running the test suite
 
