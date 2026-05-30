@@ -68,8 +68,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="chorus", lifespan=lifespan)
 
 # Routers — imported here so the app object owns route registration order.
+from chorus.api.routers import agent as _agent_router  # noqa: E402
 from chorus.api.routers import health as _health_router  # noqa: E402
 from chorus.api.routers import tools as _tools_router  # noqa: E402
 
+app.include_router(_agent_router.router)
 app.include_router(_health_router.router)
 app.include_router(_tools_router.router)

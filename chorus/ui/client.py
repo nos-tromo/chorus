@@ -84,6 +84,23 @@ class ChorusClient:
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
+    def agent_query(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        """Run the natural-language agent over a conversation.
+
+        Args:
+            messages: Visible chat turns, each with ``role`` and
+                ``content``; the last should be the new user turn.
+
+        Returns:
+            The agent result as JSON: ``answer``, ``trace``, ``truncated``.
+
+        Raises:
+            httpx.HTTPStatusError: If the service returns a non-2xx status.
+        """
+        r = self._client.post("/agent/query", json={"messages": messages})
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
     def close(self) -> None:
         """Close the underlying HTTP connection pool."""
         self._client.close()

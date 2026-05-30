@@ -177,6 +177,21 @@ class InferenceConfig:
 
 
 @dataclass(frozen=True)
+class AgentConfig:
+    """Natural-language agent loop configuration.
+
+    Attributes:
+        max_tool_iterations: Maximum model-tool rounds per turn before the
+            loop gives up and returns a truncated result.
+        model: Chat model id override for the agent, or ``None`` to use the
+            inference provider's ``TEXT_MODEL``.
+    """
+
+    max_tool_iterations: int
+    model: str | None
+
+
+@dataclass(frozen=True)
 class NERClientConfig:
     """Configuration for the remote GLiNER NER service HTTP client.
 
@@ -363,6 +378,19 @@ def load_inference_env() -> InferenceConfig:
         embed_dim=_env_int("EMBED_DIM", 1024),
         timeout_s=_env_float("INFERENCE_TIMEOUT_S", 60.0),
         max_retries=_env_int("INFERENCE_MAX_RETRIES", 2),
+    )
+
+
+def load_agent_env() -> AgentConfig:
+    """Load natural-language agent configuration from the environment.
+
+    Returns:
+        A populated :class:`AgentConfig`. ``AGENT_MODEL`` is optional; when
+        unset the agent uses the inference provider's ``TEXT_MODEL``.
+    """
+    return AgentConfig(
+        max_tool_iterations=_env_int("AGENT_MAX_ITERATIONS", 6),
+        model=_env("AGENT_MODEL"),
     )
 
 

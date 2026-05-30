@@ -13,9 +13,12 @@ guitar effect. The latter is not load-bearing.
 ## Current state
 
 Foundation is up. The app boots, applies Neo4j migrations, serves
-`/health`, and dispatches one reference tool (`posts_mentioning`)
-end-to-end with audit logging. See *Repository conventions* below for
-the live layout.
+`/health`, dispatches four graph retrieval tools (`posts_mentioning`,
+`author_activity_summary`, `topic_co_occurrence`,
+`authors_connected_by_topic`) end-to-end with audit logging, and exposes
+a natural-language agent (`POST /agent/query`, ADR 0009) that selects and
+calls those tools via OpenAI tool-calling. See *Repository conventions*
+below for the live layout.
 
 Python: `pyproject.toml` accepts `>=3.11,<=3.13`; `.python-version`
 pins dev to `3.12`. CI should run across the full range.

@@ -94,15 +94,35 @@ class ToolSpec:
         input_model: Pydantic model the tool accepts as ``params``.
         output_model: Pydantic model the tool returns.
         run: The wrapped tool function itself.
+        description: Short human/LLM-facing summary, surfaced to the agent
+            as the OpenAI tool description. Defaults to the tool function's
+            first docstring line.
     """
 
     name: str
     input_model: type[BaseModel]
     output_model: type[BaseModel]
     run: Callable[..., BaseModel]
+    description: str
 
 
 TOOLS: dict[str, ToolSpec] = {}
+
+
+def _first_line(doc: str | None) -> str:
+    """Return the first non-empty, stripped line of ``doc`` (or ``""``).
+
+    Args:
+        doc: A docstring or ``None``.
+
+    Returns:
+        The first non-blank line with surrounding whitespace removed, or
+        an empty string when ``doc`` is ``None`` or blank.
+    """
+    for line in (doc or "").strip().splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
 
 
 def register_tool(
@@ -110,6 +130,7 @@ def register_tool(
     name: str,
     input_model: type[BaseModel],
     output_model: type[BaseModel],
+    description: str | None = None,
 ) -> Callable[[FnT], FnT]:
     """Decorator that registers a tool in the global :data:`TOOLS` registry.
 
@@ -121,6 +142,9 @@ def register_tool(
         name: Unique registry key. Raises if already taken.
         input_model: Pydantic model the tool accepts as ``params``.
         output_model: Pydantic model the tool returns.
+        description: Optional LLM-facing summary. When omitted, the tool
+            function's first docstring line is used (``@audited`` preserves
+            it via ``functools.wraps``).
 
     Returns:
         A decorator that registers the function and returns it unchanged.
@@ -140,7 +164,13 @@ def register_tool(
         """
         if name in TOOLS:
             raise RuntimeError(f"duplicate tool name: {name}")
-        TOOLS[name] = ToolSpec(name=name, input_model=input_model, output_model=output_model, run=fn)
+        TOOLS[name] = ToolSpec(
+            name=name,
+            input_model=input_model,
+            output_model=output_model,
+            run=fn,
+            description=description or _first_line(fn.__doc__),
+        )
         return fn
 
     return _register
