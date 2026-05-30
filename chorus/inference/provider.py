@@ -57,6 +57,19 @@ def _client() -> OpenAI:
     )
 
 
+def api_base() -> str:
+    """Return the configured OpenAI-compatible base URL.
+
+    Exposed for diagnostics (e.g. error messages) so callers can report
+    *where* a failed inference request was sent without reaching into the
+    private config cache.
+
+    Returns:
+        The base URL from the active :class:`InferenceConfig`.
+    """
+    return _config().api_base
+
+
 def chat(messages: list[dict[str, str]], *, model: str | None = None, **kwargs: Any) -> str:
     """Return the assistant message content for a single chat completion.
 

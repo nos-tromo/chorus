@@ -98,3 +98,31 @@ def test_unsupported_model_returns_502(
     )
     assert resp.status_code == 502
     assert "tool" in resp.json()["detail"].lower()
+
+
+def test_inference_unreachable_returns_502(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreachable/erroring inference backend returns a clear 502, not a raw 500."""
+    import openai
+
+    from chorus.api.routers import agent as agent_router
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError("connection error")
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+
+    app = FastAPI()
+    app.include_router(agent_router.router)
+    app.state.driver = migrated_driver
+    app.state.audit = in_memory_audit
+
+    resp = TestClient(app).post(
+        "/agent/query",
+        json={"messages": [{"role": "user", "content": "hi"}]},
+        headers={"X-Auth-User": "analyst"},
+    )
+    assert resp.status_code == 502
+    assert "inference" in resp.json()["detail"].lower()

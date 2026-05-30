@@ -210,3 +210,26 @@ def test_tool_calling_unsupported_is_raised(
             user="u",
             messages=[{"role": "user", "content": "hi"}],
         )
+
+
+def test_inference_error_raises_agent_inference_error(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A connection/other inference failure surfaces as AgentInferenceError, not tool-unsupported."""
+    import openai
+
+    from chorus.agent.loop import AgentInferenceError, ToolCallingUnsupportedError, run_agent
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError("connection error")
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+    with pytest.raises(AgentInferenceError) as excinfo:
+        run_agent(
+            migrated_driver,
+            in_memory_audit,
+            user="u",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    assert not isinstance(excinfo.value, ToolCallingUnsupportedError)

@@ -36,13 +36,16 @@ registry:
 - The loop is bounded by `AGENT_MAX_ITERATIONS` (default 6). Unknown tools,
   invalid arguments, and tool exceptions are fed back as error messages so the
   model can recover; hitting the cap returns a `truncated` result.
-- **Model compatibility is fail-loud, not papered over.** If the inference
-  backend rejects the tool-calling request (a capability/4xx error or a
-  tool/function error message), `run_agent` raises
-  `ToolCallingUnsupportedError`; `POST /agent/query` returns a `502` with a
-  clear message and logs a warning. chorus does **not** implement a
-  prompted-JSON fallback (see Alternatives). The structured query tools are
-  unaffected — only the natural-language agent is unavailable.
+- **Inference failures are fail-loud, not papered over.** Any failed inference
+  call raises `AgentInferenceError` (the tool-calling-unsupported case is the
+  subclass `ToolCallingUnsupportedError`); `run_agent` logs a warning and
+  `POST /agent/query` returns a `502` with a readable message — an
+  unreachable/misconfigured backend reports the provider base URL, and an
+  incompatible model reports the likely missing function-calling support. This
+  avoids leaking a raw `500` (whose plaintext body the UI can't surface). chorus
+  does **not** implement a prompted-JSON fallback (see Alternatives). The
+  structured query tools are unaffected — only the natural-language agent is
+  unavailable.
 
 ## Alternatives considered
 

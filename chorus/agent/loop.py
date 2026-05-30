@@ -26,12 +26,21 @@ from chorus.inference import provider
 from chorus.tools import TOOLS
 
 
-class ToolCallingUnsupportedError(RuntimeError):
+class AgentInferenceError(RuntimeError):
+    """Raised when the agent's inference call fails (unreachable or errored).
+
+    The agent fails loud with a readable message rather than leaking a raw
+    500; the router maps this to a 502. Subclassed by
+    :class:`ToolCallingUnsupportedError` for the specific capability failure.
+    """
+
+
+class ToolCallingUnsupportedError(AgentInferenceError):
     """Raised when the inference backend rejects a tool-calling request.
 
     Signals that the configured chat model likely does not support
-    function-calling. The agent fails loud rather than silently degrading;
-    chorus does not ship a prompted-JSON fallback (see ADR 0009).
+    function-calling. chorus does not ship a prompted-JSON fallback
+    (see ADR 0009).
     """
 
 
@@ -108,7 +117,13 @@ def run_agent(
                         "not support function-calling (see ADR 0009). "
                         f"Underlying error: {err}"
                     ) from err
-                raise
+                logger.warning("agent: inference request failed: {}", err)
+                raise AgentInferenceError(
+                    "The inference backend request failed "
+                    f"(provider base URL: {provider.api_base()}). Check that the "
+                    "inference service is reachable and INFERENCE_PROVIDER / "
+                    f"OPENAI_API_BASE are correct. Underlying error: {err!r}"
+                ) from err
             tool_calls = list(msg.tool_calls or [])
             if not tool_calls:
                 slot.result_count = len(trace)

@@ -12,7 +12,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
-from chorus.agent.loop import ToolCallingUnsupportedError, run_agent
+from chorus.agent.loop import AgentInferenceError, run_agent
 from chorus.api.auth.principal import resolve_principal
 from chorus.utils.env_cfg import load_agent_env
 
@@ -66,8 +66,9 @@ def agent_query(
         ``truncated``.
 
     Raises:
-        HTTPException: ``502`` when the chat model rejects the tool-calling
-            request (it likely does not support function-calling).
+        HTTPException: ``502`` when the inference backend call fails — it is
+            unreachable/misconfigured, or the model rejects the tool-calling
+            request (likely no function-calling support).
     """
     cfg = load_agent_env()
     try:
@@ -79,6 +80,6 @@ def agent_query(
             max_iterations=cfg.max_tool_iterations,
             model=cfg.model,
         )
-    except ToolCallingUnsupportedError as exc:
+    except AgentInferenceError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return result.model_dump(mode="json")
