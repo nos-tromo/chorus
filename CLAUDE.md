@@ -12,31 +12,37 @@ guitar effect. The latter is not load-bearing.
 
 ## Current state
 
-Foundation is up. The app boots, applies Neo4j migrations, serves
-`/health`, dispatches four graph retrieval tools (`posts_mentioning`,
-`author_activity_summary`, `topic_co_occurrence`,
+Foundation is up and the supporting infrastructure has landed. The app
+boots, applies Neo4j migrations (constraints, indexes, vector indexes),
+serves `/health`, dispatches four graph retrieval tools
+(`posts_mentioning`, `author_activity_summary`, `topic_co_occurrence`,
 `authors_connected_by_topic`) end-to-end with audit logging, and exposes
 a natural-language agent (`POST /agent/query`, ADR 0009) that selects and
-calls those tools via OpenAI tool-calling. See *Repository conventions*
+calls those tools via OpenAI tool-calling. The ingestion pipeline runs
+from a CSV file adapter (`python -m chorus.ingestion.cli run`) through the
+post/comment/message/profile/connection writers into Neo4j. Docker images,
+a three-project compose topology, a top-level `Makefile`, the `pytest`
+suite (unit + testcontainers-backed integration), ADRs 0001–0009, and the
+shared nos-tromo CI workflow are all in place. See *Repository conventions*
 below for the live layout.
 
-Python: `pyproject.toml` accepts `>=3.11,<=3.13`; `.python-version`
-pins dev to `3.12`. CI should run across the full range.
+Python: `pyproject.toml` accepts `>=3.11,<3.14`; `.python-version`
+pins dev to `3.12`. CI runs the full matrix (3.11, 3.12, 3.13).
 
 Not yet landed (tracked in `docs/decisions/` / open tickets):
 - Resolution stage — `MENTIONS → Alias` provenance is written by the
-  extraction step; `Alias → Entity` clustering / LLM tie-break still
-  pending
-- Docker + compose + Makefile
-- Tests, ADRs, CI
-- Real OIDC wiring (`principal.py` is the seam)
-- Retention sweeper job
+  extraction step; `Alias → Entity` clustering / LLM tie-break in
+  `resolution.py` is still scaffolding
+- Semantic-search and visualization tools (`semantic_search`,
+  `network_around`) and the `escape_hatch_cypher` power-user tool
+- Real OIDC wiring (`principal.py` is the trusted-header seam)
+- Retention sweeper job (the nightly hard-delete of expired posts)
 
 ## Common commands
 
-Once dependencies are added with `uv add ...`, the conventions defined
-in *Development tooling* below imply the following commands. They are
-not wired up yet; the first scaffolding work should make them runnable.
+Dependencies, lockfile, tooling config, and the test suite are all wired
+up. Day-to-day commands run through `uv`; the `Makefile` wraps the
+container lifecycle (see *Orchestration topology*).
 
 ```
 uv sync                        # install/refresh the venv from uv.lock
@@ -47,6 +53,20 @@ uv run ruff check .            # lint
 uv run ruff format .           # format
 uv run mypy .                  # type check
 uv run pre-commit run --all-files               # pre-commit hooks
+```
+
+Make targets (container lifecycle, in dependency order):
+
+```
+make bootstrap   # wait for data-plane health, then `up`
+make up          # start backend + frontend (prod shape, no host ports)
+make up-dev      # like `up`, but publishes ports on the host
+make migrate     # apply pending Neo4j migrations
+make ingest      # run one ingestion pass from INGESTION_SOURCE_DIR
+make build       # build backend + frontend images
+make bundle      # produce airgap artifacts (image tarball + wheelhouse)
+make test        # uv run pytest -q
+make down        # stop + remove app containers (never touches data-plane)
 ```
 
 Production images install via `uv sync --frozen --offline` against a
@@ -562,10 +582,14 @@ alongside at repo root.
 chorus/                      # top-level repo
   chorus/                    # the importable package
     __init__.py
+    agent/                   # natural-language tool-calling agent (ADR 0009)
+      loop.py                # run_agent: model ↔ tool loop, one audited turn
+      openai_tools.py        # TOOLS registry → OpenAI function/tool schemas
+      prompts.py             # SYSTEM_PROMPT for the agent
     api/
       main.py                # FastAPI entrypoint (lifespan: logger → driver → migrations → audit)
       auth/principal.py      # trusted-header principal seam (OIDC swap-in)
-      routers/               # health.py, tools.py
+      routers/               # agent.py (POST /agent/query), health.py, tools.py
     audit/
       logger.py              # §76 BDSG audit log (SQLite, append-only, trigger-enforced)
       schema.sql
@@ -582,15 +606,17 @@ chorus/                      # top-level repo
       connections.py         # node-edge-node edge table: :FOLLOWS / :FRIENDS_WITH (ADR 0007)
       orchestrator.py        # stage runner; inline NER per post (NER_ENABLED gates)
       extraction.py          # ner_client.extract_entities → :MENTIONS with provenance
-      resolution.py          # alias / embed-cluster / LLM tiebreak
+      resolution.py          # alias / embed-cluster / LLM tiebreak (scaffolding)
       raw_store.py           # separate SQLite, not the audit DB
+      cli.py                 # python -m chorus.ingestion.cli run [--since ISO8601]
     migrations/
       runner.py              # idempotent applier, tracked via (:_Migration {version})
       cli.py                 # python -m chorus.migrations.cli {apply,status}
-      NNN_*.cypher           # one file per migration; ${EMBED_DIM} substituted at apply time
+      001_constraints.cypher / 002_indexes.cypher / 003_vector_indexes.cypher
+                             # ${EMBED_DIM} substituted at apply time
     queries/                 # Cypher templates, one file per tool — never inline
-      posts_mentioning.cypher
-      ...
+      posts_mentioning.cypher / author_activity_summary.cypher
+      topic_co_occurrence.cypher / authors_connected_by_topic.cypher
     tools/                   # @audited Python wrappers around queries
       _template_loader.py
       _audit.py              # @audited + register_tool + TOOLS registry
@@ -599,21 +625,27 @@ chorus/                      # top-level repo
     ui/
       streamlit_app.py
       client.py              # thin httpx wrapper over the FastAPI surface
-      pages/                 # one file per UI screen
+      pages/                 # one file per UI screen (00_agent, 01–04 per tool)
     utils/
       env_cfg.py             # every env var loader as a frozen dataclass
-      logger_cfg.py          # loguru sinks (stderr + rotating file)
+      logger_cfg.py          # loguru sink (stderr; file sink dropped, see #10)
   tests/                     # mirrors chorus/ subpackages
+    integration/             # testcontainers-backed Neo4j tests (tools, migrations)
   docker/
     Dockerfile.backend / Dockerfile.frontend
     compose.yaml             # app services only — NO persistent volumes
+    compose.override.yaml    # dev overlay: publish host ports + bind mounts
+  scripts/                   # build_wheelhouse.sh / bundle_images.sh / check_dataplane_health.sh
   docs/
     architecture.md / retention.md / compliance.md / airgap.md
-    decisions/               # ADRs, one file per significant decision
-  Makefile                   # network / build / up / stop / bundle / migrate / bootstrap
+    decisions/               # ADRs 0001–0009, one file per significant decision
+  Makefile                   # network / volumes / build / up[-dev] / down / migrate / ingest / bundle / bootstrap / test
   pyproject.toml + uv.lock
+  pytest.ini
   .pre-commit-config.yaml
-  .github/workflows/ci.yml
+  .env.example
+  README.md
+  .github/workflows/ci.yml   # calls nos-tromo shared python-app-ci.yml @v2.3
 ```
 
 ### Rules of thumb
@@ -631,10 +663,10 @@ chorus/                      # top-level repo
 - **Package management**: `uv`. Used for development environments, lockfile
   generation, and Docker builds. `pyproject.toml` + `uv.lock` are the
   source of truth — no hand-edited `requirements.txt` checked in.
-- **Tests**: `pytest`. Neo4j-dependent tests run against an ephemeral
-  instance (test compose profile or testcontainers — pick during
-  scaffolding). Unit tests stub the inference provider (covering chat,
-  embed, NER); only integration tests touch real services.
+- **Tests**: `pytest` (with `pytest-asyncio`). Neo4j-dependent tests live
+  under `tests/integration/` and run against an ephemeral instance via
+  `testcontainers[neo4j]`. Unit tests stub the inference provider (covering
+  chat, embed, NER); only integration tests touch real services.
 - **Logging**: `loguru`, same configuration pattern as docint —
   structured output, JSON in production, human-readable in dev.
   Operational logging and the §76 BDSG audit logger are separate
@@ -645,11 +677,13 @@ chorus/                      # top-level repo
   `black`).
 - **Pre-commit**: `pre-commit` runs ruff and mypy on changed files
   before commit. Full pytest runs in CI, not in the hook.
-- **CI**: GitHub Actions, matching docint conventions. Pipeline:
-  ruff → mypy → pytest → build images → produce airgap delivery bundle
-  (images + uv wheelhouse). No CI-driven deploy in v1;
-  deploys are manual on the airgapped side via the data-plane and chorus
-  compose projects.
+- **CI**: GitHub Actions. `.github/workflows/ci.yml` is a thin caller of
+  the shared `nos-tromo/.github` `python-app-ci.yml@v2.3` reusable
+  workflow (ruff → mypy → pytest across the 3.11/3.12/3.13 matrix, plus
+  `docker-build`). The strict ruff/mypy config mirrors
+  `nos-tromo/.github/configs/python-strict/`; drift fails CI. No CI-driven
+  deploy in v1; deploys are manual on the airgapped side via the
+  data-plane and chorus compose projects.
 
 ## Inference provider abstraction
 
