@@ -88,6 +88,7 @@ def write_mentions(
     UNWIND $spans AS span
     MATCH (p:Post {uuid: $post_uuid})
     MERGE (al:Alias {surface_form: span.surface_form})
+      ON CREATE SET al.label = span.label
     MERGE (p)-[m:MENTIONS]->(al)
       ON CREATE SET
         m.span_start    = span.span_start,
