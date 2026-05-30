@@ -12,7 +12,10 @@ cd "$ROOT"
 mkdir -p dist wheelhouse
 
 # Export the lock as a requirements file and download every artifact.
-uv export --format requirements-txt --no-emit-project --frozen --no-hashes \
+# --all-groups: include every dependency group (dev + frontend) so the
+# wheelhouse carries Streamlit's wheels for the UI image's offline
+# `uv sync --only-group frontend` on the airgapped side.
+uv export --format requirements-txt --no-emit-project --frozen --no-hashes --all-groups \
     > wheelhouse/requirements.txt
 uv pip download --requirement wheelhouse/requirements.txt --dest wheelhouse
 

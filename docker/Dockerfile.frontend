@@ -10,26 +10,32 @@ ENV UV_CACHE_DIR=/root/.cache/uv \
 
 WORKDIR /app
 
+# Install only the frontend dependency group (Streamlit + httpx). The UI
+# talks to the API over HTTP and imports nothing from the rest of the chorus
+# package, so it needs neither the backend libraries (neo4j, openai, fastapi,
+# …) nor the project wheel itself — hence --only-group and --no-install-project.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-install-project
-
-COPY chorus /app/chorus
-COPY pyproject.toml uv.lock README.md /app/
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked
+    uv sync --locked --only-group frontend --no-install-project
 
 FROM ${UV_IMAGE}
 ENV PYTHONUNBUFFERED=1 \
     VIRTUAL_ENV=/app/.venv \
     PATH="/app/.venv/bin:${PATH}" \
     UV_PROJECT_ENVIRONMENT=/app/.venv \
+    PYTHONPATH=/app \
     STREAMLIT_SERVER_HEADLESS=true \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
 WORKDIR /app
-COPY --from=builder /app /app
+# Copy just the prebuilt venv and the UI source. chorus/__init__.py (a bare
+# version string, no backend imports) makes `chorus` a package; PYTHONPATH=/app
+# lets the un-installed `from chorus.ui.client import ChorusClient` resolve
+# over the copied source.
+COPY --from=builder /app/.venv /app/.venv
+COPY chorus/__init__.py /app/chorus/__init__.py
+COPY chorus/ui /app/chorus/ui
 
 EXPOSE 8501
 
