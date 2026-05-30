@@ -202,14 +202,14 @@ def _tool_message(tc: Any, content: dict[str, Any]) -> dict[str, Any]:
 def _is_tool_calling_unsupported(err: Exception) -> bool:
     """Heuristically decide whether ``err`` means the model can't do tool-calling.
 
-    Uses the HTTP status when present (a 400/404/422 on a tools request is a
-    capability/validation failure) and falls back to message keywords. Other
-    inference errors (timeouts, 5xx, connection) are not classified here and
-    propagate unchanged.
+    Keys off tool/function wording first; a bare 400/422 (but **not** a 404,
+    which is typically a missing model or wrong path) that says "not supported"
+    also counts. Everything else — connection errors, 404s, 5xx — is left to the
+    generic inference-error path so it is not mislabelled a capability failure.
     """
-    status = getattr(err, "status_code", None)
-    if status in (400, 404, 422):
-        return True
     text = str(err).lower()
-    keywords = ("tool", "not support", "unsupported", "function call", "function_call", "enable_auto_tool")
-    return any(kw in text for kw in keywords)
+    keywords = ("tool", "function call", "function_call", "function-calling", "enable_auto_tool")
+    if any(kw in text for kw in keywords):
+        return True
+    status = getattr(err, "status_code", None)
+    return status in (400, 422) and ("not support" in text or "unsupported" in text)

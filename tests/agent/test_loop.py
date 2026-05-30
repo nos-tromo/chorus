@@ -233,3 +233,29 @@ def test_inference_error_raises_agent_inference_error(
             messages=[{"role": "user", "content": "hi"}],
         )
     assert not isinstance(excinfo.value, ToolCallingUnsupportedError)
+
+
+def test_model_not_found_is_inference_error_not_unsupported(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 404 (e.g. wrong model tag) is a generic inference error, not tool-unsupported."""
+    import openai
+
+    from chorus.agent.loop import AgentInferenceError, ToolCallingUnsupportedError, run_agent
+    from chorus.inference import provider
+
+    class _NotFound(openai.OpenAIError):
+        status_code = 404
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise _NotFound("model 'gpt-oss:20b' not found")
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+    with pytest.raises(AgentInferenceError) as excinfo:
+        run_agent(
+            migrated_driver,
+            in_memory_audit,
+            user="u",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    assert not isinstance(excinfo.value, ToolCallingUnsupportedError)
