@@ -162,3 +162,44 @@ def test_resolve_alias_is_idempotent(migrated_driver: Driver) -> None:
     )
     assert eid2 == eid1
     assert method2 == "skipped"
+
+
+def test_resolve_all_clusters_and_is_rerunnable(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
+    """resolve_all clusters case-variant aliases and is a no-op on re-run."""
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import resolve_all
+    from chorus.utils.env_cfg import load_resolution_env
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (p:Post {uuid: 'pp'}) ON CREATE SET p.text='t',
+                  p.timestamp = datetime('2026-05-01T00:00:00+00:00')
+            MERGE (a1:Alias {surface_form: 'Berlin'})  ON CREATE SET a1.label='LOCATION'
+            MERGE (a2:Alias {surface_form: 'berlin'})  ON CREATE SET a2.label='LOCATION'
+            MERGE (a3:Alias {surface_form: 'Merkel'})  ON CREATE SET a3.label='PERSON'
+            MERGE (p)-[:MENTIONS]->(a1)
+            MERGE (p)-[:MENTIONS]->(a2)
+            MERGE (p)-[:MENTIONS]->(a3)
+            """
+        )
+
+    vectors = {"Berlin": _vec(1.0), "berlin": _vec(1.0), "Merkel": _vec(0.0, 1.0)}
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
+
+    summary = resolve_all(migrated_driver, load_resolution_env())
+    assert summary.processed == 3
+    assert summary.minted == 2  # one LOCATION entity + one PERSON entity
+
+    with migrated_driver.session() as s:
+        n_entities = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()["n"]
+        same = s.run(
+            "MATCH (:Alias {surface_form:'Berlin'})-[:RESOLVED_TO]->(e1), "
+            "(:Alias {surface_form:'berlin'})-[:RESOLVED_TO]->(e2) "
+            "RETURN e1.id = e2.id AS same"
+        ).single()["same"]
+    assert n_entities == 2
+    assert same is True
+
+    again = resolve_all(migrated_driver, load_resolution_env())
+    assert again.processed == 0

@@ -18,11 +18,14 @@ under a separate ticket.
 from __future__ import annotations
 
 import uuid
+from dataclasses import asdict, dataclass
 from typing import Any
 
+from loguru import logger
 from neo4j import Driver
 
-from chorus.utils.env_cfg import ResolutionConfig
+from chorus.inference import provider
+from chorus.utils.env_cfg import ResolutionConfig, load_inference_env
 
 
 def normalize_surface(s: str, cfg: ResolutionConfig) -> str:
@@ -141,8 +144,6 @@ def llm_tiebreaker(surface: str, candidates: list[dict[str, Any]]) -> str | None
         response must contain exactly one known candidate id; otherwise the
         result is ``None``.
     """
-    from chorus.inference import provider
-
     lines = [f"{i + 1}. id={c['id']} name={c['canonical_name']!r} type={c['type']}" for i, c in enumerate(candidates)]
     prompt = (
         "You are resolving an entity reference to a canonical entity.\n"
@@ -247,3 +248,106 @@ def _write_resolved_to(
             score=score,
             embed_model=embed_model,
         ).consume()
+
+
+@dataclass(frozen=True)
+class ResolutionSummary:
+    """Counts from a :func:`resolve_all` run.
+
+    Attributes:
+        processed: Total aliases processed this run.
+        attached_single: Resolved to a single vector candidate.
+        attached_llm: Resolved via the LLM tie-breaker.
+        attached_topk: Resolved to the top-score candidate (LLM abstained).
+        attached_cache: Resolved via the in-run normalized cache.
+        minted: New entities created.
+        skipped: Already resolved (defensive; resolve_all only fetches
+            unresolved aliases).
+    """
+
+    processed: int = 0
+    attached_single: int = 0
+    attached_llm: int = 0
+    attached_topk: int = 0
+    attached_cache: int = 0
+    minted: int = 0
+    skipped: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        """Return the summary as a plain dict (field → count)."""
+        return asdict(self)
+
+
+_METHOD_FIELD = {
+    "vector_single": "attached_single",
+    "vector_llm": "attached_llm",
+    "vector_topk": "attached_topk",
+    "run_cache": "attached_cache",
+    "minted": "minted",
+    "skipped": "skipped",
+}
+
+
+def _embed_in_chunks(surfaces: list[str], *, chunk: int = 128) -> list[list[float]]:
+    """Embed surface forms in batches to bound request size."""
+    out: list[list[float]] = []
+    for i in range(0, len(surfaces), chunk):
+        out.extend(provider.embed(surfaces[i : i + chunk]))
+    return out
+
+
+def resolve_all(driver: Driver, cfg: ResolutionConfig) -> ResolutionSummary:
+    """Resolve every unresolved :Alias to a canonical :Entity (batch, idempotent).
+
+    Aliases are processed most-mentioned first, so the common surface form
+    mints and becomes the canonical name. An in-run normalized cache makes
+    case-variant aliases cluster deterministically despite vector-index lag.
+
+    Args:
+        driver: Open Neo4j driver.
+        cfg: Resolution thresholds/toggles.
+
+    Returns:
+        A :class:`ResolutionSummary` of per-method counts.
+    """
+    fetch = """
+    MATCH (a:Alias) WHERE NOT (a)-[:RESOLVED_TO]->(:Entity)
+    OPTIONAL MATCH (a)<-[:MENTIONS]-(p:Post)
+    WITH a, count(p) AS mentions
+    ORDER BY mentions DESC, a.surface_form ASC
+    RETURN a.surface_form AS surface_form, a.label AS label
+    """
+    with driver.session() as session:
+        aliases = [(r["surface_form"], r["label"]) for r in session.run(fetch)]
+    if not aliases:
+        return ResolutionSummary()
+
+    embed_model = load_inference_env().embed_model
+    vectors = _embed_in_chunks([a[0] for a in aliases])
+
+    counts = dict.fromkeys(_METHOD_FIELD.values(), 0)
+    counts["processed"] = 0
+    run_cache: dict[str, str] = {}
+
+    for (surface, label), vec in zip(aliases, vectors, strict=True):
+        norm = normalize_surface(surface, cfg)
+        if norm in run_cache:
+            _write_resolved_to(
+                driver,
+                surface,
+                run_cache[norm],
+                method="run_cache",
+                score=None,
+                embed_model=embed_model,
+            )
+            counts["attached_cache"] += 1
+        else:
+            entity_id, method = resolve_alias_to_entity(
+                driver, surface, vec, cfg, entity_type=label, embed_model=embed_model
+            )
+            run_cache[norm] = entity_id
+            counts[_METHOD_FIELD[method]] += 1
+        counts["processed"] += 1
+
+    logger.info("resolution complete: {}", counts)
+    return ResolutionSummary(**counts)
