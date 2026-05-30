@@ -32,7 +32,10 @@ services:
         required: false
     environment:
       NEO4J_URI: bolt://neo4j:7687
-      OPENAI_API_BASE: http://vllm-router:4000/v1
+      # OPENAI_API_BASE is intentionally NOT set here: it is env-driven
+      # (.env / env_cfg per-provider default). Hardcoding it in `environment:`
+      # would override env_file and pin the inference URL (e.g. it would force
+      # vllm-router even when .env selects Ollama). See ADR 0005 / 0009.
       LOG_FORMAT: json
       CHORUS_HOME: /var/lib/chorus
     volumes:
