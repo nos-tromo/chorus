@@ -17,6 +17,7 @@ under a separate ticket.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from neo4j import Driver
@@ -88,6 +89,42 @@ def cluster_candidates(
         NotImplementedError: Always; v1 resolution is pending.
     """
     raise NotImplementedError("v1 resolution pending — see entity-resolution ticket")
+
+
+def mint_entity(
+    driver: Driver,
+    surface: str,
+    embedding: list[float],
+    *,
+    entity_type: str | None = None,
+) -> str:
+    """Create a new :Entity from an unresolved alias and return its id.
+
+    Args:
+        driver: Open Neo4j driver.
+        surface: Surface form to use as the canonical name.
+        embedding: Name embedding stored on the entity for future matching.
+        entity_type: Entity type (from the alias label), or ``None``.
+
+    Returns:
+        The minted entity's id (a fresh UUID4 string).
+    """
+    entity_id = str(uuid.uuid4())
+    cypher = """
+    CREATE (e:Entity {
+        id: $id, canonical_name: $surface, type: $entity_type,
+        embedding: $embedding, description: null
+    })
+    """
+    with driver.session() as session:
+        session.run(
+            cypher,
+            id=entity_id,
+            surface=surface,
+            entity_type=entity_type,
+            embedding=embedding,
+        ).consume()
+    return entity_id
 
 
 def llm_tiebreaker(surface: str, candidates: list[dict[str, Any]]) -> str | None:

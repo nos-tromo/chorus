@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
 from neo4j import Driver
 
 EMBED_DIM = 1024
@@ -23,8 +22,7 @@ def _await_vector(driver: Driver, expected_id: str, query: list[float], tries: i
     for _ in range(tries):
         with driver.session() as s:
             rows = s.run(
-                "CALL db.index.vector.queryNodes('entity_embedding', 10, $v) "
-                "YIELD node RETURN node.id AS id",
+                "CALL db.index.vector.queryNodes('entity_embedding', 10, $v) YIELD node RETURN node.id AS id",
                 v=query,
             ).data()
         if any(r["id"] == expected_id for r in rows):
@@ -53,12 +51,27 @@ def test_cluster_candidates_threshold_and_type_filter(migrated_driver: Driver) -
     _seed_entity(migrated_driver, "e-merkel", "Merkel", "PERSON", _vec(0.99, 0.01))
     _await_vector(migrated_driver, "e-berlin", _vec(0.99, 0.02))
 
-    cands = cluster_candidates(
-        migrated_driver, _vec(0.99, 0.02), threshold=0.86, k=5, entity_type="LOCATION"
-    )
+    cands = cluster_candidates(migrated_driver, _vec(0.99, 0.02), threshold=0.86, k=5, entity_type="LOCATION")
     ids = [c["id"] for c in cands]
     assert "e-berlin" in ids  # close + same type
     assert "e-merkel" not in ids  # close but wrong type
     assert "e-paris" not in ids  # same type but orthogonal (below threshold)
     assert cands[0]["canonical_name"] == "Berlin"
     assert cands[0]["type"] == "LOCATION"
+
+
+def test_mint_entity_creates_typed_entity(migrated_driver: Driver) -> None:
+    """mint_entity creates an :Entity with name, type, embedding, null description."""
+    from chorus.ingestion.resolution import mint_entity
+
+    eid = mint_entity(migrated_driver, "Bratwurst", _vec(0.5, 0.5), entity_type="FOOD")
+    assert eid
+    with migrated_driver.session() as s:
+        rec = s.run(
+            "MATCH (e:Entity {id: $id}) RETURN e.canonical_name AS n, e.type AS t, e.description AS d",
+            id=eid,
+        ).single()
+    assert rec is not None
+    assert rec["n"] == "Bratwurst"
+    assert rec["t"] == "FOOD"
+    assert rec["d"] is None
