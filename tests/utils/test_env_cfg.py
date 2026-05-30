@@ -141,3 +141,20 @@ def test_load_ner_client_env_treats_blank_api_key_as_none(
     from chorus.utils.env_cfg import load_ner_client_env
 
     assert load_ner_client_env().api_key is None
+
+
+def test_load_resolution_env_vector_k_default_and_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``RES_VECTOR_K`` defaults to 5 and is overridable."""
+    import importlib
+
+    import chorus.utils.env_cfg as env_cfg
+
+    monkeypatch.delenv("RES_VECTOR_K", raising=False)
+    importlib.reload(env_cfg)
+    assert env_cfg.load_resolution_env().vector_k == 5
+
+    monkeypatch.setenv("RES_VECTOR_K", "8")
+    importlib.reload(env_cfg)
+    assert env_cfg.load_resolution_env().vector_k == 8
