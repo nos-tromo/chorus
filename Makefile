@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help network volumes build bundle up up-dev stop down migrate ingest bootstrap pre-commit test
+.PHONY: help network volumes build bundle up up-dev stop down migrate ingest resolve bootstrap pre-commit test
 
 CHORUS_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 export CHORUS_VERSION
@@ -26,6 +26,7 @@ help:
 	@echo "  make down       stop + remove containers (never touches data-plane)"
 	@echo "  make migrate    apply pending Neo4j migrations"
 	@echo "  make ingest     run one ingestion pass from INGESTION_SOURCE_DIR"
+	@echo "  make resolve    resolve aliases to canonical entities"
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
 	@echo "  make pre-commit run pre-commit hooks (ruff + mypy)"
 	@echo "  make test       run pytest"
@@ -80,6 +81,12 @@ migrate:
 # in dev workflows.
 ingest:
 	$(COMPOSE_DEV) run --rm backend python -m chorus.ingestion.cli run
+
+# Resolve unresolved :Alias nodes onto canonical :Entity nodes. Reads
+# and writes Neo4j only (no source bind mount), so it uses the base
+# compose like `migrate` — not COMPOSE_DEV.
+resolve:
+	$(COMPOSE) run --rm backend python -m chorus.ingestion.cli resolve
 
 # Wait for data-plane to be healthy, then bring the app up.
 bootstrap: network volumes
