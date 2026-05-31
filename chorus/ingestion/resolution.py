@@ -140,33 +140,53 @@ def mint_entity(
     embedding: list[float],
     *,
     entity_type: str | None = None,
+    embed_model: str = "",
 ) -> str:
-    """Create a new :Entity from an unresolved alias and return its id.
+    """Mint a new :Entity for an alias and link it, atomically; return its id.
+
+    The entity CREATE and the ``:RESOLVED_TO`` edge are written in a single
+    statement that first MATCHes the alias, so they commit together: a crash
+    can never leave an orphan :Entity with no incoming edge, and a missing
+    alias creates nothing.
 
     Args:
         driver: Open Neo4j driver.
-        surface: Surface form to use as the canonical name.
+        surface: Surface form of the (already-existing) :Alias; also the
+            new entity's canonical name.
         embedding: Name embedding stored on the entity for future matching.
         entity_type: Entity type (from the alias label), or ``None``.
+        embed_model: Embedding model id, recorded on the edge for provenance.
 
     Returns:
         The minted entity's id (a fresh UUID4 string).
+
+    Raises:
+        RuntimeError: If no :Alias node exists for ``surface`` (so nothing
+            is created — no orphan entity).
     """
     entity_id = str(uuid.uuid4())
     cypher = """
+    MATCH (a:Alias {surface_form: $surface})
     CREATE (e:Entity {
         id: $id, canonical_name: $surface, type: $entity_type,
         embedding: $embedding, description: null
     })
+    CREATE (a)-[r:RESOLVED_TO]->(e)
+    SET r.method = 'minted', r.score = null,
+        r.embed_model = $embed_model, r.resolved_at = datetime()
+    RETURN e.id AS id
     """
     with driver.session() as session:
-        session.run(
+        record = session.run(
             cypher,
             id=entity_id,
             surface=surface,
             entity_type=entity_type,
             embedding=embedding,
-        ).consume()
+            embed_model=embed_model,
+        ).single()
+    if record is None:
+        raise RuntimeError(f"cannot mint entity: no :Alias node for surface_form={surface!r}")
     return entity_id
 
 
@@ -240,11 +260,12 @@ def resolve_alias_to_entity(
     candidates = cluster_candidates(
         driver, embedding, cfg.embed_cluster_threshold, k=cfg.vector_k, entity_type=entity_type
     )
-    score: float | None
+    # Mint paths call mint_entity, which writes the entity AND its RESOLVED_TO
+    # edge atomically and returns; attach paths fall through to _write_resolved_to.
     if not candidates:
-        entity_id = mint_entity(driver, surface, embedding, entity_type=entity_type)
-        method, score = "minted", None
-    elif len(candidates) == 1:
+        return mint_entity(driver, surface, embedding, entity_type=entity_type, embed_model=embed_model), "minted"
+
+    if len(candidates) == 1:
         entity_id, method, score = candidates[0]["id"], "vector_single", candidates[0]["score"]
     elif cfg.llm_tiebreak_enabled:
         # Multiple candidates clear the threshold: ask the LLM to disambiguate.
@@ -252,12 +273,10 @@ def resolve_alias_to_entity(
         # reply is unparseable), trust that judgement and mint a new entity
         # rather than force-merge into the top score.
         chosen = llm_tiebreaker(surface, candidates)
-        if chosen is not None:
-            entity_id, method = chosen, "vector_llm"
-            score = next((c["score"] for c in candidates if c["id"] == chosen), None)
-        else:
-            entity_id = mint_entity(driver, surface, embedding, entity_type=entity_type)
-            method, score = "minted", None
+        if chosen is None:
+            return mint_entity(driver, surface, embedding, entity_type=entity_type, embed_model=embed_model), "minted"
+        entity_id, method = chosen, "vector_llm"
+        score = next((c["score"] for c in candidates if c["id"] == chosen), None)
     else:
         # Tie-break disabled: the LLM is never consulted, so we must not mint on
         # ambiguity (that would fragment). Attach to the top-scoring candidate.

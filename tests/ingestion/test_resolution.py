@@ -61,21 +61,25 @@ def test_cluster_candidates_threshold_and_type_filter(migrated_driver: Driver) -
     assert cands[0]["type"] == "LOCATION"
 
 
-def test_mint_entity_creates_typed_entity(migrated_driver: Driver) -> None:
-    """mint_entity creates an :Entity with name, type, embedding, null description."""
+def test_mint_entity_creates_typed_entity_and_links_alias(migrated_driver: Driver) -> None:
+    """mint_entity atomically creates the typed :Entity and its RESOLVED_TO edge."""
     from chorus.ingestion.resolution import mint_entity
 
-    eid = mint_entity(migrated_driver, "Bratwurst", _vec(0.5, 0.5), entity_type="FOOD")
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: 'Bratwurst'})")
+    eid = mint_entity(migrated_driver, "Bratwurst", _vec(0.5, 0.5), entity_type="FOOD", embed_model="bge-m3")
     assert eid
     with migrated_driver.session() as s:
         rec = s.run(
-            "MATCH (e:Entity {id: $id}) RETURN e.canonical_name AS n, e.type AS t, e.description AS d",
+            "MATCH (a:Alias {surface_form: 'Bratwurst'})-[r:RESOLVED_TO]->(e:Entity {id: $id}) "
+            "RETURN e.canonical_name AS n, e.type AS t, e.description AS d, r.method AS m",
             id=eid,
         ).single()
     assert rec is not None
     assert rec["n"] == "Bratwurst"
     assert rec["t"] == "FOOD"
     assert rec["d"] is None
+    assert rec["m"] == "minted"
 
 
 def test_llm_tiebreaker_picks_and_abstains(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -140,6 +144,28 @@ def test_resolve_alias_mints_when_no_candidates(migrated_driver: Driver) -> None
     assert rec is not None
     assert rec["m"] == "minted"
     assert rec["t"] == "LOCATION"
+
+
+def test_mint_path_is_atomic_no_orphan_without_alias(migrated_driver: Driver) -> None:
+    """Minting for a surface whose :Alias node is absent creates no orphan Entity."""
+    from chorus.ingestion.resolution import resolve_alias_to_entity
+    from chorus.utils.env_cfg import load_resolution_env
+
+    # No :Alias node is created for 'Ghost'. The mint path must not leave a
+    # dangling :Entity with no incoming :RESOLVED_TO.
+    with pytest.raises(Exception):  # noqa: B017 — any failure is acceptable; the invariant is "no orphan"
+        resolve_alias_to_entity(
+            migrated_driver,
+            "Ghost",
+            _vec(0.4, 0.6),
+            load_resolution_env(),
+            entity_type="LOCATION",
+            embed_model="bge-m3",
+        )
+    with migrated_driver.session() as s:
+        rec = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()
+    assert rec is not None
+    assert rec["n"] == 0  # no orphan entity was created
 
 
 def test_resolve_alias_attaches_to_single_candidate(migrated_driver: Driver) -> None:
