@@ -316,3 +316,23 @@ def test_resolve_all_does_not_merge_different_label_variants(
     assert rec is not None
     assert rec["distinct"] is True
     assert {rec["t1"], rec["t2"]} == {"ORG", "FOOD"}
+
+
+def test_cluster_candidates_untyped_query_only_matches_untyped(migrated_driver: Driver) -> None:
+    """A None entity_type matches only untyped entities, never a typed one."""
+    from chorus.ingestion.resolution import cluster_candidates
+
+    _seed_entity(migrated_driver, "e-typed", "Berlin", "LOCATION", _vec(1.0))
+    # an untyped entity (type is null), close to the same query
+    with migrated_driver.session() as s:
+        s.run(
+            "CREATE (:Entity {id: 'e-untyped', canonical_name: 'Berlin', type: null, embedding: $v})",
+            v=_vec(1.0, 0.01),
+        )
+    _await_vector(migrated_driver, "e-typed", _vec(1.0, 0.02))
+    _await_vector(migrated_driver, "e-untyped", _vec(1.0, 0.02))
+
+    cands = cluster_candidates(migrated_driver, _vec(1.0, 0.02), threshold=0.86, k=5, entity_type=None)
+    ids = [c["id"] for c in cands]
+    assert "e-untyped" in ids  # untyped query matches the untyped entity
+    assert "e-typed" not in ids  # but NOT a typed entity (no cross-type leak)

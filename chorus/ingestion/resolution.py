@@ -79,8 +79,12 @@ def cluster_candidates(
     """Find candidate entities by vector similarity, filtered to one type.
 
     Over-fetches from the ``entity_embedding`` vector index, then filters to
-    ``score >= threshold`` and (when given) ``type == entity_type``, returning
+    ``score >= threshold`` and a null-safe ``type == entity_type``, returning
     the top ``k`` as ``{id, canonical_name, type, score}`` descending by score.
+
+    Type matching is symmetric: a typed query matches only entities of that
+    type, and an untyped query (``entity_type=None``) matches only untyped
+    entities — an untyped alias never cross-matches into a typed entity.
 
     Args:
         driver: Open Neo4j driver.
@@ -88,7 +92,8 @@ def cluster_candidates(
         threshold: Minimum cosine similarity for an entity to count as
             a candidate.
         k: Maximum number of candidates to return.
-        entity_type: When set, only entities of this type are returned.
+        entity_type: Required entity type; ``None`` matches only untyped
+            entities.
 
     Returns:
         Candidate dicts ``{id, canonical_name, type, score}``, descending by
@@ -99,7 +104,10 @@ def cluster_candidates(
     CALL db.index.vector.queryNodes('entity_embedding', $fetch, $embedding)
       YIELD node, score
     WHERE score >= $threshold
-      AND ($entity_type IS NULL OR node.type = $entity_type)
+      AND (
+        ($entity_type IS NULL AND node.type IS NULL)
+        OR node.type = $entity_type
+      )
     RETURN node.id AS id, node.canonical_name AS canonical_name,
            node.type AS type, score
     ORDER BY score DESC
