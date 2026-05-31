@@ -1,18 +1,18 @@
-"""Entity resolution pipeline (stubs).
+"""Entity resolution pipeline.
 
-The pipeline is:
+The per-alias pipeline is:
 
     normalize_surface
       → lookup_alias                (cheap: exact match on Alias node)
       → cluster_candidates          (vector index on Entity.embedding)
       → llm_tiebreaker              (only when cluster has > 1 candidate)
-      → mint_new_entity             (when no confident match)
+      → mint_entity                 (when no confident match)
 
 Each step is a separate function so it can be unit-tested and so the
 thresholds in `ResolutionConfig` can be tuned without rewriting the
-plumbing. Bodies are deliberately left as `NotImplementedError` for v1;
-they'll be filled in as part of the entity-resolution work tracked
-under a separate ticket.
+plumbing. `resolve_alias_to_entity` runs the pipeline for one alias and
+writes the `:RESOLVED_TO` edge; `resolve_all` is the batch, re-runnable
+entry point (exposed via `python -m chorus.ingestion.cli resolve`).
 """
 
 from __future__ import annotations
