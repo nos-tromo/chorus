@@ -205,3 +205,114 @@ def test_resolve_all_clusters_and_is_rerunnable(migrated_driver: Driver, monkeyp
 
     again = resolve_all(migrated_driver, load_resolution_env())
     assert again.processed == 0
+
+
+def test_resolve_alias_mints_when_llm_rejects_all_candidates(
+    migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tie-break enabled + LLM affirms no candidate → mint, not attach to top-score."""
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import resolve_alias_to_entity
+    from chorus.utils.env_cfg import load_resolution_env
+
+    # Two near-parallel PERSON entities both clear the threshold for the query.
+    _seed_entity(migrated_driver, "e-a", "Joe Biden", "PERSON", _vec(1.0))
+    _seed_entity(migrated_driver, "e-b", "Jill Biden", "PERSON", _vec(1.0, 0.05))
+    _await_vector(migrated_driver, "e-a", _vec(1.0, 0.02))
+    _await_vector(migrated_driver, "e-b", _vec(1.0, 0.02))
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: 'President Biden'})")
+
+    monkeypatch.setattr(provider, "chat", lambda messages, **kw: "NONE")
+    eid, method = resolve_alias_to_entity(
+        migrated_driver,
+        "President Biden",
+        _vec(1.0, 0.02),
+        load_resolution_env(),  # llm_tiebreak_enabled defaults True
+        entity_type="PERSON",
+        embed_model="bge-m3",
+    )
+    assert method == "minted"
+    assert eid not in {"e-a", "e-b"}
+    with migrated_driver.session() as s:
+        rec = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()
+    assert rec is not None
+    assert rec["n"] == 3  # the new entity was minted, not merged
+
+
+def test_resolve_alias_topk_when_tiebreak_disabled(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tie-break disabled (never consulted) → attach to top-score, never mint."""
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import resolve_alias_to_entity
+    from chorus.utils.env_cfg import ResolutionConfig
+
+    _seed_entity(migrated_driver, "e-a", "Joe Biden", "PERSON", _vec(1.0))
+    _seed_entity(migrated_driver, "e-b", "Jill Biden", "PERSON", _vec(1.0, 0.05))
+    _await_vector(migrated_driver, "e-a", _vec(1.0, 0.02))
+    _await_vector(migrated_driver, "e-b", _vec(1.0, 0.02))
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: 'President Biden'})")
+
+    # If the LLM were (wrongly) consulted, this would raise and fail the test.
+    def _boom(messages: list[dict[str, str]], **kw: object) -> str:
+        raise AssertionError("LLM must not be consulted when tie-break is disabled")
+
+    monkeypatch.setattr(provider, "chat", _boom)
+    cfg = ResolutionConfig(
+        embed_cluster_threshold=0.86,
+        llm_tiebreak_enabled=False,
+        case_normalize=True,
+        vector_k=5,
+    )
+    eid, method = resolve_alias_to_entity(
+        migrated_driver,
+        "President Biden",
+        _vec(1.0, 0.02),
+        cfg,
+        entity_type="PERSON",
+        embed_model="bge-m3",
+    )
+    assert method == "vector_topk"
+    assert eid in {"e-a", "e-b"}
+    with migrated_driver.session() as s:
+        rec = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()
+    assert rec is not None
+    assert rec["n"] == 2  # nothing minted
+
+
+def test_resolve_all_does_not_merge_different_label_variants(
+    migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same normalized surface but different labels must NOT collapse via the cache."""
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import resolve_all
+    from chorus.utils.env_cfg import load_resolution_env
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (p:Post {uuid: 'pp'}) ON CREATE SET p.text='t',
+                  p.timestamp = datetime('2026-05-01T00:00:00+00:00')
+            MERGE (a1:Alias {surface_form: 'Apple'}) ON CREATE SET a1.label='ORG'
+            MERGE (a2:Alias {surface_form: 'apple'}) ON CREATE SET a2.label='FOOD'
+            MERGE (p)-[:MENTIONS]->(a1)
+            MERGE (p)-[:MENTIONS]->(a2)
+            """
+        )
+    # Orthogonal vectors so they would not vector-match even if types allowed it.
+    vectors = {"Apple": _vec(1.0), "apple": _vec(0.0, 1.0)}
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
+
+    summary = resolve_all(migrated_driver, load_resolution_env())
+    assert summary.processed == 2
+    assert summary.minted == 2  # two distinct entities, not one
+
+    with migrated_driver.session() as s:
+        rec = s.run(
+            "MATCH (:Alias {surface_form:'Apple'})-[:RESOLVED_TO]->(e1), "
+            "(:Alias {surface_form:'apple'})-[:RESOLVED_TO]->(e2) "
+            "RETURN e1.id <> e2.id AS distinct, e1.type AS t1, e2.type AS t2"
+        ).single()
+    assert rec is not None
+    assert rec["distinct"] is True
+    assert {rec["t1"], rec["t2"]} == {"ORG", "FOOD"}

@@ -232,13 +232,22 @@ def resolve_alias_to_entity(
         method, score = "minted", None
     elif len(candidates) == 1:
         entity_id, method, score = candidates[0]["id"], "vector_single", candidates[0]["score"]
-    else:
-        chosen = llm_tiebreaker(surface, candidates) if cfg.llm_tiebreak_enabled else None
+    elif cfg.llm_tiebreak_enabled:
+        # Multiple candidates clear the threshold: ask the LLM to disambiguate.
+        # If it affirms one, attach to it; if it judges that none match (or its
+        # reply is unparseable), trust that judgement and mint a new entity
+        # rather than force-merge into the top score.
+        chosen = llm_tiebreaker(surface, candidates)
         if chosen is not None:
             entity_id, method = chosen, "vector_llm"
             score = next((c["score"] for c in candidates if c["id"] == chosen), None)
         else:
-            entity_id, method, score = candidates[0]["id"], "vector_topk", candidates[0]["score"]
+            entity_id = mint_entity(driver, surface, embedding, entity_type=entity_type)
+            method, score = "minted", None
+    else:
+        # Tie-break disabled: the LLM is never consulted, so we must not mint on
+        # ambiguity (that would fragment). Attach to the top-scoring candidate.
+        entity_id, method, score = candidates[0]["id"], "vector_topk", candidates[0]["score"]
 
     _write_resolved_to(driver, surface, entity_id, method=method, score=score, embed_model=embed_model)
     return entity_id, method
@@ -358,15 +367,18 @@ def resolve_all(driver: Driver, cfg: ResolutionConfig) -> ResolutionSummary:
 
     counts = dict.fromkeys(_METHOD_FIELD.values(), 0)
     counts["processed"] = 0
-    run_cache: dict[str, str] = {}
+    # Cache key is (normalized surface, label): two case/whitespace variants
+    # cluster only when they share a type, so a PERSON "Apple" never collapses
+    # into a FOOD "apple". Mirrors cluster_candidates' same-type filter.
+    run_cache: dict[tuple[str, str | None], str] = {}
 
     for (surface, label), vec in zip(aliases, vectors, strict=True):
-        norm = normalize_surface(surface, cfg)
-        if norm in run_cache:
+        cache_key = (normalize_surface(surface, cfg), label)
+        if cache_key in run_cache:
             _write_resolved_to(
                 driver,
                 surface,
-                run_cache[norm],
+                run_cache[cache_key],
                 method="run_cache",
                 score=None,
                 embed_model=embed_model,
@@ -376,7 +388,7 @@ def resolve_all(driver: Driver, cfg: ResolutionConfig) -> ResolutionSummary:
             entity_id, method = resolve_alias_to_entity(
                 driver, surface, vec, cfg, entity_type=label, embed_model=embed_model
             )
-            run_cache[norm] = entity_id
+            run_cache[cache_key] = entity_id
             counts[_METHOD_FIELD[method]] += 1
         counts["processed"] += 1
 
