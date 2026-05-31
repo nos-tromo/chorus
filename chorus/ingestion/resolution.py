@@ -17,6 +17,7 @@ entry point (exposed via `python -m chorus.ingestion.cli resolve`).
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -192,7 +193,12 @@ def llm_tiebreaker(surface: str, candidates: list[dict[str, Any]]) -> str | None
         "real-world entity as the surface form, or NONE if none of them do."
     )
     text = provider.chat([{"role": "user", "content": prompt}]).strip()
-    matched = [c["id"] for c in candidates if c["id"] in text]
+    # Match by exact id token, not substring: otherwise an id like "e-1"
+    # would be matched inside a reply naming "e-12". Tokenize on runs of
+    # id-legal characters (alphanumerics, hyphen, underscore) so UUIDs and
+    # hyphenated ids survive while surrounding prose is split away.
+    tokens = set(re.findall(r"[\w-]+", text))
+    matched = [c["id"] for c in candidates if c["id"] in tokens]
     return matched[0] if len(matched) == 1 else None
 
 

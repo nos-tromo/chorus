@@ -97,6 +97,24 @@ def test_llm_tiebreaker_picks_and_abstains(monkeypatch: pytest.MonkeyPatch) -> N
     assert llm_tiebreaker("President Biden", candidates) is None
 
 
+def test_llm_tiebreaker_exact_id_match_not_substring(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Matching is by exact id token, so 'e-1' is not matched by a reply of 'e-12'."""
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import llm_tiebreaker
+
+    candidates = [
+        {"id": "e-1", "canonical_name": "Apple Inc", "type": "ORG", "score": 0.9},
+        {"id": "e-12", "canonical_name": "Apple Records", "type": "ORG", "score": 0.88},
+    ]
+    # Reply names e-12 exactly; substring logic would also match e-1 -> wrongly abstain.
+    monkeypatch.setattr(provider, "chat", lambda messages, **kw: "e-12")
+    assert llm_tiebreaker("Apple", candidates) == "e-12"
+
+    # And a bare 'e-1' must select e-1, not also trip on e-12.
+    monkeypatch.setattr(provider, "chat", lambda messages, **kw: "e-1")
+    assert llm_tiebreaker("Apple", candidates) == "e-1"
+
+
 def test_resolve_alias_mints_when_no_candidates(migrated_driver: Driver) -> None:
     """With an empty entity set, an alias mints a typed entity (method=minted)."""
     from chorus.ingestion.resolution import resolve_alias_to_entity
