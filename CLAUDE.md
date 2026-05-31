@@ -30,8 +30,6 @@ Not yet landed (tracked in `docs/decisions/` / open tickets):
 - Semantic search — `Post.embedding` backfill + `semantic_search` tool
 - Retention sweeper job
 - Real OIDC wiring (`principal.py` is the seam)
-- Real OIDC wiring (`principal.py` is the seam)
-- Retention sweeper job
 
 ## Common commands
 
