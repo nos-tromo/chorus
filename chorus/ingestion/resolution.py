@@ -33,8 +33,10 @@ def normalize_surface(s: str, cfg: ResolutionConfig) -> str:
     """Normalize a surface form for alias comparison.
 
     Strips surrounding whitespace and, when configured, casefolds for
-    case-insensitive comparison. The output of this function is the
-    canonical key used in the ``:Alias.surface_form`` property.
+    case-insensitive comparison. This is **not** the ``:Alias.surface_form``
+    stored in the graph — extraction stores the raw NER text there. The
+    normalized value is used only as the in-run clustering key in
+    :func:`resolve_all` (paired with the alias label).
 
     Args:
         s: Raw surface form as extracted by NER.
@@ -54,7 +56,8 @@ def lookup_alias(driver: Driver, surface: str) -> str | None:
 
     Args:
         driver: Open Neo4j driver.
-        surface: Normalized surface form.
+        surface: Raw surface form, matched verbatim against the stored
+            ``:Alias.surface_form`` (which extraction writes unnormalized).
 
     Returns:
         The matching entity id, or ``None`` if this surface form has

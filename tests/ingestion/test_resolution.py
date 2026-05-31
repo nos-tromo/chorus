@@ -228,12 +228,18 @@ def test_resolve_all_clusters_and_is_rerunnable(migrated_driver: Driver, monkeyp
             """
         )
 
-    vectors = {"Berlin": _vec(1.0), "berlin": _vec(1.0), "Merkel": _vec(0.0, 1.0)}
+    # "berlin" is given a vector ORTHOGONAL to "Berlin": the two would never
+    # vector-match, so the ONLY thing that can cluster them is the normalized
+    # (surface, label) cache. If the cache were removed, "berlin" would mint a
+    # third entity and these assertions would fail — that is what makes this
+    # test actually exercise the cache path.
+    vectors = {"Berlin": _vec(1.0), "berlin": _vec(0.0, 0.0, 1.0), "Merkel": _vec(0.0, 1.0)}
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
 
     summary = resolve_all(migrated_driver, load_resolution_env())
     assert summary.processed == 3
     assert summary.minted == 2  # one LOCATION entity + one PERSON entity
+    assert summary.attached_cache == 1  # "berlin" clustered via the cache, not vectors
 
     with migrated_driver.session() as s:
         n_rec = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()
