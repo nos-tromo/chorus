@@ -397,6 +397,12 @@ def resolve_all(driver: Driver, cfg: ResolutionConfig) -> ResolutionSummary:
 
     embed_model = load_inference_env().embed_model
     vectors = _embed_in_chunks([a[0] for a in aliases])
+    # Fail before any write if the provider returned a different number of
+    # embeddings than surfaces, so we never leave the graph half-resolved.
+    if len(vectors) != len(aliases):
+        raise ValueError(
+            f"embed returned {len(vectors)} vectors for {len(aliases)} aliases; aborting resolution before any write"
+        )
 
     counts = dict.fromkeys(_METHOD_FIELD.values(), 0)
     counts["processed"] = 0

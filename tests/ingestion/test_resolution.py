@@ -380,3 +380,33 @@ def test_cluster_candidates_untyped_query_only_matches_untyped(migrated_driver: 
     ids = [c["id"] for c in cands]
     assert "e-untyped" in ids  # untyped query matches the untyped entity
     assert "e-typed" not in ids  # but NOT a typed entity (no cross-type leak)
+
+
+def test_resolve_all_aborts_cleanly_on_embed_count_mismatch(
+    migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If provider.embed returns the wrong number of vectors, fail before any write."""
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import resolve_all
+    from chorus.utils.env_cfg import load_resolution_env
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (a1:Alias {surface_form: 'Berlin'}) ON CREATE SET a1.label='LOCATION'
+            MERGE (a2:Alias {surface_form: 'Paris'})  ON CREATE SET a2.label='LOCATION'
+            """
+        )
+    # Return one fewer (valid, non-zero) vector than inputs — a misbehaving backend.
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(1.0) for _ in texts[:-1]])
+
+    with pytest.raises(ValueError, match="embed"):
+        resolve_all(migrated_driver, load_resolution_env())
+
+    # Nothing was written: no entities, no RESOLVED_TO edges.
+    with migrated_driver.session() as s:
+        rec = s.run(
+            "MATCH (e:Entity) WITH count(e) AS ents MATCH (:Alias)-[r:RESOLVED_TO]->() RETURN ents, count(r) AS rels"
+        ).single()
+    n_ents = 0 if rec is None else rec["ents"]
+    assert n_ents == 0
