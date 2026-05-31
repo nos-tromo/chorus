@@ -192,14 +192,16 @@ def test_resolve_all_clusters_and_is_rerunnable(migrated_driver: Driver, monkeyp
     assert summary.minted == 2  # one LOCATION entity + one PERSON entity
 
     with migrated_driver.session() as s:
-        n_entities = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()["n"]
-        same = s.run(
+        n_rec = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()
+        same_rec = s.run(
             "MATCH (:Alias {surface_form:'Berlin'})-[:RESOLVED_TO]->(e1), "
             "(:Alias {surface_form:'berlin'})-[:RESOLVED_TO]->(e2) "
             "RETURN e1.id = e2.id AS same"
-        ).single()["same"]
-    assert n_entities == 2
-    assert same is True
+        ).single()
+    assert n_rec is not None
+    assert same_rec is not None
+    assert n_rec["n"] == 2
+    assert same_rec["same"] is True
 
     again = resolve_all(migrated_driver, load_resolution_env())
     assert again.processed == 0

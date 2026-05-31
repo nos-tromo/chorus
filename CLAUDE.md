@@ -17,20 +17,19 @@ Foundation is up. The app boots, applies Neo4j migrations, serves
 `author_activity_summary`, `topic_co_occurrence`,
 `authors_connected_by_topic`) end-to-end with audit logging, and exposes
 a natural-language agent (`POST /agent/query`, ADR 0009) that selects and
-calls those tools via OpenAI tool-calling. See *Repository conventions*
+calls those tools via OpenAI tool-calling. The `Alias → Entity` resolution
+stage is implemented (vector clustering + same-type filter + LLM tie-break,
+run via `python -m chorus.ingestion.cli resolve`), so the tools cluster by
+canonical entity once a resolve pass has run. See *Repository conventions*
 below for the live layout.
 
 Python: `pyproject.toml` accepts `>=3.11,<=3.13`; `.python-version`
 pins dev to `3.12`. CI should run across the full range.
 
 Not yet landed (tracked in `docs/decisions/` / open tickets):
-- Resolution stage — `MENTIONS → Alias` provenance is written by the
-  extraction step; `Alias → Entity` clustering / LLM tie-break is
-  **spec'd + planned but not yet built** (branch `feat/entity-resolution`):
-  see `docs/superpowers/specs/2026-05-30-entity-resolution-design.md` and
-  `docs/superpowers/plans/2026-05-30-entity-resolution.md`
-- Docker + compose + Makefile
-- Tests, ADRs, CI
+- Semantic search — `Post.embedding` backfill + `semantic_search` tool
+- Retention sweeper job
+- Real OIDC wiring (`principal.py` is the seam)
 - Real OIDC wiring (`principal.py` is the seam)
 - Retention sweeper job
 

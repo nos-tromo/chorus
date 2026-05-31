@@ -74,24 +74,55 @@ def cluster_candidates(
     threshold: float,
     *,
     k: int = 5,
-) -> list[str]:
-    """Find candidate entity ids by vector similarity (stub).
+    entity_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """Find candidate entities by vector similarity, filtered to one type.
+
+    Over-fetches from the ``entity_embedding`` vector index, then filters to
+    ``score >= threshold`` and (when given) ``type == entity_type``, returning
+    the top ``k`` as ``{id, canonical_name, type, score}`` descending by score.
 
     Args:
-        driver: Open Neo4j driver (unused until implemented).
+        driver: Open Neo4j driver.
         embedding: Query embedding vector with ``EMBED_DIM`` dimensions.
         threshold: Minimum cosine similarity for an entity to count as
             a candidate.
         k: Maximum number of candidates to return.
+        entity_type: When set, only entities of this type are returned.
 
     Returns:
-        Entity ids whose cosine similarity is above ``threshold``,
-        sorted by descending similarity.
-
-    Raises:
-        NotImplementedError: Always; v1 resolution is pending.
+        Candidate dicts ``{id, canonical_name, type, score}``, descending by
+        score, at most ``k`` of them. Empty when nothing clears the threshold.
     """
-    raise NotImplementedError("v1 resolution pending — see entity-resolution ticket")
+    fetch = max(4 * k, 20)
+    cypher = """
+    CALL db.index.vector.queryNodes('entity_embedding', $fetch, $embedding)
+      YIELD node, score
+    WHERE score >= $threshold
+      AND ($entity_type IS NULL OR node.type = $entity_type)
+    RETURN node.id AS id, node.canonical_name AS canonical_name,
+           node.type AS type, score
+    ORDER BY score DESC
+    LIMIT $k
+    """
+    with driver.session() as session:
+        rows = session.run(
+            cypher,
+            fetch=fetch,
+            embedding=embedding,
+            threshold=threshold,
+            entity_type=entity_type,
+            k=k,
+        ).data()
+    return [
+        {
+            "id": r["id"],
+            "canonical_name": r["canonical_name"],
+            "type": r["type"],
+            "score": r["score"],
+        }
+        for r in rows
+    ]
 
 
 def mint_entity(
