@@ -26,6 +26,10 @@ from chorus.inference import provider
 from chorus.tools import TOOLS
 
 
+_MAX_TOOL_MESSAGE_ITEMS = 8
+_MAX_TOOL_MESSAGE_STRING_CHARS = 280
+
+
 class AgentInferenceError(RuntimeError):
     """Raised when the agent's inference call fails (unreachable or errored).
 
@@ -33,6 +37,10 @@ class AgentInferenceError(RuntimeError):
     500; the router maps this to a 502. Subclassed by
     :class:`ToolCallingUnsupportedError` for the specific capability failure.
     """
+
+
+class ContextWindowExceededError(AgentInferenceError):
+    """Raised when the assembled agent request exceeds the model context window."""
 
 
 class ToolCallingUnsupportedError(AgentInferenceError):
@@ -116,6 +124,15 @@ def run_agent(
                     else:
                         logger.warning("agent: chat model rejected tool-calling request: {}", err)
                     raise ToolCallingUnsupportedError(_tool_calling_error_message(err)) from err
+                if _is_context_window_exceeded(err):
+                    logger.warning("agent: request exceeded chat model context window: {}", err)
+                    raise ContextWindowExceededError(
+                        "The agent request exceeded the chat model's context window. "
+                        "This usually means the visible conversation or tool results were too large for "
+                        "the configured model. chorus trims verbose tool payloads before follow-up turns, "
+                        "but this request still did not fit. "
+                        f"Underlying error: {err}"
+                    ) from err
                 logger.warning("agent: inference request failed: {}", err)
                 raise AgentInferenceError(
                     "The inference backend request failed "
@@ -189,13 +206,61 @@ def _execute_tool_call(tc: Any, driver: Driver, audit: AuditLogger, *, user: str
     result_count = count_fn() if callable(count_fn) else None
     return (
         TraceStep(tool=name, arguments=arguments, result_count=result_count),
-        _tool_message(tc, result),
+        _tool_message(tc, result, result_count=result_count),
     )
 
 
-def _tool_message(tc: Any, content: dict[str, Any]) -> dict[str, Any]:
+def _tool_message(tc: Any, content: dict[str, Any], *, result_count: int | None = None) -> dict[str, Any]:
     """Build an OpenAI ``tool`` result message linked to a tool-call id."""
-    return {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(content)}
+    compact = _compact_tool_content(content, result_count=result_count)
+    return {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(compact)}
+
+
+def _compact_tool_content(content: dict[str, Any], *, result_count: int | None = None) -> dict[str, Any]:
+    """Return a context-bounded view of ``content`` for the model loop.
+
+    The agent keeps the full tool output for audit and API return values, but
+    the follow-up model turn only needs enough structured evidence to answer.
+    Large lists and long strings are truncated here so one verbose tool result
+    does not exhaust the chat model's context window.
+    """
+    compacted, truncated = _compact_tool_value(content)
+    payload = cast("dict[str, Any]", compacted)
+    meta: dict[str, Any] = {}
+    if result_count is not None:
+        meta["result_count"] = result_count
+    if truncated:
+        meta["truncated"] = True
+        meta["note"] = "Lists and long strings were truncated to fit model context."
+    if meta:
+        payload = {**payload, "_meta": meta}
+    return payload
+
+
+def _compact_tool_value(value: Any) -> tuple[Any, bool]:
+    """Recursively compact ``value`` for inclusion in a tool message."""
+    if isinstance(value, str):
+        if len(value) <= _MAX_TOOL_MESSAGE_STRING_CHARS:
+            return value, False
+        trimmed = value[: _MAX_TOOL_MESSAGE_STRING_CHARS - 3].rstrip()
+        return f"{trimmed}...", True
+    if isinstance(value, list):
+        truncated = len(value) > _MAX_TOOL_MESSAGE_ITEMS
+        compacted_items: list[Any] = []
+        for item in value[:_MAX_TOOL_MESSAGE_ITEMS]:
+            compacted_item, item_truncated = _compact_tool_value(item)
+            compacted_items.append(compacted_item)
+            truncated = truncated or item_truncated
+        return compacted_items, truncated
+    if isinstance(value, dict):
+        compacted: dict[str, Any] = {}
+        truncated = False
+        for key, item in value.items():
+            compacted_item, item_truncated = _compact_tool_value(item)
+            compacted[key] = compacted_item
+            truncated = truncated or item_truncated
+        return compacted, truncated
+    return value, False
 
 
 def _is_tool_calling_unsupported(err: Exception) -> bool:
@@ -245,3 +310,16 @@ def _tool_calling_error_message(err: Exception) -> str:
         "function-calling (see ADR 0009). "
         f"Underlying error: {err}"
     )
+
+
+def _is_context_window_exceeded(err: Exception) -> bool:
+    """Return ``True`` when ``err`` indicates the prompt exceeded model context."""
+    text = str(err).lower()
+    phrases = (
+        "contextwindowexceedederror",
+        "maximum context length",
+        "maximum input length",
+        "input_tokens",
+        "requested 0 output tokens",
+    )
+    return any(phrase in text for phrase in phrases)

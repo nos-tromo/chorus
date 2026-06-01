@@ -126,3 +126,33 @@ def test_inference_unreachable_returns_502(
     )
     assert resp.status_code == 502
     assert "inference" in resp.json()["detail"].lower()
+
+
+def test_context_window_exceeded_returns_502(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A context-window overflow returns a specific 502 detail."""
+    import openai
+
+    from chorus.api.routers import agent as agent_router
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError(
+            "ContextWindowExceededError: This model's maximum context length is 16384 tokens"
+        )
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+
+    app = FastAPI()
+    app.include_router(agent_router.router)
+    app.state.driver = migrated_driver
+    app.state.audit = in_memory_audit
+
+    resp = TestClient(app).post(
+        "/agent/query",
+        json={"messages": [{"role": "user", "content": "hi"}]},
+        headers={"X-Auth-User": "analyst"},
+    )
+    assert resp.status_code == 502
+    assert "context window" in resp.json()["detail"].lower()

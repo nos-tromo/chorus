@@ -7,6 +7,7 @@ real against the migrated test database.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -239,6 +240,60 @@ def test_vllm_auto_tool_choice_error_mentions_backend_flags(
     assert "backend configuration issue" in detail
     assert "--enable-auto-tool-choice" in detail
     assert "--tool-call-parser" in detail
+
+
+def test_tool_message_compacts_large_payload() -> None:
+    """Large tool payloads are compacted before being fed back to the model."""
+    from chorus.agent.loop import _tool_message
+
+    tc = _FakeToolCall("c1", "posts_mentioning", '{"entity": "Deutschland"}')
+    content = {
+        "hits": [
+            {
+                "uuid": f"p-{index}",
+                "text": "Deutschland " * 80,
+                "ts": "2026-05-01T10:00:00+00:00",
+                "labels": ["Post", "Posting"],
+                "entity_id": None,
+                "matched_name": "Deutschland",
+            }
+            for index in range(20)
+        ]
+    }
+
+    message = _tool_message(tc, content, result_count=20)
+    payload = json.loads(message["content"])
+
+    assert len(payload["hits"]) == 8
+    assert payload["hits"][0]["text"].endswith("...")
+    assert payload["_meta"]["result_count"] == 20
+    assert payload["_meta"]["truncated"] is True
+
+
+def test_context_window_error_is_raised(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A backend context-window overflow surfaces a dedicated agent error."""
+    import openai
+
+    from chorus.agent.loop import ContextWindowExceededError, run_agent
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError(
+            "ContextWindowExceededError: This model's maximum context length is 16384 tokens "
+            "and your prompt contains at least 16385 input tokens (parameter=input_tokens)"
+        )
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+    with pytest.raises(ContextWindowExceededError) as excinfo:
+        run_agent(
+            migrated_driver,
+            in_memory_audit,
+            user="u",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    assert "context window" in str(excinfo.value).lower()
 
 
 def test_inference_error_raises_agent_inference_error(
