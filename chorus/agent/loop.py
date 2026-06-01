@@ -281,7 +281,15 @@ def _compact_tool_content(
             "sample, not the full set; result_count (when present) is the true total."
         )
     if meta:
-        payload = {**payload, "_meta": meta}
+        # `model_dump` never emits underscore-prefixed keys, so a real tool output
+        # cannot carry `_meta`; guard anyway since this helper takes any dict. A
+        # caller-supplied `_meta` dict is merged into (its keys win) rather than
+        # clobbered; a non-dict `_meta` is left untouched and the envelope dropped.
+        existing = payload.get("_meta")
+        if isinstance(existing, dict):
+            payload = {**payload, "_meta": {**meta, **existing}}
+        elif "_meta" not in payload:
+            payload = {**payload, "_meta": meta}
     return payload
 
 

@@ -298,6 +298,20 @@ def test_compaction_note_states_the_caps() -> None:
     assert "280" in note
 
 
+def test_compaction_preserves_tool_supplied_meta() -> None:
+    """A tool's own ``_meta`` is merged, never clobbered by the envelope."""
+    from chorus.agent.loop import _tool_message
+
+    tc = _FakeToolCall("c1", "posts_mentioning", "{}")
+    content = {"_meta": {"tool_field": 1}, "rows": [1, 2, 3]}
+
+    message = _tool_message(tc, content, result_count=3)
+    meta = json.loads(message["content"])["_meta"]
+
+    assert meta["tool_field"] == 1
+    assert meta["result_count"] == 3
+
+
 def test_context_window_error_is_raised(
     migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
