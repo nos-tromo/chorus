@@ -284,6 +284,20 @@ def test_tool_message_respects_custom_compaction_limits() -> None:
     assert payload["blurb"] == "xx..."
 
 
+def test_compaction_note_states_the_caps() -> None:
+    """The truncation note names the caps so the model treats lists as samples."""
+    from chorus.agent.loop import _tool_message
+
+    tc = _FakeToolCall("c1", "posts_mentioning", "{}")
+    content = {"items": list(range(50))}
+
+    message = _tool_message(tc, content)
+    note = json.loads(message["content"])["_meta"]["note"]
+
+    assert "8" in note
+    assert "280" in note
+
+
 def test_context_window_error_is_raised(
     migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

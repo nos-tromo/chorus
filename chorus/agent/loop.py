@@ -275,7 +275,11 @@ def _compact_tool_content(
         meta["result_count"] = result_count
     if truncated:
         meta["truncated"] = True
-        meta["note"] = "Lists and long strings were truncated to fit model context."
+        meta["note"] = (
+            f"Truncated to fit model context: each list shows at most {max_items} items "
+            f"and each string at most {max_chars} characters. Treat the items shown as a "
+            "sample, not the full set; result_count (when present) is the true total."
+        )
     if meta:
         payload = {**payload, "_meta": meta}
     return payload
