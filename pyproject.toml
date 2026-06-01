@@ -29,11 +29,11 @@ packages = ["chorus"]
 
 [dependency-groups]
 dev = [
-    "mypy==2.1.0",
+    "mypy==1.19.0",
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
-    "ruff==0.15.15",
+    "ruff==0.15.14",
     "testcontainers[neo4j]>=4.14.2",
 ]
 # Frontend-only runtime deps, kept out of [project.dependencies] so the UI
