@@ -43,7 +43,12 @@ registry:
   unreachable/misconfigured backend reports the provider base URL, and a
   tool-calling rejection reports either likely missing function-calling support
   on the model or missing backend-side tool-calling configuration (for example
-  vLLM parser / auto-tool-choice flags). This avoids leaking a raw `500`
+  vLLM parser / auto-tool-choice flags); a request that overflows the model's
+  context window raises the subclass `ContextWindowExceededError` (also a
+  `502`). To reduce context overflows, the loop compacts verbose tool-result
+  payloads (long lists and strings) before follow-up turns, while preserving
+  the full result for the API return value and the audit trail. This avoids
+  leaking a raw `500`
   (whose plaintext body the UI can't surface). chorus does **not** implement a
   prompted-JSON fallback (see Alternatives). The structured query tools are
   unaffected — only the natural-language agent is unavailable.
