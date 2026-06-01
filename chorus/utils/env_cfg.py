@@ -309,11 +309,13 @@ class ResolutionConfig:
             after embedding clustering.
         case_normalize: Whether to lowercase surface forms before comparing
             them in the alias table.
+        vector_k: Candidate fan-out for the entity vector search.
     """
 
     embed_cluster_threshold: float
     llm_tiebreak_enabled: bool
     case_normalize: bool
+    vector_k: int
 
 
 @dataclass(frozen=True)
@@ -510,6 +512,7 @@ def load_resolution_env() -> ResolutionConfig:
         embed_cluster_threshold=_env_float("RES_EMBED_THRESHOLD", 0.86),
         llm_tiebreak_enabled=_env_bool("RES_LLM_TIEBREAK", True),
         case_normalize=_env_bool("RES_CASE_NORMALIZE", True),
+        vector_k=_env_int("RES_VECTOR_K", 5),
     )
 
 

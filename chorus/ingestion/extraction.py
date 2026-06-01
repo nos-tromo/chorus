@@ -67,8 +67,10 @@ def write_mentions(
 ) -> int:
     """Write extracted spans as ``:MENTIONS`` edges with provenance.
 
-    For each span, MERGEs the ``:Alias`` node by surface form and
-    MERGEs the ``:MENTIONS`` edge from the post to the alias.
+    For each span, MERGEs the ``:Alias`` node by surface form — setting its
+    GLiNER ``label`` on create and backfilling it on match when missing
+    (``coalesce``; a label already set is never overwritten) — and MERGEs
+    the ``:MENTIONS`` edge from the post to the alias.
     ``:RESOLVED_TO`` is left to :func:`resolution.resolve_alias_to_entity`
     — this function only ensures the alias and provenance exist.
 
@@ -88,6 +90,8 @@ def write_mentions(
     UNWIND $spans AS span
     MATCH (p:Post {uuid: $post_uuid})
     MERGE (al:Alias {surface_form: span.surface_form})
+      ON CREATE SET al.label = span.label
+      ON MATCH SET al.label = coalesce(al.label, span.label)
     MERGE (p)-[m:MENTIONS]->(al)
       ON CREATE SET
         m.span_start    = span.span_start,

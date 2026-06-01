@@ -19,10 +19,12 @@ from datetime import datetime
 from chorus.db.neo4j import close_driver, get_driver
 from chorus.ingestion.orchestrator import run_once
 from chorus.ingestion.raw_store import RawStore
+from chorus.ingestion.resolution import resolve_all
 from chorus.ingestion.upstream import FileUpstreamAdapter
 from chorus.utils.env_cfg import (
     load_ingestion_env,
     load_path_env,
+    load_resolution_env,
     load_retention_env,
 )
 
@@ -51,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         help="ISO 8601 timestamp; restrict the pull to rows newer than this",
         default=None,
     )
+    sub.add_parser("resolve", help="resolve unresolved aliases to entities")
     args = p.parse_args(argv)
 
     if args.cmd == "run":
@@ -73,6 +76,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{stage}: {count}")
         if result["skipped"]:
             print(f"skipped: {result['skipped']}")
+        return 0
+
+    if args.cmd == "resolve":
+        driver = get_driver()
+        try:
+            summary = resolve_all(driver, load_resolution_env())
+        finally:
+            close_driver()
+        for field, count in summary.as_dict().items():
+            print(f"{field}: {count}")
         return 0
 
     return 2
