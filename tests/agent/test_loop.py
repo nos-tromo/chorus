@@ -212,6 +212,35 @@ def test_tool_calling_unsupported_is_raised(
         )
 
 
+def test_vllm_auto_tool_choice_error_mentions_backend_flags(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The vLLM auto-tool-choice rejection is reported as a backend config issue."""
+    import openai
+
+    from chorus.agent.loop import ToolCallingUnsupportedError, run_agent
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError(
+            'OpenAIException - "auto" tool choice requires --enable-auto-tool-choice '
+            'and --tool-call-parser to be set. Received Model Group=google/gemma-4-E2B-it'
+        )
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+    with pytest.raises(ToolCallingUnsupportedError) as excinfo:
+        run_agent(
+            migrated_driver,
+            in_memory_audit,
+            user="u",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    detail = str(excinfo.value)
+    assert "backend configuration issue" in detail
+    assert "--enable-auto-tool-choice" in detail
+    assert "--tool-call-parser" in detail
+
+
 def test_inference_error_raises_agent_inference_error(
     migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

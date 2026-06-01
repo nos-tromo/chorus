@@ -38,9 +38,9 @@ class AgentInferenceError(RuntimeError):
 class ToolCallingUnsupportedError(AgentInferenceError):
     """Raised when the inference backend rejects a tool-calling request.
 
-    Signals that the configured chat model likely does not support
-    function-calling. chorus does not ship a prompted-JSON fallback
-    (see ADR 0009).
+    Signals either that the configured chat model does not support
+    function-calling or that the backend is not configured to expose it
+    correctly. chorus does not ship a prompted-JSON fallback (see ADR 0009).
     """
 
 
@@ -111,12 +111,11 @@ def run_agent(
                 msg = provider.chat_message(convo, model=model, tools=tools, tool_choice="auto")
             except openai.OpenAIError as err:
                 if _is_tool_calling_unsupported(err):
-                    logger.warning("agent: chat model rejected tool-calling request: {}", err)
-                    raise ToolCallingUnsupportedError(
-                        "The configured chat model rejected the tool-calling request and may "
-                        "not support function-calling (see ADR 0009). "
-                        f"Underlying error: {err}"
-                    ) from err
+                    if _is_vllm_auto_tool_choice_error(err):
+                        logger.warning("agent: inference backend rejected automatic tool selection: {}", err)
+                    else:
+                        logger.warning("agent: chat model rejected tool-calling request: {}", err)
+                    raise ToolCallingUnsupportedError(_tool_calling_error_message(err)) from err
                 logger.warning("agent: inference request failed: {}", err)
                 raise AgentInferenceError(
                     "The inference backend request failed "
@@ -208,8 +207,41 @@ def _is_tool_calling_unsupported(err: Exception) -> bool:
     generic inference-error path so it is not mislabelled a capability failure.
     """
     text = str(err).lower()
-    keywords = ("tool", "function call", "function_call", "function-calling", "enable_auto_tool")
+    keywords = (
+        "tool",
+        "function call",
+        "function_call",
+        "function-calling",
+        "enable_auto_tool",
+        "enable-auto-tool-choice",
+        "tool-call-parser",
+    )
     if any(kw in text for kw in keywords):
         return True
     status = getattr(err, "status_code", None)
     return status in (400, 422) and ("not support" in text or "unsupported" in text)
+
+
+def _is_vllm_auto_tool_choice_error(err: Exception) -> bool:
+    """Return ``True`` for vLLM's missing auto-tool-choice server-flag error."""
+    text = str(err).lower()
+    return "enable-auto-tool-choice" in text and "tool-call-parser" in text
+
+
+def _tool_calling_error_message(err: Exception) -> str:
+    """Build a user-facing explanation for a rejected tool-calling request."""
+    if _is_vllm_auto_tool_choice_error(err):
+        return (
+            "The inference backend rejected automatic tool selection. This is a backend "
+            "configuration issue, not necessarily a model capability issue. On vLLM, "
+            "start the server with `--enable-auto-tool-choice` and a model-matched "
+            "`--tool-call-parser`; the Gemma 4 vLLM recipe also uses "
+            "`--reasoning-parser gemma4` and "
+            "`--chat-template examples/tool_chat_template_gemma4.jinja`. "
+            f"Underlying error: {err}"
+        )
+    return (
+        "The configured chat model rejected the tool-calling request and may not support "
+        "function-calling (see ADR 0009). "
+        f"Underlying error: {err}"
+    )
