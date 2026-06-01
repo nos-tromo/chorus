@@ -25,7 +25,6 @@ from chorus.audit.logger import AuditLogger
 from chorus.inference import provider
 from chorus.tools import TOOLS
 
-
 _MAX_TOOL_MESSAGE_ITEMS = 8
 _MAX_TOOL_MESSAGE_STRING_CHARS = 280
 

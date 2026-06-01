@@ -138,9 +138,7 @@ def test_context_window_exceeded_returns_502(
     from chorus.inference import provider
 
     def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
-        raise openai.OpenAIError(
-            "ContextWindowExceededError: This model's maximum context length is 16384 tokens"
-        )
+        raise openai.OpenAIError("ContextWindowExceededError: This model's maximum context length is 16384 tokens")
 
     monkeypatch.setattr(provider, "chat_message", _boom)
 
