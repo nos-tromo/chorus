@@ -224,7 +224,7 @@ def test_vllm_auto_tool_choice_error_mentions_backend_flags(
     def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
         raise openai.OpenAIError(
             'OpenAIException - "auto" tool choice requires --enable-auto-tool-choice '
-            'and --tool-call-parser to be set. Received Model Group=google/gemma-4-E2B-it'
+            "and --tool-call-parser to be set. Received Model Group=google/gemma-4-E2B-it"
         )
 
     monkeypatch.setattr(provider, "chat_message", _boom)

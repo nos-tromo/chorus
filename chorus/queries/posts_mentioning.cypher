@@ -4,6 +4,9 @@
 //   onward to an :Entity.
 // Matching is case-insensitive so the UI can accept human input without
 // requiring exact graph casing.
+// Comment/message ingestion may create thin :Post stubs for parent links
+// before the full row arrives. This tool only returns fully materialized
+// posts because downstream output requires body text and timestamp.
 
 MATCH (p:Post)-[:MENTIONS]->(mention)
 OPTIONAL MATCH (mention:Alias)-[:RESOLVED_TO]->(e:Entity)
@@ -22,6 +25,8 @@ WHERE (
 )
   AND ($from IS NULL OR p.timestamp >= datetime($from))
   AND ($to   IS NULL OR p.timestamp <  datetime($to))
+  AND p.text IS NOT NULL
+  AND p.timestamp IS NOT NULL
 RETURN
   p.uuid       AS uuid,
   p.text       AS text,
