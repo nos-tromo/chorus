@@ -25,22 +25,31 @@ from chorus.audit.logger import AuditLogger
 from chorus.inference import provider
 from chorus.tools import TOOLS
 
+_MAX_TOOL_MESSAGE_ITEMS = 8
+_MAX_TOOL_MESSAGE_STRING_CHARS = 280
+
 
 class AgentInferenceError(RuntimeError):
     """Raised when the agent's inference call fails (unreachable or errored).
 
     The agent fails loud with a readable message rather than leaking a raw
     500; the router maps this to a 502. Subclassed by
-    :class:`ToolCallingUnsupportedError` for the specific capability failure.
+    :class:`ToolCallingUnsupportedError` (the model or backend cannot do
+    tool-calling) and :class:`ContextWindowExceededError` (the request was
+    too large for the model) for the two specific, identifiable failures.
     """
+
+
+class ContextWindowExceededError(AgentInferenceError):
+    """Raised when the assembled agent request exceeds the model context window."""
 
 
 class ToolCallingUnsupportedError(AgentInferenceError):
     """Raised when the inference backend rejects a tool-calling request.
 
-    Signals that the configured chat model likely does not support
-    function-calling. chorus does not ship a prompted-JSON fallback
-    (see ADR 0009).
+    Signals either that the configured chat model does not support
+    function-calling or that the backend is not configured to expose it
+    correctly. chorus does not ship a prompted-JSON fallback (see ADR 0009).
     """
 
 
@@ -86,6 +95,8 @@ def run_agent(
     messages: list[dict[str, Any]],
     max_iterations: int = 6,
     model: str | None = None,
+    tool_message_max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
+    tool_message_max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
 ) -> AgentResult:
     """Run the tool-calling loop for one chat turn.
 
@@ -98,6 +109,10 @@ def run_agent(
             should be the new user message.
         max_iterations: Maximum model-tool rounds before giving up.
         model: Chat model id override; defaults to the provider's TEXT_MODEL.
+        tool_message_max_items: Maximum list items kept per tool result fed
+            back to the model; longer lists are truncated.
+        tool_message_max_chars: Maximum characters kept per string in a tool
+            result fed back to the model; longer strings are truncated.
 
     Returns:
         An :class:`AgentResult` with the final answer and the tool-call trace.
@@ -110,13 +125,24 @@ def run_agent(
             try:
                 msg = provider.chat_message(convo, model=model, tools=tools, tool_choice="auto")
             except openai.OpenAIError as err:
-                if _is_tool_calling_unsupported(err):
-                    logger.warning("agent: chat model rejected tool-calling request: {}", err)
-                    raise ToolCallingUnsupportedError(
-                        "The configured chat model rejected the tool-calling request and may "
-                        "not support function-calling (see ADR 0009). "
+                # Context-window overflow is unambiguous and is checked first: its
+                # token-count text can mention "tool" results, which would otherwise
+                # trip the broad keyword match in `_is_tool_calling_unsupported`.
+                if _is_context_window_exceeded(err):
+                    logger.warning("agent: request exceeded chat model context window: {}", err)
+                    raise ContextWindowExceededError(
+                        "The agent request exceeded the chat model's context window. "
+                        "This usually means the visible conversation or tool results were too large for "
+                        "the configured model. chorus trims verbose tool payloads before follow-up turns, "
+                        "but this request still did not fit. "
                         f"Underlying error: {err}"
                     ) from err
+                if _is_tool_calling_unsupported(err):
+                    if _is_vllm_auto_tool_choice_error(err):
+                        logger.warning("agent: inference backend rejected automatic tool selection: {}", err)
+                    else:
+                        logger.warning("agent: chat model rejected tool-calling request: {}", err)
+                    raise ToolCallingUnsupportedError(_tool_calling_error_message(err)) from err
                 logger.warning("agent: inference request failed: {}", err)
                 raise AgentInferenceError(
                     "The inference backend request failed "
@@ -130,7 +156,14 @@ def run_agent(
                 return AgentResult(answer=msg.content or "", trace=trace, truncated=False)
             convo.append(_assistant_turn(msg.content, tool_calls))
             for tc in tool_calls:
-                step, tool_message = _execute_tool_call(tc, driver, audit, user=user)
+                step, tool_message = _execute_tool_call(
+                    tc,
+                    driver,
+                    audit,
+                    user=user,
+                    max_items=tool_message_max_items,
+                    max_chars=tool_message_max_chars,
+                )
                 trace.append(step)
                 convo.append(tool_message)
         slot.result_count = len(trace)
@@ -153,7 +186,15 @@ def _assistant_turn(content: str | None, tool_calls: list[Any]) -> dict[str, Any
     }
 
 
-def _execute_tool_call(tc: Any, driver: Driver, audit: AuditLogger, *, user: str) -> tuple[TraceStep, dict[str, Any]]:
+def _execute_tool_call(
+    tc: Any,
+    driver: Driver,
+    audit: AuditLogger,
+    *,
+    user: str,
+    max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
+    max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
+) -> tuple[TraceStep, dict[str, Any]]:
     """Execute one model tool call, returning its trace step and tool message.
 
     Failures (unknown tool, invalid arguments, tool exception) become an
@@ -171,32 +212,113 @@ def _execute_tool_call(tc: Any, driver: Driver, audit: AuditLogger, *, user: str
     spec = TOOLS.get(name)
     if spec is None:
         error = f"unknown tool: {name}"
-        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(tc, {"error": error})
+        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(
+            tc, {"error": error}, max_items=max_items, max_chars=max_chars
+        )
 
     try:
         parsed = spec.input_model.model_validate(arguments)
     except ValidationError as exc:
         error = f"invalid arguments: {exc.errors()}"
-        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(tc, {"error": error})
+        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(
+            tc, {"error": error}, max_items=max_items, max_chars=max_chars
+        )
 
     try:
         out = spec.run(driver, parsed, user=user, audit=audit)
     except Exception as exc:  # surface any tool failure back to the model
         error = f"{type(exc).__name__}: {exc}"
-        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(tc, {"error": error})
+        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(
+            tc, {"error": error}, max_items=max_items, max_chars=max_chars
+        )
 
     result = out.model_dump(mode="json")
     count_fn = getattr(out, "audit_result_count", None)
     result_count = count_fn() if callable(count_fn) else None
     return (
         TraceStep(tool=name, arguments=arguments, result_count=result_count),
-        _tool_message(tc, result),
+        _tool_message(tc, result, result_count=result_count, max_items=max_items, max_chars=max_chars),
     )
 
 
-def _tool_message(tc: Any, content: dict[str, Any]) -> dict[str, Any]:
+def _tool_message(
+    tc: Any,
+    content: dict[str, Any],
+    *,
+    result_count: int | None = None,
+    max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
+    max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
+) -> dict[str, Any]:
     """Build an OpenAI ``tool`` result message linked to a tool-call id."""
-    return {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(content)}
+    compact = _compact_tool_content(content, result_count=result_count, max_items=max_items, max_chars=max_chars)
+    return {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(compact)}
+
+
+def _compact_tool_content(
+    content: dict[str, Any],
+    *,
+    result_count: int | None = None,
+    max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
+    max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
+) -> dict[str, Any]:
+    """Return a context-bounded view of ``content`` for the model loop.
+
+    The agent keeps the full tool output for audit and API return values, but
+    the follow-up model turn only needs enough structured evidence to answer.
+    Large lists and long strings are truncated here so one verbose tool result
+    does not exhaust the chat model's context window.
+    """
+    compacted, truncated = _compact_tool_value(content, max_items=max_items, max_chars=max_chars)
+    payload = cast("dict[str, Any]", compacted)
+    meta: dict[str, Any] = {}
+    if result_count is not None:
+        meta["result_count"] = result_count
+    if truncated:
+        meta["truncated"] = True
+        meta["note"] = (
+            f"Truncated to fit model context: each list shows at most {max_items} items "
+            f"and each string at most {max_chars} characters. Treat the items shown as a "
+            "sample, not the full set; result_count (when present) is the true total."
+        )
+    if meta:
+        # `model_dump` never emits underscore-prefixed keys, so a real tool output
+        # cannot carry `_meta`; guard anyway since this helper takes any dict. A
+        # caller-supplied `_meta` dict is merged into (its keys win) rather than
+        # clobbered; a non-dict `_meta` is left untouched and the envelope dropped.
+        existing = payload.get("_meta")
+        if isinstance(existing, dict):
+            payload = {**payload, "_meta": {**meta, **existing}}
+        elif "_meta" not in payload:
+            payload = {**payload, "_meta": meta}
+    return payload
+
+
+def _compact_tool_value(
+    value: Any, *, max_items: int = _MAX_TOOL_MESSAGE_ITEMS, max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS
+) -> tuple[Any, bool]:
+    """Recursively compact ``value`` for inclusion in a tool message."""
+    if isinstance(value, str):
+        if len(value) <= max_chars:
+            return value, False
+        trimmed = value[: max_chars - 3].rstrip()
+        return f"{trimmed}...", True
+    if isinstance(value, list):
+        truncated = len(value) > max_items
+        compacted_items: list[Any] = []
+        for item in value[:max_items]:
+            compacted_item, item_truncated = _compact_tool_value(item, max_items=max_items, max_chars=max_chars)
+            compacted_items.append(compacted_item)
+            truncated = truncated or item_truncated
+        return compacted_items, truncated
+    if isinstance(value, dict):
+        compacted: dict[str, Any] = {}
+        truncated = False
+        for key, item in value.items():
+            compacted_item, item_truncated = _compact_tool_value(item, max_items=max_items, max_chars=max_chars)
+            compacted[key] = compacted_item
+            truncated = truncated or item_truncated
+        return compacted, truncated
+    return value, False
 
 
 def _is_tool_calling_unsupported(err: Exception) -> bool:
@@ -208,8 +330,54 @@ def _is_tool_calling_unsupported(err: Exception) -> bool:
     generic inference-error path so it is not mislabelled a capability failure.
     """
     text = str(err).lower()
-    keywords = ("tool", "function call", "function_call", "function-calling", "enable_auto_tool")
+    keywords = (
+        "tool",
+        "function call",
+        "function_call",
+        "function-calling",
+        "enable_auto_tool",
+        "enable-auto-tool-choice",
+        "tool-call-parser",
+    )
     if any(kw in text for kw in keywords):
         return True
     status = getattr(err, "status_code", None)
     return status in (400, 422) and ("not support" in text or "unsupported" in text)
+
+
+def _is_vllm_auto_tool_choice_error(err: Exception) -> bool:
+    """Return ``True`` for vLLM's missing auto-tool-choice server-flag error."""
+    text = str(err).lower()
+    return "enable-auto-tool-choice" in text and "tool-call-parser" in text
+
+
+def _tool_calling_error_message(err: Exception) -> str:
+    """Build a user-facing explanation for a rejected tool-calling request."""
+    if _is_vllm_auto_tool_choice_error(err):
+        return (
+            "The inference backend rejected automatic tool selection. This is a backend "
+            "configuration issue, not necessarily a model capability issue. On vLLM, "
+            "start the server with `--enable-auto-tool-choice` and a model-matched "
+            "`--tool-call-parser`; the Gemma 4 vLLM recipe also uses "
+            "`--reasoning-parser gemma4` and "
+            "`--chat-template examples/tool_chat_template_gemma4.jinja`. "
+            f"Underlying error: {err}"
+        )
+    return (
+        "The configured chat model rejected the tool-calling request and may not support "
+        "function-calling (see ADR 0009). "
+        f"Underlying error: {err}"
+    )
+
+
+def _is_context_window_exceeded(err: Exception) -> bool:
+    """Return ``True`` when ``err`` indicates the prompt exceeded model context."""
+    text = str(err).lower()
+    phrases = (
+        "contextwindowexceedederror",
+        "maximum context length",
+        "maximum input length",
+        "input_tokens",
+        "requested 0 output tokens",
+    )
+    return any(phrase in text for phrase in phrases)

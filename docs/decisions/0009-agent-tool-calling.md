@@ -40,12 +40,18 @@ registry:
   call raises `AgentInferenceError` (the tool-calling-unsupported case is the
   subclass `ToolCallingUnsupportedError`); `run_agent` logs a warning and
   `POST /agent/query` returns a `502` with a readable message — an
-  unreachable/misconfigured backend reports the provider base URL, and an
-  incompatible model reports the likely missing function-calling support. This
-  avoids leaking a raw `500` (whose plaintext body the UI can't surface). chorus
-  does **not** implement a prompted-JSON fallback (see Alternatives). The
-  structured query tools are unaffected — only the natural-language agent is
-  unavailable.
+  unreachable/misconfigured backend reports the provider base URL, and a
+  tool-calling rejection reports either likely missing function-calling support
+  on the model or missing backend-side tool-calling configuration (for example
+  vLLM parser / auto-tool-choice flags); a request that overflows the model's
+  context window raises the subclass `ContextWindowExceededError` (also a
+  `502`). To reduce context overflows, the loop compacts verbose tool-result
+  payloads (long lists and strings) before follow-up turns, while preserving
+  the full result for the API return value and the audit trail. This avoids
+  leaking a raw `500`
+  (whose plaintext body the UI can't surface). chorus does **not** implement a
+  prompted-JSON fallback (see Alternatives). The structured query tools are
+  unaffected — only the natural-language agent is unavailable.
 
 ## Alternatives considered
 
@@ -72,12 +78,13 @@ registry:
   named tools (no Cypher); a complete §76 trail (NL query → tool calls);
   provider-swappable via env; no new services or airgap surface.
 - Negative: depends on the served chat model supporting OpenAI function-calling
-  through LiteLLM — an incompatible model disables the agent (surfaced as a
-  logged warning + a `502`; the structured tools still work). Tool selection is
-  non-deterministic; latency scales with the number of tool-call rounds. The
-  *silent* case — a model that ignores `tools` and answers anyway — cannot be
-  reliably distinguished from a legitimate no-tool answer, so it is not detected
-  (documented limitation).
+  through LiteLLM and on the serving stack exposing the needed tool-calling
+  parser/flags — an incompatible model or misconfigured backend disables the
+  agent (surfaced as a logged warning + a `502`; the structured tools still
+  work). Tool selection is non-deterministic; latency scales with the number of
+  tool-call rounds. The *silent* case — a model that ignores `tools` and
+  answers anyway — cannot be reliably distinguished from a legitimate no-tool
+  answer, so it is not detected (documented limitation).
 - Reversal trigger: if a deployment must support a non-tool-calling model,
   prefer configuring a compatible model; only if that is impossible, implement
   the prompted-JSON strategy then — a localized change to the single

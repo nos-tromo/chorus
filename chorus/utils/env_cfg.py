@@ -185,10 +185,16 @@ class AgentConfig:
             loop gives up and returns a truncated result.
         model: Chat model id override for the agent, or ``None`` to use the
             inference provider's ``TEXT_MODEL``.
+        tool_message_max_items: Maximum list items kept per tool result fed
+            back to the model; longer lists are truncated to fit context.
+        tool_message_max_chars: Maximum characters kept per string in a tool
+            result fed back to the model; longer strings are truncated.
     """
 
     max_tool_iterations: int
     model: str | None
+    tool_message_max_items: int
+    tool_message_max_chars: int
 
 
 @dataclass(frozen=True)
@@ -393,6 +399,8 @@ def load_agent_env() -> AgentConfig:
     return AgentConfig(
         max_tool_iterations=_env_int("AGENT_MAX_ITERATIONS", 6),
         model=_env("AGENT_MODEL"),
+        tool_message_max_items=_env_int("AGENT_TOOL_MESSAGE_MAX_ITEMS", 8),
+        tool_message_max_chars=_env_int("AGENT_TOOL_MESSAGE_MAX_CHARS", 280),
     )
 
 

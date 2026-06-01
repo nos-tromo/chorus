@@ -114,6 +114,47 @@ def test_posts_mentioning_finds_unresolved_alias(migrated_driver: Driver, in_mem
     assert out.audit_entities() == []
 
 
+def test_posts_mentioning_ignores_incomplete_post_stubs(migrated_driver: Driver, in_memory_audit: Any) -> None:
+    """Thin :Post stubs with missing text/timestamp must not crash the tool.
+
+    Comment and message ingestion can create placeholder parent ``:Post``
+    nodes before the full row arrives. If malformed data also attaches a
+    ``:MENTIONS`` edge to such a stub, the tool should ignore it and still
+    return any fully-materialized matches.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+    """
+    from chorus.tools.posts_mentioning import (
+        PostsMentioningIn,
+        posts_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (a:Alias {surface_form: 'Deutschland'})
+            MERGE (stub:Post:Posting {uuid: 'p-stub'})
+            MERGE (stub)-[:MENTIONS]->(a)
+            MERGE (good:Post:Posting {uuid: 'p-good'})
+              ON CREATE SET good.text = 'post mentioning Deutschland',
+                            good.timestamp = datetime('2026-05-04T10:00:00+00:00')
+            MERGE (good)-[:MENTIONS]->(a)
+            """
+        )
+
+    out = posts_mentioning(
+        migrated_driver,
+        PostsMentioningIn(entity="Deutschland", limit=10),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+
+    assert [hit.uuid for hit in out.hits] == ["p-good"]
+    assert out.hits[0].matched_name == "Deutschland"
+
+
 def test_posts_mentioning_time_window_excludes_entity_branch_match(
     migrated_driver: Driver, in_memory_audit: Any
 ) -> None:

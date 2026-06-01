@@ -7,6 +7,7 @@ real against the migrated test database.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -210,6 +211,164 @@ def test_tool_calling_unsupported_is_raised(
             user="u",
             messages=[{"role": "user", "content": "hi"}],
         )
+
+
+def test_vllm_auto_tool_choice_error_mentions_backend_flags(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The vLLM auto-tool-choice rejection is reported as a backend config issue."""
+    import openai
+
+    from chorus.agent.loop import ToolCallingUnsupportedError, run_agent
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError(
+            'OpenAIException - "auto" tool choice requires --enable-auto-tool-choice '
+            "and --tool-call-parser to be set. Received Model Group=google/gemma-4-E2B-it"
+        )
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+    with pytest.raises(ToolCallingUnsupportedError) as excinfo:
+        run_agent(
+            migrated_driver,
+            in_memory_audit,
+            user="u",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    detail = str(excinfo.value)
+    assert "backend configuration issue" in detail
+    assert "--enable-auto-tool-choice" in detail
+    assert "--tool-call-parser" in detail
+
+
+def test_tool_message_compacts_large_payload() -> None:
+    """Large tool payloads are compacted before being fed back to the model."""
+    from chorus.agent.loop import _tool_message
+
+    tc = _FakeToolCall("c1", "posts_mentioning", '{"entity": "Deutschland"}')
+    content = {
+        "hits": [
+            {
+                "uuid": f"p-{index}",
+                "text": "Deutschland " * 80,
+                "ts": "2026-05-01T10:00:00+00:00",
+                "labels": ["Post", "Posting"],
+                "entity_id": None,
+                "matched_name": "Deutschland",
+            }
+            for index in range(20)
+        ]
+    }
+
+    message = _tool_message(tc, content, result_count=20)
+    payload = json.loads(message["content"])
+
+    assert len(payload["hits"]) == 8
+    assert payload["hits"][0]["text"].endswith("...")
+    assert payload["_meta"]["result_count"] == 20
+    assert payload["_meta"]["truncated"] is True
+
+
+def test_tool_message_respects_custom_compaction_limits() -> None:
+    """Compaction caps are parameters, not hard-coded module constants."""
+    from chorus.agent.loop import _tool_message
+
+    tc = _FakeToolCall("c1", "posts_mentioning", "{}")
+    content = {"items": ["one", "two", "three", "four"], "blurb": "x" * 40}
+
+    message = _tool_message(tc, content, max_items=2, max_chars=5)
+    payload = json.loads(message["content"])
+
+    assert len(payload["items"]) == 2
+    assert payload["blurb"] == "xx..."
+
+
+def test_compaction_note_states_the_caps() -> None:
+    """The truncation note names the caps so the model treats lists as samples."""
+    from chorus.agent.loop import _tool_message
+
+    tc = _FakeToolCall("c1", "posts_mentioning", "{}")
+    content = {"items": list(range(50))}
+
+    message = _tool_message(tc, content)
+    note = json.loads(message["content"])["_meta"]["note"]
+
+    assert "8" in note
+    assert "280" in note
+
+
+def test_compaction_preserves_tool_supplied_meta() -> None:
+    """A tool's own ``_meta`` is merged, never clobbered by the envelope."""
+    from chorus.agent.loop import _tool_message
+
+    tc = _FakeToolCall("c1", "posts_mentioning", "{}")
+    content = {"_meta": {"tool_field": 1}, "rows": [1, 2, 3]}
+
+    message = _tool_message(tc, content, result_count=3)
+    meta = json.loads(message["content"])["_meta"]
+
+    assert meta["tool_field"] == 1
+    assert meta["result_count"] == 3
+
+
+def test_context_window_error_is_raised(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A backend context-window overflow surfaces a dedicated agent error."""
+    import openai
+
+    from chorus.agent.loop import ContextWindowExceededError, run_agent
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError(
+            "ContextWindowExceededError: This model's maximum context length is 16384 tokens "
+            "and your prompt contains at least 16385 input tokens (parameter=input_tokens)"
+        )
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+    with pytest.raises(ContextWindowExceededError) as excinfo:
+        run_agent(
+            migrated_driver,
+            in_memory_audit,
+            user="u",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    assert "context window" in str(excinfo.value).lower()
+
+
+def test_context_window_error_mentioning_tools_is_not_misclassified(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A context overflow whose text also mentions tools is a context error.
+
+    The backend's token-count breakdown can reference the tool results that
+    filled the window. Because ``_is_tool_calling_unsupported`` keys off the
+    bare word ``tool``, the context-window check must take precedence so such
+    an error is not mislabelled a capability failure.
+    """
+    import openai
+
+    from chorus.agent.loop import ContextWindowExceededError, run_agent
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError(
+            "ContextWindowExceededError: This model's maximum context length is 8192 tokens. "
+            "However, your messages resulted in 9001 tokens (including tool results). "
+            "Please reduce the length of the messages."
+        )
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+    with pytest.raises(ContextWindowExceededError) as excinfo:
+        run_agent(
+            migrated_driver,
+            in_memory_audit,
+            user="u",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    assert "context window" in str(excinfo.value).lower()
 
 
 def test_inference_error_raises_agent_inference_error(
