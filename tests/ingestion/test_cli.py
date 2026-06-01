@@ -96,3 +96,31 @@ def test_unknown_subcommand_exits_nonzero(
     with pytest.raises(SystemExit) as excinfo:
         cli.main(["bogus"])
     assert excinfo.value.code != 0
+
+
+def test_resolve_writes_audit_row_with_principal(
+    migrated_driver: Driver,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``resolve --user X`` runs resolution, prints the summary, and audits as X."""
+    import sqlite3
+
+    from chorus.inference import provider
+    from chorus.ingestion import cli
+
+    with migrated_driver.session() as s:
+        s.run("MERGE (a:Alias {surface_form: 'Trier'}) ON CREATE SET a.label = 'LOCATION'")
+    # one non-zero vector per text (zero-norm vectors are rejected by the index)
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [[1.0] + [0.0] * 1023 for _ in texts])
+
+    exit_code = cli.main(["resolve", "--user", "operator-1"])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "processed: 1" in out
+    assert "minted: 1" in out
+
+    from chorus.utils.env_cfg import load_audit_env
+
+    rows = sqlite3.connect(load_audit_env().db_path).execute("SELECT user, tool_name FROM audit_log").fetchall()
+    assert ("operator-1", "resolve_all") in rows

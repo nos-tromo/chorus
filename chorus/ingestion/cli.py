@@ -13,15 +13,18 @@ env-only target convention.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import datetime
 
+from chorus.audit.logger import AuditLogger
 from chorus.db.neo4j import close_driver, get_driver
 from chorus.ingestion.orchestrator import run_once
 from chorus.ingestion.raw_store import RawStore
 from chorus.ingestion.resolution import resolve_all
 from chorus.ingestion.upstream import FileUpstreamAdapter
 from chorus.utils.env_cfg import (
+    load_audit_env,
     load_ingestion_env,
     load_path_env,
     load_resolution_env,
@@ -53,7 +56,12 @@ def main(argv: list[str] | None = None) -> int:
         help="ISO 8601 timestamp; restrict the pull to rows newer than this",
         default=None,
     )
-    sub.add_parser("resolve", help="resolve unresolved aliases to entities")
+    resolve_p = sub.add_parser("resolve", help="resolve unresolved aliases to entities")
+    resolve_p.add_argument(
+        "--user",
+        default=None,
+        help="principal recorded in the §76 audit log (default: CHORUS_DEFAULT_IDENTITY or 'cli')",
+    )
     args = p.parse_args(argv)
 
     if args.cmd == "run":
@@ -79,9 +87,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "resolve":
+        principal = args.user or os.environ.get("CHORUS_DEFAULT_IDENTITY") or "cli"
+        audit = AuditLogger(load_audit_env().db_path)
+        audit.init_schema()
         driver = get_driver()
         try:
-            summary = resolve_all(driver, load_resolution_env())
+            summary = resolve_all(driver, load_resolution_env(), audit, user=principal)
         finally:
             close_driver()
         for field, count in summary.as_dict().items():
