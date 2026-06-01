@@ -34,7 +34,9 @@ class AgentInferenceError(RuntimeError):
 
     The agent fails loud with a readable message rather than leaking a raw
     500; the router maps this to a 502. Subclassed by
-    :class:`ToolCallingUnsupportedError` for the specific capability failure.
+    :class:`ToolCallingUnsupportedError` (the model or backend cannot do
+    tool-calling) and :class:`ContextWindowExceededError` (the request was
+    too large for the model) for the two specific, identifiable failures.
     """
 
 
@@ -117,12 +119,9 @@ def run_agent(
             try:
                 msg = provider.chat_message(convo, model=model, tools=tools, tool_choice="auto")
             except openai.OpenAIError as err:
-                if _is_tool_calling_unsupported(err):
-                    if _is_vllm_auto_tool_choice_error(err):
-                        logger.warning("agent: inference backend rejected automatic tool selection: {}", err)
-                    else:
-                        logger.warning("agent: chat model rejected tool-calling request: {}", err)
-                    raise ToolCallingUnsupportedError(_tool_calling_error_message(err)) from err
+                # Context-window overflow is unambiguous and is checked first: its
+                # token-count text can mention "tool" results, which would otherwise
+                # trip the broad keyword match in `_is_tool_calling_unsupported`.
                 if _is_context_window_exceeded(err):
                     logger.warning("agent: request exceeded chat model context window: {}", err)
                     raise ContextWindowExceededError(
@@ -132,6 +131,12 @@ def run_agent(
                         "but this request still did not fit. "
                         f"Underlying error: {err}"
                     ) from err
+                if _is_tool_calling_unsupported(err):
+                    if _is_vllm_auto_tool_choice_error(err):
+                        logger.warning("agent: inference backend rejected automatic tool selection: {}", err)
+                    else:
+                        logger.warning("agent: chat model rejected tool-calling request: {}", err)
+                    raise ToolCallingUnsupportedError(_tool_calling_error_message(err)) from err
                 logger.warning("agent: inference request failed: {}", err)
                 raise AgentInferenceError(
                     "The inference backend request failed "

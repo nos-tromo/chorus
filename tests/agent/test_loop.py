@@ -296,6 +296,39 @@ def test_context_window_error_is_raised(
     assert "context window" in str(excinfo.value).lower()
 
 
+def test_context_window_error_mentioning_tools_is_not_misclassified(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A context overflow whose text also mentions tools is a context error.
+
+    The backend's token-count breakdown can reference the tool results that
+    filled the window. Because ``_is_tool_calling_unsupported`` keys off the
+    bare word ``tool``, the context-window check must take precedence so such
+    an error is not mislabelled a capability failure.
+    """
+    import openai
+
+    from chorus.agent.loop import ContextWindowExceededError, run_agent
+    from chorus.inference import provider
+
+    def _boom(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        raise openai.OpenAIError(
+            "ContextWindowExceededError: This model's maximum context length is 8192 tokens. "
+            "However, your messages resulted in 9001 tokens (including tool results). "
+            "Please reduce the length of the messages."
+        )
+
+    monkeypatch.setattr(provider, "chat_message", _boom)
+    with pytest.raises(ContextWindowExceededError) as excinfo:
+        run_agent(
+            migrated_driver,
+            in_memory_audit,
+            user="u",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    assert "context window" in str(excinfo.value).lower()
+
+
 def test_inference_error_raises_agent_inference_error(
     migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
