@@ -79,6 +79,8 @@ def agent_query(
             messages=[m.model_dump() for m in body.messages],
             max_iterations=cfg.max_tool_iterations,
             model=cfg.model,
+            tool_message_max_items=cfg.tool_message_max_items,
+            tool_message_max_chars=cfg.tool_message_max_chars,
         )
     except AgentInferenceError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc

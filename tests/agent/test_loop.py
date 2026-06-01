@@ -270,6 +270,20 @@ def test_tool_message_compacts_large_payload() -> None:
     assert payload["_meta"]["truncated"] is True
 
 
+def test_tool_message_respects_custom_compaction_limits() -> None:
+    """Compaction caps are parameters, not hard-coded module constants."""
+    from chorus.agent.loop import _tool_message
+
+    tc = _FakeToolCall("c1", "posts_mentioning", "{}")
+    content = {"items": ["one", "two", "three", "four"], "blurb": "x" * 40}
+
+    message = _tool_message(tc, content, max_items=2, max_chars=5)
+    payload = json.loads(message["content"])
+
+    assert len(payload["items"]) == 2
+    assert payload["blurb"] == "xx..."
+
+
 def test_context_window_error_is_raised(
     migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

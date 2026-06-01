@@ -95,6 +95,8 @@ def run_agent(
     messages: list[dict[str, Any]],
     max_iterations: int = 6,
     model: str | None = None,
+    tool_message_max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
+    tool_message_max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
 ) -> AgentResult:
     """Run the tool-calling loop for one chat turn.
 
@@ -107,6 +109,10 @@ def run_agent(
             should be the new user message.
         max_iterations: Maximum model-tool rounds before giving up.
         model: Chat model id override; defaults to the provider's TEXT_MODEL.
+        tool_message_max_items: Maximum list items kept per tool result fed
+            back to the model; longer lists are truncated.
+        tool_message_max_chars: Maximum characters kept per string in a tool
+            result fed back to the model; longer strings are truncated.
 
     Returns:
         An :class:`AgentResult` with the final answer and the tool-call trace.
@@ -150,7 +156,14 @@ def run_agent(
                 return AgentResult(answer=msg.content or "", trace=trace, truncated=False)
             convo.append(_assistant_turn(msg.content, tool_calls))
             for tc in tool_calls:
-                step, tool_message = _execute_tool_call(tc, driver, audit, user=user)
+                step, tool_message = _execute_tool_call(
+                    tc,
+                    driver,
+                    audit,
+                    user=user,
+                    max_items=tool_message_max_items,
+                    max_chars=tool_message_max_chars,
+                )
                 trace.append(step)
                 convo.append(tool_message)
         slot.result_count = len(trace)
@@ -173,7 +186,15 @@ def _assistant_turn(content: str | None, tool_calls: list[Any]) -> dict[str, Any
     }
 
 
-def _execute_tool_call(tc: Any, driver: Driver, audit: AuditLogger, *, user: str) -> tuple[TraceStep, dict[str, Any]]:
+def _execute_tool_call(
+    tc: Any,
+    driver: Driver,
+    audit: AuditLogger,
+    *,
+    user: str,
+    max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
+    max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
+) -> tuple[TraceStep, dict[str, Any]]:
     """Execute one model tool call, returning its trace step and tool message.
 
     Failures (unknown tool, invalid arguments, tool exception) become an
@@ -191,36 +212,55 @@ def _execute_tool_call(tc: Any, driver: Driver, audit: AuditLogger, *, user: str
     spec = TOOLS.get(name)
     if spec is None:
         error = f"unknown tool: {name}"
-        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(tc, {"error": error})
+        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(
+            tc, {"error": error}, max_items=max_items, max_chars=max_chars
+        )
 
     try:
         parsed = spec.input_model.model_validate(arguments)
     except ValidationError as exc:
         error = f"invalid arguments: {exc.errors()}"
-        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(tc, {"error": error})
+        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(
+            tc, {"error": error}, max_items=max_items, max_chars=max_chars
+        )
 
     try:
         out = spec.run(driver, parsed, user=user, audit=audit)
     except Exception as exc:  # surface any tool failure back to the model
         error = f"{type(exc).__name__}: {exc}"
-        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(tc, {"error": error})
+        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(
+            tc, {"error": error}, max_items=max_items, max_chars=max_chars
+        )
 
     result = out.model_dump(mode="json")
     count_fn = getattr(out, "audit_result_count", None)
     result_count = count_fn() if callable(count_fn) else None
     return (
         TraceStep(tool=name, arguments=arguments, result_count=result_count),
-        _tool_message(tc, result, result_count=result_count),
+        _tool_message(tc, result, result_count=result_count, max_items=max_items, max_chars=max_chars),
     )
 
 
-def _tool_message(tc: Any, content: dict[str, Any], *, result_count: int | None = None) -> dict[str, Any]:
+def _tool_message(
+    tc: Any,
+    content: dict[str, Any],
+    *,
+    result_count: int | None = None,
+    max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
+    max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
+) -> dict[str, Any]:
     """Build an OpenAI ``tool`` result message linked to a tool-call id."""
-    compact = _compact_tool_content(content, result_count=result_count)
+    compact = _compact_tool_content(content, result_count=result_count, max_items=max_items, max_chars=max_chars)
     return {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(compact)}
 
 
-def _compact_tool_content(content: dict[str, Any], *, result_count: int | None = None) -> dict[str, Any]:
+def _compact_tool_content(
+    content: dict[str, Any],
+    *,
+    result_count: int | None = None,
+    max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
+    max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
+) -> dict[str, Any]:
     """Return a context-bounded view of ``content`` for the model loop.
 
     The agent keeps the full tool output for audit and API return values, but
@@ -228,7 +268,7 @@ def _compact_tool_content(content: dict[str, Any], *, result_count: int | None =
     Large lists and long strings are truncated here so one verbose tool result
     does not exhaust the chat model's context window.
     """
-    compacted, truncated = _compact_tool_value(content)
+    compacted, truncated = _compact_tool_value(content, max_items=max_items, max_chars=max_chars)
     payload = cast("dict[str, Any]", compacted)
     meta: dict[str, Any] = {}
     if result_count is not None:
@@ -241,18 +281,20 @@ def _compact_tool_content(content: dict[str, Any], *, result_count: int | None =
     return payload
 
 
-def _compact_tool_value(value: Any) -> tuple[Any, bool]:
+def _compact_tool_value(
+    value: Any, *, max_items: int = _MAX_TOOL_MESSAGE_ITEMS, max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS
+) -> tuple[Any, bool]:
     """Recursively compact ``value`` for inclusion in a tool message."""
     if isinstance(value, str):
-        if len(value) <= _MAX_TOOL_MESSAGE_STRING_CHARS:
+        if len(value) <= max_chars:
             return value, False
-        trimmed = value[: _MAX_TOOL_MESSAGE_STRING_CHARS - 3].rstrip()
+        trimmed = value[: max_chars - 3].rstrip()
         return f"{trimmed}...", True
     if isinstance(value, list):
-        truncated = len(value) > _MAX_TOOL_MESSAGE_ITEMS
+        truncated = len(value) > max_items
         compacted_items: list[Any] = []
-        for item in value[:_MAX_TOOL_MESSAGE_ITEMS]:
-            compacted_item, item_truncated = _compact_tool_value(item)
+        for item in value[:max_items]:
+            compacted_item, item_truncated = _compact_tool_value(item, max_items=max_items, max_chars=max_chars)
             compacted_items.append(compacted_item)
             truncated = truncated or item_truncated
         return compacted_items, truncated
@@ -260,7 +302,7 @@ def _compact_tool_value(value: Any) -> tuple[Any, bool]:
         compacted: dict[str, Any] = {}
         truncated = False
         for key, item in value.items():
-            compacted_item, item_truncated = _compact_tool_value(item)
+            compacted_item, item_truncated = _compact_tool_value(item, max_items=max_items, max_chars=max_chars)
             compacted[key] = compacted_item
             truncated = truncated or item_truncated
         return compacted, truncated

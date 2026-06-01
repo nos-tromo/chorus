@@ -158,3 +158,26 @@ def test_load_resolution_env_vector_k_default_and_override(
     monkeypatch.setenv("RES_VECTOR_K", "8")
     importlib.reload(env_cfg)
     assert env_cfg.load_resolution_env().vector_k == 8
+
+
+def test_load_agent_env_tool_message_limits_default_and_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tool-message compaction caps default to 8/280 and are overridable."""
+    import importlib
+
+    import chorus.utils.env_cfg as env_cfg
+
+    monkeypatch.delenv("AGENT_TOOL_MESSAGE_MAX_ITEMS", raising=False)
+    monkeypatch.delenv("AGENT_TOOL_MESSAGE_MAX_CHARS", raising=False)
+    importlib.reload(env_cfg)
+    cfg = env_cfg.load_agent_env()
+    assert cfg.tool_message_max_items == 8
+    assert cfg.tool_message_max_chars == 280
+
+    monkeypatch.setenv("AGENT_TOOL_MESSAGE_MAX_ITEMS", "3")
+    monkeypatch.setenv("AGENT_TOOL_MESSAGE_MAX_CHARS", "120")
+    importlib.reload(env_cfg)
+    cfg = env_cfg.load_agent_env()
+    assert cfg.tool_message_max_items == 3
+    assert cfg.tool_message_max_chars == 120
