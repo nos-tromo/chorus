@@ -41,7 +41,7 @@ def test_resolution_lets_topic_tool_cluster(
     vectors = {"Berlin": _vec(1.0), "berlin": _vec(1.0), "Spree": _vec(0.0, 1.0)}
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
 
-    resolve_all(migrated_driver, load_resolution_env())
+    resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test")
 
     out = topic_co_occurrence(
         migrated_driver,

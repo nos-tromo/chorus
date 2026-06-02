@@ -25,6 +25,7 @@ from typing import Any
 from loguru import logger
 from neo4j import Driver
 
+from chorus.audit.logger import AuditLogger
 from chorus.inference import provider
 from chorus.utils.env_cfg import ResolutionConfig, load_inference_env
 
@@ -372,16 +373,23 @@ def _embed_in_chunks(surfaces: list[str], *, chunk: int = 128) -> list[list[floa
     return out
 
 
-def resolve_all(driver: Driver, cfg: ResolutionConfig) -> ResolutionSummary:
+def resolve_all(driver: Driver, cfg: ResolutionConfig, audit: AuditLogger, *, user: str) -> ResolutionSummary:
     """Resolve every unresolved :Alias to a canonical :Entity (batch, idempotent).
 
     Aliases are processed most-mentioned first, so the common surface form
     mints and becomes the canonical name. An in-run normalized cache makes
     case-variant aliases cluster deterministically despite vector-index lag.
+    The whole run is recorded as one §76 audit row (``tool_name="resolve_all"``)
+    via ``audit``; an empty run writes no row.
 
     Args:
         driver: Open Neo4j driver.
         cfg: Resolution thresholds/toggles.
+        audit: §76 audit logger; one row is written per non-empty run, with
+            the run config as params, the minted/attached entity ids as
+            ``entities_touched``, and the aliases processed as the result
+            count. A failed run is recorded with ``status="error"``.
+        user: Authenticated principal attributed on the audit row.
 
     Returns:
         A :class:`ResolutionSummary` of per-method counts.
@@ -399,40 +407,47 @@ def resolve_all(driver: Driver, cfg: ResolutionConfig) -> ResolutionSummary:
         return ResolutionSummary()
 
     embed_model = load_inference_env().embed_model
-    vectors = _embed_in_chunks([a[0] for a in aliases])
-    # Fail before any write if the provider returned a different number of
-    # embeddings than surfaces, so we never leave the graph half-resolved.
-    if len(vectors) != len(aliases):
-        raise ValueError(
-            f"embed returned {len(vectors)} vectors for {len(aliases)} aliases; aborting resolution before any write"
-        )
-
-    counts = dict.fromkeys(_METHOD_FIELD.values(), 0)
-    counts["processed"] = 0
-    # Cache key is (normalized surface, label): two case/whitespace variants
-    # cluster only when they share a type, so a PERSON "Apple" never collapses
-    # into a FOOD "apple". Mirrors cluster_candidates' same-type filter.
-    run_cache: dict[tuple[str, str | None], str] = {}
-
-    for (surface, label), vec in zip(aliases, vectors, strict=True):
-        cache_key = (normalize_surface(surface, cfg), label)
-        if cache_key in run_cache:
-            _write_resolved_to(
-                driver,
-                surface,
-                run_cache[cache_key],
-                method="run_cache",
-                score=None,
-                embed_model=embed_model,
+    params = {
+        "embed_cluster_threshold": cfg.embed_cluster_threshold,
+        "llm_tiebreak_enabled": cfg.llm_tiebreak_enabled,
+        "case_normalize": cfg.case_normalize,
+        "vector_k": cfg.vector_k,
+        "embed_model": embed_model,
+    }
+    with audit.time_tool(user, "resolve_all", params) as slot:
+        vectors = _embed_in_chunks([a[0] for a in aliases])
+        # Fail before any write if the provider returned a different number of
+        # embeddings than surfaces, so we never leave the graph half-resolved.
+        if len(vectors) != len(aliases):
+            raise ValueError(
+                f"embed returned {len(vectors)} vectors for {len(aliases)} aliases; "
+                "aborting resolution before any write"
             )
-            counts["attached_cache"] += 1
-        else:
-            entity_id, method = resolve_alias_to_entity(
-                driver, surface, vec, cfg, entity_type=label, embed_model=embed_model
-            )
-            run_cache[cache_key] = entity_id
-            counts[_METHOD_FIELD[method]] += 1
-        counts["processed"] += 1
 
-    logger.info("resolution complete: {}", counts)
-    return ResolutionSummary(**counts)
+        counts = dict.fromkeys(_METHOD_FIELD.values(), 0)
+        counts["processed"] = 0
+        # Cache key is (normalized surface, label): two case/whitespace variants
+        # cluster only when they share a type, so a PERSON "Apple" never collapses
+        # into a FOOD "apple". Mirrors cluster_candidates' same-type filter.
+        run_cache: dict[tuple[str, str | None], str] = {}
+        touched: set[str] = set()
+
+        for (surface, label), vec in zip(aliases, vectors, strict=True):
+            cache_key = (normalize_surface(surface, cfg), label)
+            if cache_key in run_cache:
+                entity_id = run_cache[cache_key]
+                _write_resolved_to(driver, surface, entity_id, method="run_cache", score=None, embed_model=embed_model)
+                counts["attached_cache"] += 1
+            else:
+                entity_id, method = resolve_alias_to_entity(
+                    driver, surface, vec, cfg, entity_type=label, embed_model=embed_model
+                )
+                run_cache[cache_key] = entity_id
+                counts[_METHOD_FIELD[method]] += 1
+            touched.add(entity_id)
+            counts["processed"] += 1
+
+        slot.entities_touched = sorted(touched)
+        slot.result_count = counts["processed"]
+        logger.info("resolution complete: {}", counts)
+        return ResolutionSummary(**counts)

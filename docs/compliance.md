@@ -19,3 +19,12 @@ This is a conscious choice, recorded in
 [ADR 0006](decisions/0006-profiles-table.md). It must be confirmed by
 the DSFA — profile fields such as date of birth are personal data and
 may touch Art. 9 categories.
+
+## Audit logging
+
+§76 BDSG audit logging covers query tools (the `@audited` decorator) **and**
+the resolution write path: each `resolve_all` run writes one immutable
+audit row (user, config, entities touched, result count; failures recorded
+with `status="error"`) via the same `AuditLogger`. See
+[ADR 0010](decisions/0010-resolution-audit-logging.md). The remaining
+ingestion writes (the `run` pass) are not yet audited — a noted follow-up.
