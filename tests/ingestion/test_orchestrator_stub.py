@@ -222,6 +222,9 @@ def test_malformed_posting_row_is_skipped_and_does_not_abort(
     assert result["counts"]["messages"] == 1
     assert result["counts"]["profiles"] == 1
     assert result["counts"]["connections"] == 1
+    # the malformed posting is surfaced as a per-stage drop, not silently lost
+    assert result["dropped"]["postings"] == 1
+    assert result["dropped"]["messages"] == 0
 
     with migrated_driver.session() as s:
         assert s.run("MATCH (p:Posting) RETURN count(p) AS c").single()["c"] == 0  # type: ignore[index]

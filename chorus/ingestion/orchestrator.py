@@ -44,7 +44,9 @@ _CONNECTIONS_BATCH_SIZE = 500
 T = TypeVar("T")
 
 
-def _parse_or_skip(stage: str, row: dict[str, Any], build: Callable[..., T], *args: Any) -> T | None:
+def _parse_or_skip(
+    stage: str, row: dict[str, Any], build: Callable[..., T], *args: Any, dropped: dict[str, int]
+) -> T | None:
     """Build a DTO for one row, logging and skipping on row-level parse errors.
 
     ``build`` is invoked as ``build(row, *args)``; every stage's ``from_row``
@@ -53,13 +55,15 @@ def _parse_or_skip(stage: str, row: dict[str, Any], build: Callable[..., T], *ar
 
     The raw row has already been persisted by the time stage loops call this
     helper, so skipping a malformed row preserves replay/debuggability without
-    aborting the rest of the run.
+    aborting the rest of the run. Each skip increments ``dropped[stage]`` so the
+    run can report how many rows were lost to malformation per stage.
 
     Args:
-        stage: Stage name for logging.
+        stage: Stage name, used for logging and as the ``dropped`` key.
         row: Raw upstream row; passed as the first argument to ``build``.
         build: Callable that constructs the DTO from ``(row, *args)``.
         *args: Extra positional arguments forwarded after ``row``.
+        dropped: Per-stage malformed-row counter; incremented on a skip.
 
     Returns:
         The constructed DTO, or ``None`` when the row is malformed.
@@ -73,6 +77,7 @@ def _parse_or_skip(stage: str, row: dict[str, Any], build: Callable[..., T], *ar
             row.get("UUID") or row.get("ID") or row.get("Network Object ID") or "<unknown>",
             exc,
         )
+        dropped[stage] = dropped.get(stage, 0) + 1
         return None
 
 
@@ -111,17 +116,22 @@ def run_once(
             for deterministic tests.
 
     Returns:
-        A dict with two keys:
+        A dict with three keys:
 
         - ``"counts"``: per-stage counts (rows for postings/comments/
           messages/profiles, ``:MENTIONS`` edges for mentions, social-
           graph edges for connections).
         - ``"skipped"``: list of stage names that were skipped (e.g.
           ``["mentions"]`` when NER is disabled).
+        - ``"dropped"``: per-stage count of rows skipped because they were
+          malformed (failed DTO parsing/validation), so a partial-but-green
+          run surfaces its data loss instead of looking like a clean smaller
+          pull.
     """
     ingested_at = ingested_at or datetime.now(UTC)
     counts: dict[str, int] = {}
     skipped: list[str] = []
+    dropped: dict[str, int] = {"postings": 0, "comments": 0, "messages": 0, "profiles": 0, "connections": 0}
     ner_cfg = load_ner_client_env()
     counts["mentions"] = 0
     if not ner_cfg.enabled:
@@ -153,7 +163,7 @@ def run_once(
     raw.write_batch("postings", posting_rows)
     counts["postings"] = 0
     for row in posting_rows:
-        dto = _parse_or_skip("posting", row, postings_stage.from_row, retention, ingested_at)
+        dto = _parse_or_skip("postings", row, postings_stage.from_row, retention, ingested_at, dropped=dropped)
         if dto is None:
             continue
         postings_stage.write(driver, dto)
@@ -191,7 +201,9 @@ def run_once(
         parent_cid = row.get("Parent Comment ID")
         if parent_cid:
             augmented["Parent Comment UUID"] = comment_id_to_uuid.get(str(parent_cid).strip())
-        comment_dto = _parse_or_skip("comment", augmented, comments_stage.from_row, retention, ingested_at)
+        comment_dto = _parse_or_skip(
+            "comments", augmented, comments_stage.from_row, retention, ingested_at, dropped=dropped
+        )
         if comment_dto is None:
             continue
         comments_stage.write(driver, comment_dto)
@@ -202,7 +214,7 @@ def run_once(
     raw.write_batch("messages", message_rows)
     counts["messages"] = 0
     for row in message_rows:
-        message_dto = _parse_or_skip("message", row, messages_stage.from_row, retention, ingested_at)
+        message_dto = _parse_or_skip("messages", row, messages_stage.from_row, retention, ingested_at, dropped=dropped)
         if message_dto is None:
             continue
         messages_stage.write(driver, message_dto)
@@ -213,7 +225,7 @@ def run_once(
     raw.write_batch("profiles", profile_rows)
     counts["profiles"] = 0
     for row in profile_rows:
-        profile_dto = _parse_or_skip("profile", row, profiles_stage.from_row)
+        profile_dto = _parse_or_skip("profiles", row, profiles_stage.from_row, dropped=dropped)
         if profile_dto is None:
             continue
         profiles_stage.write(driver, profile_dto)
@@ -224,7 +236,7 @@ def run_once(
     counts["connections"] = 0
     connection_batch: list[connections_stage.ConnectionDTO] = []
     for row in connection_rows:
-        connection_dto = _parse_or_skip("connection", row, connections_stage.from_row)
+        connection_dto = _parse_or_skip("connections", row, connections_stage.from_row, dropped=dropped)
         if connection_dto is None:
             continue
         connection_batch.append(connection_dto)
@@ -236,4 +248,11 @@ def run_once(
         result = connections_stage.write_batch(driver, connection_batch)
         counts["connections"] += result["follows"] + result["friends_with"]
 
-    return {"counts": counts, "skipped": skipped}
+    total_dropped = sum(dropped.values())
+    if total_dropped:
+        logger.warning(
+            "ingestion dropped {} malformed row(s): {}",
+            total_dropped,
+            {stage: n for stage, n in dropped.items() if n},
+        )
+    return {"counts": counts, "skipped": skipped, "dropped": dropped}
