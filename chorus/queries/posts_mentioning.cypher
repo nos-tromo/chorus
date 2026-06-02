@@ -27,11 +27,7 @@ WHERE (
   AND ($to   IS NULL OR p.timestamp <  datetime($to))
   AND p.text IS NOT NULL
   AND p.timestamp IS NOT NULL
-RETURN
-  p.uuid       AS uuid,
-  p.text       AS text,
-  p.timestamp  AS ts,
-  labels(p)    AS labels,
+WITH p,
   CASE
     WHEN "Entity" IN mention_labels THEN mention.id
     ELSE e.id
@@ -41,5 +37,19 @@ RETURN
     WHEN e IS NOT NULL THEN e.canonical_name
     ELSE mention.surface_form
   END          AS matched_name
+// Collapse to one row per post. A post can fan out into several rows here: an
+// :Alias with more than one :RESOLVED_TO edge (no cardinality constraint exists
+// in Neo4j CE), or a post mentioning the query term via two aliases/entities.
+// Without this, the same post is returned more than once and silently consumes
+// $limit slots. Pick deterministically by entity_id (nulls sort last).
+WITH p, entity_id, matched_name ORDER BY entity_id
+WITH p, head(collect({entity_id: entity_id, matched_name: matched_name})) AS pick
+RETURN
+  p.uuid            AS uuid,
+  p.text            AS text,
+  p.timestamp       AS ts,
+  labels(p)         AS labels,
+  pick.entity_id    AS entity_id,
+  pick.matched_name AS matched_name
 ORDER BY p.timestamp DESC
 LIMIT $limit;
