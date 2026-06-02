@@ -21,8 +21,9 @@ UNWIND; see ADR 0007.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, TypeVar
 
 from loguru import logger
 from neo4j import Driver
@@ -40,9 +41,15 @@ from chorus.utils.env_cfg import RetentionConfig, load_ner_client_env
 
 _CONNECTIONS_BATCH_SIZE = 500
 
+T = TypeVar("T")
 
-def _parse_or_skip(stage: str, row: dict[str, Any], build: Any, *args: Any) -> Any | None:
+
+def _parse_or_skip(stage: str, row: dict[str, Any], build: Callable[..., T], *args: Any) -> T | None:
     """Build a DTO for one row, logging and skipping on row-level parse errors.
+
+    ``build`` is invoked as ``build(row, *args)``; every stage's ``from_row``
+    takes the raw row as its first positional argument, so the row is supplied
+    once and reused for both the call and the skip-log identifier.
 
     The raw row has already been persisted by the time stage loops call this
     helper, so skipping a malformed row preserves replay/debuggability without
@@ -50,15 +57,15 @@ def _parse_or_skip(stage: str, row: dict[str, Any], build: Any, *args: Any) -> A
 
     Args:
         stage: Stage name for logging.
-        row: Raw upstream row.
-        build: Callable that constructs the DTO.
-        *args: Positional arguments forwarded to ``build``.
+        row: Raw upstream row; passed as the first argument to ``build``.
+        build: Callable that constructs the DTO from ``(row, *args)``.
+        *args: Extra positional arguments forwarded after ``row``.
 
     Returns:
         The constructed DTO, or ``None`` when the row is malformed.
     """
     try:
-        return build(*args)
+        return build(row, *args)
     except (KeyError, ValidationError, ValueError) as exc:
         logger.warning(
             "{} row {} skipped: {}",
@@ -140,7 +147,7 @@ def run_once(
     raw.write_batch("postings", posting_rows)
     counts["postings"] = 0
     for row in posting_rows:
-        dto = _parse_or_skip("posting", row, postings_stage.from_row, row, retention)
+        dto = _parse_or_skip("posting", row, postings_stage.from_row, retention)
         if dto is None:
             continue
         postings_stage.write(driver, dto)
@@ -178,7 +185,7 @@ def run_once(
         parent_cid = row.get("Parent Comment ID")
         if parent_cid:
             augmented["Parent Comment UUID"] = comment_id_to_uuid.get(str(parent_cid).strip())
-        comment_dto = _parse_or_skip("comment", augmented, comments_stage.from_row, augmented, retention)
+        comment_dto = _parse_or_skip("comment", augmented, comments_stage.from_row, retention)
         if comment_dto is None:
             continue
         comments_stage.write(driver, comment_dto)
@@ -189,7 +196,7 @@ def run_once(
     raw.write_batch("messages", message_rows)
     counts["messages"] = 0
     for row in message_rows:
-        message_dto = _parse_or_skip("message", row, messages_stage.from_row, row, retention)
+        message_dto = _parse_or_skip("message", row, messages_stage.from_row, retention)
         if message_dto is None:
             continue
         messages_stage.write(driver, message_dto)
@@ -200,7 +207,7 @@ def run_once(
     raw.write_batch("profiles", profile_rows)
     counts["profiles"] = 0
     for row in profile_rows:
-        profile_dto = _parse_or_skip("profile", row, profiles_stage.from_row, row)
+        profile_dto = _parse_or_skip("profile", row, profiles_stage.from_row)
         if profile_dto is None:
             continue
         profiles_stage.write(driver, profile_dto)
@@ -211,7 +218,7 @@ def run_once(
     counts["connections"] = 0
     connection_batch: list[connections_stage.ConnectionDTO] = []
     for row in connection_rows:
-        connection_dto = _parse_or_skip("connection", row, connections_stage.from_row, row)
+        connection_dto = _parse_or_skip("connection", row, connections_stage.from_row)
         if connection_dto is None:
             continue
         connection_batch.append(connection_dto)
