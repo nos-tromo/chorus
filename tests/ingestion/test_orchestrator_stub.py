@@ -166,6 +166,9 @@ def test_comment_with_unresolvable_parent_is_skipped(migrated_driver: Driver, mo
     )
 
     assert result["counts"]["comments"] == 0
+    # the orphan is surfaced as a structural filter, distinct from malformed drops
+    assert result["filtered"]["comments"] == 1
+    assert result["dropped"]["comments"] == 0
     with migrated_driver.session() as s:
         assert s.run("MATCH (c:Comment) RETURN count(c) AS c").single()["c"] == 0  # type: ignore[index]
 
@@ -338,6 +341,9 @@ def test_connections_stage_drops_no_signal_rows(migrated_driver: Driver, monkeyp
 
     assert result["counts"]["connections"] == 0
     assert "connections" not in result["skipped"]
+    # the no-signal row is surfaced as a structural filter, distinct from malformed drops
+    assert result["filtered"]["connections"] == 1
+    assert result["dropped"]["connections"] == 0
     with migrated_driver.session() as s:
         assert s.run("MATCH ()-[r:FOLLOWS]->() RETURN count(r) AS c").single()["c"] == 0  # type: ignore[index]
         assert s.run("MATCH ()-[r:FRIENDS_WITH]->() RETURN count(r) AS c").single()["c"] == 0  # type: ignore[index]

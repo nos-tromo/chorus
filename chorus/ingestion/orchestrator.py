@@ -116,7 +116,7 @@ def run_once(
             for deterministic tests.
 
     Returns:
-        A dict with three keys:
+        A dict with four keys:
 
         - ``"counts"``: per-stage counts (rows for postings/comments/
           messages/profiles, ``:MENTIONS`` edges for mentions, social-
@@ -127,11 +127,19 @@ def run_once(
           malformed (failed DTO parsing/validation), so a partial-but-green
           run surfaces its data loss instead of looking like a clean smaller
           pull.
+        - ``"filtered"``: per-stage count of rows intentionally not projected
+          for structural reasons — ``comments`` whose parent posting was not
+          in the batch, and ``connections`` with no edge signal (self-loop or
+          no Friend/Follower/Following flag). Expected, not a data-quality
+          problem; surfaced for completeness.
     """
     ingested_at = ingested_at or datetime.now(UTC)
     counts: dict[str, int] = {}
     skipped: list[str] = []
     dropped: dict[str, int] = {"postings": 0, "comments": 0, "messages": 0, "profiles": 0, "connections": 0}
+    # Structural filters (not malformation): comments with no in-batch parent,
+    # connection rows with no edge signal (self-loop or no Friend/Follower/Following flag).
+    filtered: dict[str, int] = {"comments": 0, "connections": 0}
     ner_cfg = load_ner_client_env()
     counts["mentions"] = 0
     if not ner_cfg.enabled:
@@ -194,6 +202,7 @@ def run_once(
                 row.get("UUID"),
                 parent_pid,
             )
+            filtered["comments"] += 1
             continue
         # Augment a copy so the raw_store payload stays verbatim.
         augmented = dict(row)
@@ -236,8 +245,14 @@ def run_once(
     counts["connections"] = 0
     connection_batch: list[connections_stage.ConnectionDTO] = []
     for row in connection_rows:
+        before_dropped = dropped["connections"]
         connection_dto = _parse_or_skip("connections", row, connections_stage.from_row, dropped=dropped)
         if connection_dto is None:
+            # A None that did NOT increment dropped came from from_row returning
+            # None (no edge signal: self-loop or no flag), not a parse error —
+            # count it as a structural filter rather than malformation.
+            if dropped["connections"] == before_dropped:
+                filtered["connections"] += 1
             continue
         connection_batch.append(connection_dto)
         if len(connection_batch) >= _CONNECTIONS_BATCH_SIZE:
@@ -255,4 +270,11 @@ def run_once(
             total_dropped,
             {stage: n for stage, n in dropped.items() if n},
         )
-    return {"counts": counts, "skipped": skipped, "dropped": dropped}
+    total_filtered = sum(filtered.values())
+    if total_filtered:
+        logger.info(
+            "ingestion filtered {} row(s) (no in-batch parent / no edge signal): {}",
+            total_filtered,
+            {stage: n for stage, n in filtered.items() if n},
+        )
+    return {"counts": counts, "skipped": skipped, "dropped": dropped, "filtered": filtered}
