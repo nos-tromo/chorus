@@ -21,7 +21,7 @@ from chorus.audit.logger import AuditLogger
 from chorus.db.neo4j import close_driver, get_driver
 from chorus.ingestion.orchestrator import run_once
 from chorus.ingestion.raw_store import RawStore
-from chorus.ingestion.resolution import resolve_all
+from chorus.ingestion.resolution import backfill_norm_keys, resolve_all
 from chorus.ingestion.upstream import FileUpstreamAdapter
 from chorus.utils.env_cfg import (
     load_audit_env,
@@ -40,6 +40,11 @@ def main(argv: list[str] | None = None) -> int:
           persist the rows to the raw store, project them into the
           graph, and print per-stage counts. ``--since ISO8601``
           restricts the pull to rows newer than the cutoff.
+        - ``resolve``: resolve unresolved aliases to canonical entities
+          and print the per-method summary. ``--user`` sets the §76
+          audit principal.
+        - ``backfill-norm-keys``: stamp ``:Alias.norm_key`` on resolved
+          aliases that predate the durable-key change (idempotent).
 
     Args:
         argv: Argument vector to parse. ``None`` (the default) reads
@@ -61,6 +66,10 @@ def main(argv: list[str] | None = None) -> int:
         "--user",
         default=None,
         help="principal recorded in the §76 audit log (default: CHORUS_DEFAULT_IDENTITY or 'cli')",
+    )
+    sub.add_parser(
+        "backfill-norm-keys",
+        help="stamp :Alias.norm_key on resolved aliases that predate the durable-key change",
     )
     args = p.parse_args(argv)
 
@@ -103,6 +112,15 @@ def main(argv: list[str] | None = None) -> int:
             close_driver()
         for field, count in summary.as_dict().items():
             print(f"{field}: {count}")
+        return 0
+
+    if args.cmd == "backfill-norm-keys":
+        driver = get_driver()
+        try:
+            stamped = backfill_norm_keys(driver, load_resolution_env())
+        finally:
+            close_driver()
+        print(f"backfilled: {stamped}")
         return 0
 
     return 2

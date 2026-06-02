@@ -522,3 +522,46 @@ def resolve_all(driver: Driver, cfg: ResolutionConfig, audit: AuditLogger, *, us
         slot.result_count = counts["processed"]
         logger.info("resolution complete: {}", counts)
         return ResolutionSummary(**counts)
+
+
+def backfill_norm_keys(driver: Driver, cfg: ResolutionConfig, *, batch: int = 500) -> int:
+    """Stamp ``norm_key`` on resolved aliases that predate the durable-key change.
+
+    Cross-run dedup matches on ``(norm_key, label)``, so aliases resolved
+    before ``norm_key`` existed must be backfilled — otherwise a new variant
+    could mint a duplicate before the old alias is re-touched. The key is
+    computed with the same Python :func:`normalize_surface` as live resolution
+    (``str.casefold()``, which differs from Cypher ``toLower()`` for non-ASCII
+    such as German ``ß`` → ``ss``), so a Cypher backfill is deliberately
+    avoided. Idempotent: only resolved aliases with a missing ``norm_key`` are
+    touched, so re-running is a no-op. See ADR 0012.
+
+    Args:
+        driver: Open Neo4j driver.
+        cfg: Resolution configuration (controls case-normalization).
+        batch: UNWIND write-back chunk size, mirroring the connections writer.
+
+    Returns:
+        Number of aliases stamped this run.
+    """
+    fetch = """
+    MATCH (a:Alias)-[:RESOLVED_TO]->(:Entity)
+    WHERE a.norm_key IS NULL
+    RETURN a.surface_form AS surface_form
+    """
+    with driver.session() as session:
+        surfaces = [r["surface_form"] for r in session.run(fetch)]
+    if not surfaces:
+        return 0
+
+    rows = [{"surface_form": sf, "norm_key": normalize_surface(sf, cfg)} for sf in surfaces]
+    write = """
+    UNWIND $rows AS row
+    MATCH (a:Alias {surface_form: row.surface_form})
+    SET a.norm_key = row.norm_key
+    """
+    with driver.session() as session:
+        for i in range(0, len(rows), batch):
+            session.run(write, rows=rows[i : i + batch]).consume()
+    logger.info("norm_key backfill stamped {} aliases", len(rows))
+    return len(rows)
