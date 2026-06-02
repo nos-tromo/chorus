@@ -170,6 +170,57 @@ def test_comment_with_unresolvable_parent_is_skipped(migrated_driver: Driver, mo
         assert s.run("MATCH (c:Comment) RETURN count(c) AS c").single()["c"] == 0  # type: ignore[index]
 
 
+def test_malformed_posting_row_is_skipped_and_does_not_abort(
+    migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed posting row is logged and skipped without aborting later stages.
+
+    Raw rows are persisted before DTO parsing, so a single bad row should
+    not take down the entire run. The orchestrator should drop the bad
+    posting, continue with the remaining stages, and let dependent comments
+    fall out naturally when their parent posting was not written.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        monkeypatch: pytest monkeypatch fixture.
+    """
+    monkeypatch.setenv("NER_ENABLED", "false")
+
+    from chorus.ingestion.orchestrator import run_once
+    from chorus.ingestion.raw_store import RawStore
+    from chorus.utils.env_cfg import load_path_env, load_retention_env
+
+    class _BadPostingAdapter(FakeAdapter):
+        """FakeAdapter variant whose posting row is missing a parseable timestamp."""
+
+        def fetch_postings(self, since: Any) -> Iterable[dict[str, Any]]:
+            yield {
+                "UUID": "p-bad",
+                "Posting ID": "post-net-bad",
+                "Text Content": "broken row",
+                "Timestamp": None,
+                "Crawled at": "2026-05-02T10:00:00+00:00",
+                "Author ID": "a-1",
+                "Author": "Alice",
+                "Network": "linkedin",
+            }
+
+    raw = RawStore(load_path_env().raw_store)
+    raw.init_schema()
+
+    result = run_once(_BadPostingAdapter(), migrated_driver, raw, load_retention_env())
+
+    assert result["counts"]["postings"] == 0
+    assert result["counts"]["comments"] == 0
+    assert result["counts"]["messages"] == 1
+    assert result["counts"]["profiles"] == 1
+    assert result["counts"]["connections"] == 1
+
+    with migrated_driver.session() as s:
+        assert s.run("MATCH (p:Posting) RETURN count(p) AS c").single()["c"] == 0  # type: ignore[index]
+        assert s.run("MATCH (m:Message) RETURN count(m) AS c").single()["c"] == 1  # type: ignore[index]
+
+
 def test_connections_stage_drops_no_signal_rows(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
     """Rows with no Friend/Follower/Following flag set produce no edges.
 

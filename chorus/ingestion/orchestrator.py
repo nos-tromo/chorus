@@ -26,6 +26,7 @@ from typing import Any
 
 from loguru import logger
 from neo4j import Driver
+from pydantic import ValidationError
 
 from chorus.ingestion import comments as comments_stage
 from chorus.ingestion import connections as connections_stage
@@ -38,6 +39,34 @@ from chorus.ingestion.raw_store import RawStore
 from chorus.utils.env_cfg import RetentionConfig, load_ner_client_env
 
 _CONNECTIONS_BATCH_SIZE = 500
+
+
+def _parse_or_skip(stage: str, row: dict[str, Any], build: Any, *args: Any) -> Any | None:
+    """Build a DTO for one row, logging and skipping on row-level parse errors.
+
+    The raw row has already been persisted by the time stage loops call this
+    helper, so skipping a malformed row preserves replay/debuggability without
+    aborting the rest of the run.
+
+    Args:
+        stage: Stage name for logging.
+        row: Raw upstream row.
+        build: Callable that constructs the DTO.
+        *args: Positional arguments forwarded to ``build``.
+
+    Returns:
+        The constructed DTO, or ``None`` when the row is malformed.
+    """
+    try:
+        return build(*args)
+    except (KeyError, ValidationError, ValueError) as exc:
+        logger.warning(
+            "{} row {} skipped: {}",
+            stage,
+            row.get("UUID") or row.get("ID") or row.get("Network Object ID") or "<unknown>",
+            exc,
+        )
+        return None
 
 
 def run_once(
@@ -111,7 +140,9 @@ def run_once(
     raw.write_batch("postings", posting_rows)
     counts["postings"] = 0
     for row in posting_rows:
-        dto = postings_stage.from_row(row, retention)
+        dto = _parse_or_skip("posting", row, postings_stage.from_row, row, retention)
+        if dto is None:
+            continue
         postings_stage.write(driver, dto)
         counts["postings"] += 1
         _extract(dto.text, dto.uuid)
@@ -147,7 +178,9 @@ def run_once(
         parent_cid = row.get("Parent Comment ID")
         if parent_cid:
             augmented["Parent Comment UUID"] = comment_id_to_uuid.get(str(parent_cid).strip())
-        comment_dto = comments_stage.from_row(augmented, retention)
+        comment_dto = _parse_or_skip("comment", augmented, comments_stage.from_row, augmented, retention)
+        if comment_dto is None:
+            continue
         comments_stage.write(driver, comment_dto)
         counts["comments"] += 1
         _extract(comment_dto.text, comment_dto.uuid)
@@ -156,7 +189,9 @@ def run_once(
     raw.write_batch("messages", message_rows)
     counts["messages"] = 0
     for row in message_rows:
-        message_dto = messages_stage.from_row(row, retention)
+        message_dto = _parse_or_skip("message", row, messages_stage.from_row, row, retention)
+        if message_dto is None:
+            continue
         messages_stage.write(driver, message_dto)
         counts["messages"] += 1
         _extract(message_dto.text, message_dto.uuid)
@@ -165,7 +200,9 @@ def run_once(
     raw.write_batch("profiles", profile_rows)
     counts["profiles"] = 0
     for row in profile_rows:
-        profile_dto = profiles_stage.from_row(row)
+        profile_dto = _parse_or_skip("profile", row, profiles_stage.from_row, row)
+        if profile_dto is None:
+            continue
         profiles_stage.write(driver, profile_dto)
         counts["profiles"] += 1
 
@@ -174,7 +211,7 @@ def run_once(
     counts["connections"] = 0
     connection_batch: list[connections_stage.ConnectionDTO] = []
     for row in connection_rows:
-        connection_dto = connections_stage.from_row(row)
+        connection_dto = _parse_or_skip("connection", row, connections_stage.from_row, row)
         if connection_dto is None:
             continue
         connection_batch.append(connection_dto)
