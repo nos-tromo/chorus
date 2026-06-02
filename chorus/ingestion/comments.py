@@ -8,7 +8,7 @@ storage and risk drift.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from neo4j import Driver
@@ -30,8 +30,10 @@ class CommentDTO(BaseModel):
         network_comment_id: Upstream-side comment id.
         url: Original comment URL.
         text: Body of the comment.
-        timestamp: Content creation time (drives retention).
-        crawled_at: Ingestion-side timestamp.
+        timestamp: Content creation time; optional (the upstream omits it
+            for some rows). Informational only — does not drive retention.
+        crawled_at: Upstream crawl time; optional. Informational only — the
+            upstream crawler owns its own retention clock.
         author_id: Network author id, joins to ``:Author.id``.
         author_display_name: Human-readable author name.
         vanity_name: Platform-specific slug for the author.
@@ -43,8 +45,12 @@ class CommentDTO(BaseModel):
             to. Required.
         network: Platform name (resolves to ``:Platform``).
         system_tags: Upstream ``Tags`` field as a string list.
+        ingested_at: Time chorus ingested this row (chorus-set, not from the
+            upstream). The anchor retention is measured from.
         retention_until: Absolute time the nightly sweeper should
-            hard-delete this comment.
+            hard-delete this comment (``ingested_at`` + the configured
+            window); ``None`` when retention is disabled, leaving the comment
+            non-expiring.
     """
 
     uuid: str
@@ -52,8 +58,8 @@ class CommentDTO(BaseModel):
     network_comment_id: str | None = None
     url: str | None = None
     text: str
-    timestamp: datetime
-    crawled_at: datetime
+    timestamp: datetime | None = None
+    crawled_at: datetime | None = None
     author_id: str
     author_display_name: str | None = None
     vanity_name: str | None = None
@@ -63,32 +69,40 @@ class CommentDTO(BaseModel):
     parent_posting_uuid: str
     network: str
     system_tags: list[str] = Field(default_factory=list)
-    retention_until: datetime
+    ingested_at: datetime
+    retention_until: datetime | None = None
 
 
-def from_row(row: dict[str, Any], retention: RetentionConfig) -> CommentDTO:
+def from_row(row: dict[str, Any], retention: RetentionConfig, ingested_at: datetime | None = None) -> CommentDTO:
     """Adapt one upstream comment row to a :class:`CommentDTO`.
 
     The caller must resolve parent posting and parent comment UUIDs
     upstream (the raw rows carry the upstream's network ids, not chorus
     UUIDs) and supply them as ``Parent Posting UUID`` / ``Parent
-    Comment UUID`` keys.
+    Comment UUID`` keys. ``timestamp`` and ``crawled_at`` are optional and
+    informational; ``retention_until`` anchors on ``ingested_at``.
 
     Args:
         row: One raw row as returned by the upstream adapter, augmented
             with the resolved parent UUIDs.
         retention: Retention configuration, used to compute
             ``retention_until``.
+        ingested_at: Ingestion time to stamp and anchor retention on;
+            defaults to ``datetime.now(UTC)``. The orchestrator passes one
+            value per run so a whole run shares a consistent clock.
 
     Returns:
         A populated, validated :class:`CommentDTO`.
 
     Raises:
-        KeyError: If a required upstream column is missing.
-        ValueError: If a timestamp column is malformed.
+        KeyError: If a required upstream column (``UUID``, ``Author ID``,
+            ``Network``, ``Parent Posting UUID``) is missing.
+        ValueError: If a present ``Timestamp`` / ``Crawled at`` value is
+            malformed.
         pydantic.ValidationError: If the resulting DTO fails validation.
     """
-    ts = _coerce_dt(row["Timestamp"])
+    ingested_at = ingested_at or datetime.now(UTC)
+    crawled_at = _coerce_dt_opt(row.get("Crawled at"))
     # Note: Posting ID / Parent Comment ID upstream are the upstream's
     # network IDs. Chorus keys on UUID, so the caller must supply the
     # resolved parent UUIDs (typically by upstream UUID lookup before
@@ -99,8 +113,8 @@ def from_row(row: dict[str, Any], retention: RetentionConfig) -> CommentDTO:
         network_comment_id=row.get("Comment ID"),
         url=row.get("URL"),
         text=row.get("Text Content") or "",
-        timestamp=ts,
-        crawled_at=_coerce_dt(row["Crawled at"]),
+        timestamp=_coerce_dt_opt(row.get("Timestamp")),
+        crawled_at=crawled_at,
         author_id=str(row["Author ID"]),
         author_display_name=row.get("Author"),
         vanity_name=row.get("Vanity Name"),
@@ -110,7 +124,8 @@ def from_row(row: dict[str, Any], retention: RetentionConfig) -> CommentDTO:
         parent_posting_uuid=row["Parent Posting UUID"],
         network=row["Network"],
         system_tags=_tags(row.get("Tags")),
-        retention_until=ts + timedelta(days=retention.default_days),
+        ingested_at=ingested_at,
+        retention_until=retention.until(ingested_at),
     )
 
 
@@ -142,6 +157,7 @@ def write(driver: Driver, dto: CommentDTO) -> None:
         c.replies_count     = $replies_count,
         c.reactions_count   = $reactions_count,
         c.system_tags       = $system_tags,
+        c.ingested_at       = datetime($ingested_at),
         c.retention_until   = datetime($retention_until)
     MERGE (a)-[:AUTHORED]->(c)
     MERGE (c)-[:ON_PLATFORM]->(pl)
@@ -175,6 +191,22 @@ def _coerce_dt(value: Any) -> datetime:
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=UTC)
     return datetime.fromisoformat(str(value).strip())
+
+
+def _coerce_dt_opt(value: Any) -> datetime | None:
+    """Coerce ``value`` to a datetime, or ``None`` when missing.
+
+    Args:
+        value: Candidate value (``None``, empty string, datetime, or
+            ISO-8601 string).
+
+    Returns:
+        ``None`` for missing/empty inputs; otherwise the result of
+        :func:`_coerce_dt`.
+    """
+    if value is None or value == "":
+        return None
+    return _coerce_dt(value)
 
 
 def _int_or_none(value: Any) -> int | None:

@@ -181,3 +181,58 @@ def test_load_agent_env_tool_message_limits_default_and_override(
     cfg = env_cfg.load_agent_env()
     assert cfg.tool_message_max_items == 3
     assert cfg.tool_message_max_chars == 120
+
+
+def test_load_retention_env_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no RETENTION_* env vars set, retention is enabled at 365 days.
+
+    The loader reads ``os.environ`` on every call, so ``delenv`` alone —
+    without a module reload, which would re-trigger ``load_dotenv`` and
+    restore values from the local ``.env`` — exercises the defaults.
+    """
+    monkeypatch.delenv("RETENTION_ENABLED", raising=False)
+    monkeypatch.delenv("RETENTION_DAYS_DEFAULT", raising=False)
+
+    from chorus.utils.env_cfg import load_retention_env
+
+    cfg = load_retention_env()
+    assert cfg.enabled is True
+    assert cfg.default_days == 365
+
+
+def test_load_retention_env_disable_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``RETENTION_ENABLED=false`` fully disables retention."""
+    monkeypatch.setenv("RETENTION_ENABLED", "false")
+
+    from chorus.utils.env_cfg import load_retention_env
+
+    assert load_retention_env().enabled is False
+
+
+def test_retention_config_until_adds_window_when_enabled() -> None:
+    """``until`` adds the retention window to the anchor timestamp."""
+    from datetime import UTC, datetime
+
+    from chorus.utils.env_cfg import RetentionConfig
+
+    basis = datetime(2026, 1, 1, tzinfo=UTC)
+
+    assert RetentionConfig(default_days=30).until(basis) == datetime(2026, 1, 31, tzinfo=UTC)
+
+
+def test_retention_config_until_none_when_disabled() -> None:
+    """When retention is disabled, ``until`` returns ``None`` for any anchor."""
+    from datetime import UTC, datetime
+
+    from chorus.utils.env_cfg import RetentionConfig
+
+    cfg = RetentionConfig(default_days=30, enabled=False)
+
+    assert cfg.until(datetime(2026, 1, 1, tzinfo=UTC)) is None
+
+
+def test_retention_config_until_none_without_anchor() -> None:
+    """``until`` returns ``None`` when no anchor timestamp is available."""
+    from chorus.utils.env_cfg import RetentionConfig
+
+    assert RetentionConfig(default_days=30).until(None) is None

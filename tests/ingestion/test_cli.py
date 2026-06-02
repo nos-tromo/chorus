@@ -73,7 +73,7 @@ def test_run_parses_since_and_passes_to_orchestrator(
     ) -> dict[str, Any]:
         """Capture call args without touching the database."""
         seen["since"] = since
-        return {"counts": {}, "skipped": []}
+        return {"counts": {}, "skipped": [], "dropped": {}, "filtered": {}}
 
     monkeypatch.setattr(cli, "FileUpstreamAdapter", lambda _src: FakeAdapter())
     monkeypatch.setattr(cli, "run_once", fake_run_once)

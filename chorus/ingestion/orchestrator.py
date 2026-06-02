@@ -21,11 +21,13 @@ UNWIND; see ADR 0007.
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any, TypeVar
 
 from loguru import logger
 from neo4j import Driver
+from pydantic import ValidationError
 
 from chorus.ingestion import comments as comments_stage
 from chorus.ingestion import connections as connections_stage
@@ -39,6 +41,45 @@ from chorus.utils.env_cfg import RetentionConfig, load_ner_client_env
 
 _CONNECTIONS_BATCH_SIZE = 500
 
+T = TypeVar("T")
+
+
+def _parse_or_skip(
+    stage: str, row: dict[str, Any], build: Callable[..., T], *args: Any, dropped: dict[str, int]
+) -> T | None:
+    """Build a DTO for one row, logging and skipping on row-level parse errors.
+
+    ``build`` is invoked as ``build(row, *args)``; every stage's ``from_row``
+    takes the raw row as its first positional argument, so the row is supplied
+    once and reused for both the call and the skip-log identifier.
+
+    The raw row has already been persisted by the time stage loops call this
+    helper, so skipping a malformed row preserves replay/debuggability without
+    aborting the rest of the run. Each skip increments ``dropped[stage]`` so the
+    run can report how many rows were lost to malformation per stage.
+
+    Args:
+        stage: Stage name, used for logging and as the ``dropped`` key.
+        row: Raw upstream row; passed as the first argument to ``build``.
+        build: Callable that constructs the DTO from ``(row, *args)``.
+        *args: Extra positional arguments forwarded after ``row``.
+        dropped: Per-stage malformed-row counter; incremented on a skip.
+
+    Returns:
+        The constructed DTO, or ``None`` when the row is malformed.
+    """
+    try:
+        return build(row, *args)
+    except (KeyError, ValidationError, ValueError) as exc:
+        logger.warning(
+            "{} row {} skipped: {}",
+            stage,
+            row.get("UUID") or row.get("ID") or row.get("Network Object ID") or "<unknown>",
+            exc,
+        )
+        dropped[stage] = dropped.get(stage, 0) + 1
+        return None
+
 
 def run_once(
     adapter: UpstreamAdapter,
@@ -47,6 +88,7 @@ def run_once(
     retention: RetentionConfig,
     *,
     since: datetime | None = None,
+    ingested_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Run every ingestion stage once, in dependency order.
 
@@ -68,18 +110,36 @@ def run_once(
         retention: Retention configuration applied to each artifact DTO.
         since: If provided, restrict the pull to rows newer than this
             timestamp; ``None`` means a full pull.
+        ingested_at: Chorus-side ingestion time stamped on every artifact and
+            used as the retention anchor. Computed once here (defaulting to
+            ``datetime.now(UTC)``) so a whole run shares one value; injectable
+            for deterministic tests.
 
     Returns:
-        A dict with two keys:
+        A dict with four keys:
 
         - ``"counts"``: per-stage counts (rows for postings/comments/
           messages/profiles, ``:MENTIONS`` edges for mentions, social-
           graph edges for connections).
         - ``"skipped"``: list of stage names that were skipped (e.g.
           ``["mentions"]`` when NER is disabled).
+        - ``"dropped"``: per-stage count of rows skipped because they were
+          malformed (failed DTO parsing/validation), so a partial-but-green
+          run surfaces its data loss instead of looking like a clean smaller
+          pull.
+        - ``"filtered"``: per-stage count of rows intentionally not projected
+          for structural reasons — ``comments`` whose parent posting was not
+          in the batch, and ``connections`` with no edge signal (self-loop or
+          no Friend/Follower/Following flag). Expected, not a data-quality
+          problem; surfaced for completeness.
     """
+    ingested_at = ingested_at or datetime.now(UTC)
     counts: dict[str, int] = {}
     skipped: list[str] = []
+    dropped: dict[str, int] = {"postings": 0, "comments": 0, "messages": 0, "profiles": 0, "connections": 0}
+    # Structural filters (not malformation): comments with no in-batch parent,
+    # connection rows with no edge signal (self-loop or no Friend/Follower/Following flag).
+    filtered: dict[str, int] = {"comments": 0, "connections": 0}
     ner_cfg = load_ner_client_env()
     counts["mentions"] = 0
     if not ner_cfg.enabled:
@@ -111,7 +171,9 @@ def run_once(
     raw.write_batch("postings", posting_rows)
     counts["postings"] = 0
     for row in posting_rows:
-        dto = postings_stage.from_row(row, retention)
+        dto = _parse_or_skip("postings", row, postings_stage.from_row, retention, ingested_at, dropped=dropped)
+        if dto is None:
+            continue
         postings_stage.write(driver, dto)
         counts["postings"] += 1
         _extract(dto.text, dto.uuid)
@@ -140,6 +202,7 @@ def run_once(
                 row.get("UUID"),
                 parent_pid,
             )
+            filtered["comments"] += 1
             continue
         # Augment a copy so the raw_store payload stays verbatim.
         augmented = dict(row)
@@ -147,7 +210,11 @@ def run_once(
         parent_cid = row.get("Parent Comment ID")
         if parent_cid:
             augmented["Parent Comment UUID"] = comment_id_to_uuid.get(str(parent_cid).strip())
-        comment_dto = comments_stage.from_row(augmented, retention)
+        comment_dto = _parse_or_skip(
+            "comments", augmented, comments_stage.from_row, retention, ingested_at, dropped=dropped
+        )
+        if comment_dto is None:
+            continue
         comments_stage.write(driver, comment_dto)
         counts["comments"] += 1
         _extract(comment_dto.text, comment_dto.uuid)
@@ -156,7 +223,9 @@ def run_once(
     raw.write_batch("messages", message_rows)
     counts["messages"] = 0
     for row in message_rows:
-        message_dto = messages_stage.from_row(row, retention)
+        message_dto = _parse_or_skip("messages", row, messages_stage.from_row, retention, ingested_at, dropped=dropped)
+        if message_dto is None:
+            continue
         messages_stage.write(driver, message_dto)
         counts["messages"] += 1
         _extract(message_dto.text, message_dto.uuid)
@@ -165,7 +234,9 @@ def run_once(
     raw.write_batch("profiles", profile_rows)
     counts["profiles"] = 0
     for row in profile_rows:
-        profile_dto = profiles_stage.from_row(row)
+        profile_dto = _parse_or_skip("profiles", row, profiles_stage.from_row, dropped=dropped)
+        if profile_dto is None:
+            continue
         profiles_stage.write(driver, profile_dto)
         counts["profiles"] += 1
 
@@ -174,8 +245,14 @@ def run_once(
     counts["connections"] = 0
     connection_batch: list[connections_stage.ConnectionDTO] = []
     for row in connection_rows:
-        connection_dto = connections_stage.from_row(row)
+        before_dropped = dropped["connections"]
+        connection_dto = _parse_or_skip("connections", row, connections_stage.from_row, dropped=dropped)
         if connection_dto is None:
+            # A None that did NOT increment dropped came from from_row returning
+            # None (no edge signal: self-loop or no flag), not a parse error —
+            # count it as a structural filter rather than malformation.
+            if dropped["connections"] == before_dropped:
+                filtered["connections"] += 1
             continue
         connection_batch.append(connection_dto)
         if len(connection_batch) >= _CONNECTIONS_BATCH_SIZE:
@@ -186,4 +263,18 @@ def run_once(
         result = connections_stage.write_batch(driver, connection_batch)
         counts["connections"] += result["follows"] + result["friends_with"]
 
-    return {"counts": counts, "skipped": skipped}
+    total_dropped = sum(dropped.values())
+    if total_dropped:
+        logger.warning(
+            "ingestion dropped {} malformed row(s): {}",
+            total_dropped,
+            {stage: n for stage, n in dropped.items() if n},
+        )
+    total_filtered = sum(filtered.values())
+    if total_filtered:
+        logger.info(
+            "ingestion filtered {} row(s) (no in-batch parent / no edge signal): {}",
+            total_filtered,
+            {stage: n for stage, n in filtered.items() if n},
+        )
+    return {"counts": counts, "skipped": skipped, "dropped": dropped, "filtered": filtered}

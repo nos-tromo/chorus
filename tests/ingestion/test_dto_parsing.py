@@ -31,8 +31,228 @@ def test_postings_from_row_strips_whitespace_padded_timestamps() -> None:
     }
     dto = from_row(row, RetentionConfig(default_days=30))
     assert dto.uuid == "p-1"
+    assert dto.timestamp is not None
     assert dto.timestamp.year == 2026
+    assert dto.crawled_at is not None
     assert dto.crawled_at.year == 2026
+
+
+def test_postings_from_row_keeps_row_with_missing_timestamp() -> None:
+    """A posting with no parseable Timestamp is kept, not dropped.
+
+    Content creation time is optional upstream; a missing or blank
+    ``Timestamp`` must neither abort the run nor drop the row. ``timestamp``
+    resolves to ``None`` while the row is still ingested.
+    """
+    from chorus.ingestion.postings import from_row
+
+    row = {
+        "UUID": "p-1",
+        "Text Content": "no timestamp",
+        "Timestamp": None,
+        "Crawled at": "2026-06-01T09:00:00+00:00",
+        "Author ID": "a-1",
+        "Network": "linkedin",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30))
+
+    assert dto.timestamp is None
+
+
+def test_postings_from_row_keeps_row_with_missing_crawled_at() -> None:
+    """A posting with no Crawled at is kept; crawled_at is informational only."""
+    from chorus.ingestion.postings import from_row
+
+    row = {
+        "UUID": "p-1",
+        "Text Content": "no crawl time",
+        "Timestamp": "2026-01-01T00:00:00+00:00",
+        "Author ID": "a-1",
+        "Network": "linkedin",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30))
+
+    assert dto.crawled_at is None
+
+
+def test_postings_from_row_anchors_retention_on_ingested_at() -> None:
+    """retention_until is measured from the chorus-set ingested_at, not upstream times."""
+    from datetime import UTC, datetime
+
+    from chorus.ingestion.postings import from_row
+
+    ingested = datetime(2026, 6, 1, tzinfo=UTC)
+    row = {
+        "UUID": "p-1",
+        "Text Content": "hi",
+        "Timestamp": "2026-01-01T00:00:00+00:00",
+        "Crawled at": "2026-03-01T00:00:00+00:00",
+        "Author ID": "a-1",
+        "Network": "linkedin",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30), ingested)
+
+    assert dto.ingested_at == ingested
+    # ingested_at (Jun 1) + 30d = Jul 1 — independent of Timestamp / Crawled at.
+    assert dto.retention_until == datetime(2026, 7, 1, tzinfo=UTC)
+
+
+def test_postings_from_row_retention_disabled_yields_none() -> None:
+    """With retention disabled, a posting carries no retention_until deadline."""
+    from datetime import UTC, datetime
+
+    from chorus.ingestion.postings import from_row
+
+    row = {
+        "UUID": "p-1",
+        "Text Content": "hi",
+        "Timestamp": "2026-01-01T00:00:00+00:00",
+        "Crawled at": "2026-06-01T00:00:00+00:00",
+        "Author ID": "a-1",
+        "Network": "linkedin",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30, enabled=False), datetime(2026, 6, 1, tzinfo=UTC))
+
+    assert dto.retention_until is None
+
+
+def test_comments_from_row_keeps_row_with_missing_timestamp() -> None:
+    """A comment with no parseable Timestamp is kept, not dropped."""
+    from chorus.ingestion.comments import from_row
+
+    row = {
+        "UUID": "c-1",
+        "Text Content": "no timestamp",
+        "Timestamp": None,
+        "Crawled at": "2026-06-01T09:00:00+00:00",
+        "Author ID": "a-1",
+        "Network": "linkedin",
+        "Parent Posting UUID": "p-1",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30))
+
+    assert dto.timestamp is None
+
+
+def test_comments_from_row_keeps_row_with_missing_crawled_at() -> None:
+    """A comment with no Crawled at is kept; crawled_at is informational only."""
+    from chorus.ingestion.comments import from_row
+
+    row = {
+        "UUID": "c-1",
+        "Text Content": "no crawl time",
+        "Timestamp": "2026-01-01T00:00:00+00:00",
+        "Author ID": "a-1",
+        "Network": "linkedin",
+        "Parent Posting UUID": "p-1",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30))
+
+    assert dto.crawled_at is None
+
+
+def test_comments_from_row_anchors_retention_on_ingested_at() -> None:
+    """Comment retention_until is measured from the chorus-set ingested_at."""
+    from datetime import UTC, datetime
+
+    from chorus.ingestion.comments import from_row
+
+    ingested = datetime(2026, 6, 1, tzinfo=UTC)
+    row = {
+        "UUID": "c-1",
+        "Text Content": "hi",
+        "Timestamp": "2026-01-01T00:00:00+00:00",
+        "Crawled at": "2026-03-01T00:00:00+00:00",
+        "Author ID": "a-1",
+        "Network": "linkedin",
+        "Parent Posting UUID": "p-1",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30), ingested)
+
+    assert dto.ingested_at == ingested
+    assert dto.retention_until == datetime(2026, 7, 1, tzinfo=UTC)
+
+
+def test_comments_from_row_retention_disabled_yields_none() -> None:
+    """With retention disabled, a comment carries no retention_until deadline."""
+    from datetime import UTC, datetime
+
+    from chorus.ingestion.comments import from_row
+
+    row = {
+        "UUID": "c-1",
+        "Text Content": "hi",
+        "Timestamp": "2026-01-01T00:00:00+00:00",
+        "Crawled at": "2026-06-01T00:00:00+00:00",
+        "Author ID": "a-1",
+        "Network": "linkedin",
+        "Parent Posting UUID": "p-1",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30, enabled=False), datetime(2026, 6, 1, tzinfo=UTC))
+
+    assert dto.retention_until is None
+
+
+def test_messages_from_row_keeps_row_with_missing_timestamp() -> None:
+    """A message with no Timestamp is kept, not dropped.
+
+    Like postings/comments, a message ``Timestamp`` is optional; retention
+    anchors on the chorus-set ``ingested_at``, not the message timestamp, so
+    a missing timestamp does not affect the retention clock.
+    """
+    from chorus.ingestion.messages import from_row
+
+    row = {
+        "UUID": "m-1",
+        "Chat ID": "chat-1",
+        "Sender": "a-1",
+        "Text": "no timestamp",
+        "Timestamp": None,
+        "Network": "signal",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30))
+
+    assert dto.timestamp is None
+
+
+def test_messages_from_row_anchors_retention_on_ingested_at() -> None:
+    """Message retention_until is measured from the chorus-set ingested_at."""
+    from datetime import UTC, datetime
+
+    from chorus.ingestion.messages import from_row
+
+    ingested = datetime(2026, 6, 1, tzinfo=UTC)
+    row = {
+        "UUID": "m-1",
+        "Chat ID": "chat-1",
+        "Sender": "a-1",
+        "Text": "hi",
+        "Timestamp": "2026-01-01T00:00:00+00:00",
+        "Network": "signal",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30), ingested)
+
+    assert dto.ingested_at == ingested
+    assert dto.retention_until == datetime(2026, 7, 1, tzinfo=UTC)
+
+
+def test_messages_from_row_retention_disabled_yields_none() -> None:
+    """With retention disabled, a message carries no retention_until deadline."""
+    from datetime import UTC, datetime
+
+    from chorus.ingestion.messages import from_row
+
+    row = {
+        "UUID": "m-1",
+        "Chat ID": "chat-1",
+        "Sender": "a-1",
+        "Text": "hi",
+        "Timestamp": "2026-01-01T00:00:00+00:00",
+        "Network": "signal",
+    }
+    dto = from_row(row, RetentionConfig(default_days=30, enabled=False), datetime(2026, 6, 1, tzinfo=UTC))
+
+    assert dto.retention_until is None
 
 
 def test_comments_from_row_strips_whitespace_padded_timestamps() -> None:
@@ -50,6 +270,7 @@ def test_comments_from_row_strips_whitespace_padded_timestamps() -> None:
     }
     dto = from_row(row, RetentionConfig(default_days=30))
     assert dto.uuid == "c-1"
+    assert dto.timestamp is not None
     assert dto.timestamp.year == 2026
 
 
@@ -67,6 +288,7 @@ def test_messages_from_row_strips_whitespace_padded_timestamps() -> None:
     }
     dto = from_row(row, RetentionConfig(default_days=30))
     assert dto.uuid == "m-1"
+    assert dto.timestamp is not None
     assert dto.timestamp.year == 2026
 
 

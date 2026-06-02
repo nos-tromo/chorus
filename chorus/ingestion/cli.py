@@ -84,6 +84,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{stage}: {count}")
         if result["skipped"]:
             print(f"skipped: {result['skipped']}")
+        dropped = {stage: n for stage, n in result["dropped"].items() if n}
+        if dropped:
+            print(f"dropped (malformed): {dropped}")
+        filtered = {stage: n for stage, n in result["filtered"].items() if n}
+        if filtered:
+            print(f"filtered (structural): {filtered}")
         return 0
 
     if args.cmd == "resolve":

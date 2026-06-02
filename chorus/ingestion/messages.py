@@ -8,7 +8,7 @@ distinguishes (`IN_CHAT` vs `IN_GROUP`).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -35,15 +35,20 @@ class MessageDTO(BaseModel):
         handle: Author handle derived from the message URL (X/Twitter),
             or ``None`` when it cannot be derived. See ADR 0008.
         text: Body of the message.
-        timestamp: Content creation time (drives retention).
+        timestamp: Content creation time; optional. Informational only —
+            does not drive retention.
         url: Original message URL.
         answers_count: Reply count reported by the upstream.
         reply_to_uuid: UUID of the parent message when this is a
             threaded reply; ``None`` for top-level messages.
         network: Platform name (resolves to ``:Platform``).
         system_tags: Upstream ``Tags`` field as a string list.
+        ingested_at: Time chorus ingested this row (chorus-set, not from the
+            upstream). The anchor retention is measured from.
         retention_until: Absolute time the nightly sweeper should
-            hard-delete this message.
+            hard-delete this message (``ingested_at`` + the configured
+            window); ``None`` when retention is disabled, leaving it
+            non-expiring.
     """
 
     uuid: str
@@ -53,33 +58,43 @@ class MessageDTO(BaseModel):
     sender_display_name: str | None = None
     handle: str | None = None
     text: str
-    timestamp: datetime
+    timestamp: datetime | None = None
     url: str | None = None
     answers_count: int | None = None
     reply_to_uuid: str | None = None
     network: str
     system_tags: list[str] = Field(default_factory=list)
-    retention_until: datetime
+    ingested_at: datetime
+    retention_until: datetime | None = None
 
 
-def from_row(row: dict[str, Any], retention: RetentionConfig) -> MessageDTO:
+def from_row(row: dict[str, Any], retention: RetentionConfig, ingested_at: datetime | None = None) -> MessageDTO:
     """Adapt one upstream message row to a :class:`MessageDTO`.
+
+    ``timestamp`` is optional and informational; ``retention_until`` anchors
+    on ``ingested_at`` (the chorus-set ingestion time), uniformly with
+    postings and comments.
 
     Args:
         row: One raw row as returned by the upstream adapter, augmented
             with ``Reply To UUID`` if applicable.
         retention: Retention configuration, used to compute
             ``retention_until``.
+        ingested_at: Ingestion time to stamp and anchor retention on;
+            defaults to ``datetime.now(UTC)``. The orchestrator passes one
+            value per run so a whole run shares a consistent clock.
 
     Returns:
         A populated, validated :class:`MessageDTO`.
 
     Raises:
-        KeyError: If a required upstream column is missing.
-        ValueError: If a timestamp column is malformed.
+        KeyError: If a required upstream column (``UUID``, ``Chat ID``,
+            ``Sender``, ``Network``) is missing.
+        ValueError: If a non-empty ``Timestamp`` value is malformed.
         pydantic.ValidationError: If the resulting DTO fails validation.
     """
-    ts = _coerce_dt(row["Timestamp"])
+    ingested_at = ingested_at or datetime.now(UTC)
+    ts = _coerce_dt_opt(row.get("Timestamp"))
     return MessageDTO(
         uuid=row["UUID"],
         chat_id=str(row["Chat ID"]),
@@ -100,7 +115,8 @@ def from_row(row: dict[str, Any], retention: RetentionConfig) -> MessageDTO:
         reply_to_uuid=row.get("Reply To UUID") or row.get("Reply To"),
         network=row["Network"],
         system_tags=_tags(row.get("Tags")),
-        retention_until=ts + timedelta(days=retention.default_days),
+        ingested_at=ingested_at,
+        retention_until=retention.until(ingested_at),
     )
 
 
@@ -131,6 +147,7 @@ def write(driver: Driver, dto: MessageDTO) -> None:
         m.url             = $url,
         m.answers_count   = $answers_count,
         m.system_tags     = $system_tags,
+        m.ingested_at     = datetime($ingested_at),
         m.retention_until = datetime($retention_until)
     MERGE (a)-[:AUTHORED]->(m)
     MERGE (m)-[:ON_PLATFORM]->(pl)
@@ -214,6 +231,22 @@ def _coerce_dt(value: Any) -> datetime:
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=UTC)
     return datetime.fromisoformat(str(value).strip())
+
+
+def _coerce_dt_opt(value: Any) -> datetime | None:
+    """Coerce ``value`` to a datetime, or ``None`` when missing.
+
+    Args:
+        value: Candidate value (``None``, empty string, datetime, or
+            ISO-8601 string).
+
+    Returns:
+        ``None`` for missing/empty inputs; otherwise the result of
+        :func:`_coerce_dt`.
+    """
+    if value is None or value == "":
+        return None
+    return _coerce_dt(value)
 
 
 def _int_or_none(value: Any) -> int | None:
