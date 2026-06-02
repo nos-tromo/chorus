@@ -7,7 +7,7 @@ authors, platform, and (optional) group before linking the post.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from neo4j import Driver
@@ -28,9 +28,11 @@ class PostingDTO(BaseModel):
         network_posting_id: Upstream-side post id, kept for traceability.
         url: Original post URL.
         text: Body of the post.
-        timestamp: Content creation time (drives retention).
+        timestamp: Content creation time; optional (the upstream omits it
+            for some rows). Informational only — does not drive retention.
         timezone_name: Source-supplied timezone label.
-        crawled_at: Ingestion-side timestamp.
+        crawled_at: Upstream crawl time; optional. Informational only — the
+            upstream crawler owns its own retention clock.
         last_updated: Content edit time (if known).
         location: Source-supplied location string.
         task: Upstream task label.
@@ -48,17 +50,20 @@ class PostingDTO(BaseModel):
         posted_in_group: Group id when the post was made inside a group.
         filename: Multimedia attachment filename, if present.
         system_tags: Upstream ``Tags`` field as a string list.
+        ingested_at: Time chorus ingested this row (chorus-set, not from the
+            upstream). The anchor retention is measured from.
         retention_until: Absolute time the nightly sweeper should hard-delete
-            this post.
+            this post (``ingested_at`` + the configured window); ``None`` when
+            retention is disabled, leaving the post non-expiring.
     """
 
     uuid: str
     network_posting_id: str | None = None
     url: str | None = None
     text: str
-    timestamp: datetime
+    timestamp: datetime | None = None
     timezone_name: str | None = None
-    crawled_at: datetime
+    crawled_at: datetime | None = None
     last_updated: datetime | None = None
     location: str | None = None
     task: str | None = None
@@ -75,39 +80,49 @@ class PostingDTO(BaseModel):
     posted_in_group: str | None = None
     filename: str | None = None
     system_tags: list[str] = Field(default_factory=list)
-    retention_until: datetime
+    ingested_at: datetime
+    retention_until: datetime | None = None
 
 
-def from_row(row: dict[str, Any], retention: RetentionConfig) -> PostingDTO:
+def from_row(row: dict[str, Any], retention: RetentionConfig, ingested_at: datetime | None = None) -> PostingDTO:
     """Adapt one upstream posting row to a :class:`PostingDTO`.
 
     Field-name mapping mirrors the upstream table headers documented in
-    CLAUDE.md §Upstream data format. ``retention_until`` is derived from
-    the post's ``Timestamp`` plus the configured default retention
-    window — not from ``Crawled at``.
+    CLAUDE.md §Upstream data format. ``timestamp`` (content creation) and
+    ``crawled_at`` (upstream crawl time) are both optional and informational
+    — a missing/blank value resolves to ``None`` rather than dropping the
+    row. ``retention_until`` is anchored on ``ingested_at`` (the chorus-set
+    ingestion time) via :meth:`RetentionConfig.until`, independent of the
+    upstream timestamps, and is ``None`` when retention is disabled.
 
     Args:
         row: One raw row as returned by the upstream adapter.
         retention: Retention configuration, used to compute
             ``retention_until``.
+        ingested_at: Ingestion time to stamp and anchor retention on;
+            defaults to ``datetime.now(UTC)``. The orchestrator passes one
+            value per run so a whole run shares a consistent clock.
 
     Returns:
         A populated, validated :class:`PostingDTO`.
 
     Raises:
-        KeyError: If a required upstream column is missing.
-        ValueError: If a timestamp column is malformed.
+        KeyError: If a required upstream column (``UUID``, ``Author ID``,
+            ``Network``) is missing.
+        ValueError: If a present ``Timestamp`` / ``Crawled at`` value is
+            malformed.
         pydantic.ValidationError: If the resulting DTO fails validation.
     """
-    ts = _coerce_dt(row["Timestamp"])
+    ingested_at = ingested_at or datetime.now(UTC)
+    crawled_at = _coerce_dt_opt(row.get("Crawled at"))
     return PostingDTO(
         uuid=row["UUID"],
         network_posting_id=row.get("Network Posting ID") or row.get("Posting ID"),
         url=row.get("URL"),
         text=row.get("Text Content") or "",
-        timestamp=ts,
+        timestamp=_coerce_dt_opt(row.get("Timestamp")),
         timezone_name=row.get("Timezone"),
-        crawled_at=_coerce_dt(row["Crawled at"]),
+        crawled_at=crawled_at,
         last_updated=_coerce_dt_opt(row.get("Date last updated")),
         location=row.get("Location"),
         task=row.get("Task"),
@@ -124,7 +139,8 @@ def from_row(row: dict[str, Any], retention: RetentionConfig) -> PostingDTO:
         posted_in_group=_str_or_none(row.get("Posted in Group")),
         filename=_str_or_none(row.get("Filename")),
         system_tags=_tags(row.get("Tags")),
-        retention_until=ts + timedelta(days=retention.default_days),
+        ingested_at=ingested_at,
+        retention_until=retention.until(ingested_at),
     )
 
 
@@ -162,6 +178,7 @@ def write(driver: Driver, dto: PostingDTO) -> None:
         p.expected_comments   = $expected_comments,
         p.collected_comments  = $collected_comments,
         p.system_tags         = $system_tags,
+        p.ingested_at         = datetime($ingested_at),
         p.retention_until     = datetime($retention_until)
     MERGE (a)-[:AUTHORED]->(p)
     MERGE (p)-[:ON_PLATFORM]->(pl)

@@ -237,14 +237,14 @@ Nodes:
                     crawled_at, last_updated, location, task,
                     expected_reactions, collected_reactions,
                     expected_comments, collected_comments,
-                    system_tags, retention_until, embedding})
+                    system_tags, ingested_at, retention_until, embedding})
 
   (:Post:Comment   {uuid, network_object_id, url, text, timestamp, crawled_at,
                     replies_count, reactions_count,
-                    system_tags, retention_until, embedding})
+                    system_tags, ingested_at, retention_until, embedding})
 
   (:Post:Message   {uuid, text, timestamp, url, answers_count,
-                    system_tags, retention_until, embedding})
+                    system_tags, ingested_at, retention_until, embedding})
 
   (:Author         {id, handle, vanity_name, display_name, platform,
                     profile_uuid, url, network_object_id, crawled_at,
@@ -461,9 +461,15 @@ multi-hop traversal queries find structurally complete paths.
   Network-side IDs (`Posting ID`, `Comment ID`, `Network Posting ID`,
   `Network Object ID`) are kept as properties for upstream traceability but
   never used as graph keys.
-- **Three timestamps on postings**: `Timestamp` is content creation time,
-  `Date last updated` is content edit time, `Crawled at` is ingestion time.
-  Retention timers run off `Timestamp`, not `Crawled at`.
+- **Timestamps**: `Timestamp` is content creation time, `Date last updated`
+  is content edit time, `Crawled at` is the *upstream* crawl time. All three
+  are optional and informational — a missing/blank value is kept as `None`,
+  never dropping the row. Retention is **not** measured from any of them:
+  every artifact gets a chorus-set `ingested_at` (the time chorus ingested it,
+  one value per run) and `retention_until` runs off that, uniformly across
+  postings, comments, and messages (ADR 0011). `RETENTION_ENABLED=false`
+  disables retention entirely (no `retention_until` is written). See
+  `docs/retention.md`.
 - **Expected vs Collected reactions/comments** signal known crawl
   incompleteness. Store both. Any analytical output that aggregates
   engagement must surface the delta so users see the uncertainty rather than

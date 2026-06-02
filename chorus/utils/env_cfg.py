@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -299,9 +300,32 @@ class RetentionConfig:
     Attributes:
         default_days: Default retention window applied to ingested posts
             when the upstream row does not specify one.
+        enabled: When ``False``, retention is fully bypassed: :meth:`until`
+            returns ``None`` for every row, so no post is stamped with a
+            ``retention_until`` deadline and the nightly sweep never targets
+            it. Toggled by ``RETENTION_ENABLED`` (default on).
     """
 
     default_days: int
+    enabled: bool = True
+
+    def until(self, basis: datetime | None) -> datetime | None:
+        """Compute a post's retention deadline from an anchor timestamp.
+
+        Args:
+            basis: The timestamp retention is measured from — ingestion
+                (``crawled_at``) time for postings and comments, the
+                message's own ``timestamp`` for chat messages (which carry
+                no crawl time). ``None`` when the row has no usable anchor.
+
+        Returns:
+            ``basis + default_days`` when retention is enabled and an anchor
+            is present; ``None`` when retention is disabled or no anchor is
+            available, in which case the post is kept indefinitely.
+        """
+        if not self.enabled or basis is None:
+            return None
+        return basis + timedelta(days=self.default_days)
 
 
 @dataclass(frozen=True)
@@ -500,13 +524,17 @@ def load_audit_env() -> AuditConfig:
 def load_retention_env() -> RetentionConfig:
     """Load per-post retention configuration from the environment.
 
+    ``RETENTION_ENABLED`` (default ``true``) toggles retention globally —
+    setting it false makes every ingested post non-expiring.
+    ``RETENTION_DAYS_DEFAULT`` sets the window in days.
+
     Returns:
         A populated :class:`RetentionConfig`. Default retention is one
-        year, applied to posts whose upstream row carries no explicit
-        retention window.
+        year and enabled.
     """
     return RetentionConfig(
         default_days=_env_int("RETENTION_DAYS_DEFAULT", 365),
+        enabled=_env_bool("RETENTION_ENABLED", True),
     )
 
 

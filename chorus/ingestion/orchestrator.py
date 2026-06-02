@@ -22,7 +22,7 @@ UNWIND; see ADR 0007.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 from loguru import logger
@@ -83,6 +83,7 @@ def run_once(
     retention: RetentionConfig,
     *,
     since: datetime | None = None,
+    ingested_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Run every ingestion stage once, in dependency order.
 
@@ -104,6 +105,10 @@ def run_once(
         retention: Retention configuration applied to each artifact DTO.
         since: If provided, restrict the pull to rows newer than this
             timestamp; ``None`` means a full pull.
+        ingested_at: Chorus-side ingestion time stamped on every artifact and
+            used as the retention anchor. Computed once here (defaulting to
+            ``datetime.now(UTC)``) so a whole run shares one value; injectable
+            for deterministic tests.
 
     Returns:
         A dict with two keys:
@@ -114,6 +119,7 @@ def run_once(
         - ``"skipped"``: list of stage names that were skipped (e.g.
           ``["mentions"]`` when NER is disabled).
     """
+    ingested_at = ingested_at or datetime.now(UTC)
     counts: dict[str, int] = {}
     skipped: list[str] = []
     ner_cfg = load_ner_client_env()
@@ -147,7 +153,7 @@ def run_once(
     raw.write_batch("postings", posting_rows)
     counts["postings"] = 0
     for row in posting_rows:
-        dto = _parse_or_skip("posting", row, postings_stage.from_row, retention)
+        dto = _parse_or_skip("posting", row, postings_stage.from_row, retention, ingested_at)
         if dto is None:
             continue
         postings_stage.write(driver, dto)
@@ -185,7 +191,7 @@ def run_once(
         parent_cid = row.get("Parent Comment ID")
         if parent_cid:
             augmented["Parent Comment UUID"] = comment_id_to_uuid.get(str(parent_cid).strip())
-        comment_dto = _parse_or_skip("comment", augmented, comments_stage.from_row, retention)
+        comment_dto = _parse_or_skip("comment", augmented, comments_stage.from_row, retention, ingested_at)
         if comment_dto is None:
             continue
         comments_stage.write(driver, comment_dto)
@@ -196,7 +202,7 @@ def run_once(
     raw.write_batch("messages", message_rows)
     counts["messages"] = 0
     for row in message_rows:
-        message_dto = _parse_or_skip("message", row, messages_stage.from_row, retention)
+        message_dto = _parse_or_skip("message", row, messages_stage.from_row, retention, ingested_at)
         if message_dto is None:
             continue
         messages_stage.write(driver, message_dto)

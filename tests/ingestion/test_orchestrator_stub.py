@@ -173,12 +173,18 @@ def test_comment_with_unresolvable_parent_is_skipped(migrated_driver: Driver, mo
 def test_malformed_posting_row_is_skipped_and_does_not_abort(
     migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A malformed posting row is logged and skipped without aborting later stages.
+    """A genuinely malformed posting row is logged and skipped without aborting.
 
-    Raw rows are persisted before DTO parsing, so a single bad row should
-    not take down the entire run. The orchestrator should drop the bad
-    posting, continue with the remaining stages, and let dependent comments
-    fall out naturally when their parent posting was not written.
+    Raw rows are persisted before DTO parsing, so a single bad row should not
+    take down the entire run. Here the posting omits the required ``Author
+    ID`` (a ``KeyError`` at parse time). The orchestrator drops it, continues
+    with the remaining stages, and the dependent comment — whose parent
+    ``Posting ID`` is this dropped posting — falls out because its parent was
+    never written.
+
+    A missing/blank ``Timestamp`` is deliberately NOT used as the malformed
+    case: that is now valid input, kept with a null timestamp (see
+    ``test_posting_with_missing_timestamp_is_kept``).
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
@@ -191,17 +197,18 @@ def test_malformed_posting_row_is_skipped_and_does_not_abort(
     from chorus.utils.env_cfg import load_path_env, load_retention_env
 
     class _BadPostingAdapter(FakeAdapter):
-        """FakeAdapter variant whose posting row is missing a parseable timestamp."""
+        """FakeAdapter variant whose posting omits the required Author ID."""
 
         def fetch_postings(self, since: Any) -> Iterable[dict[str, Any]]:
             yield {
                 "UUID": "p-bad",
-                "Posting ID": "post-net-bad",
+                # The default comment points its parent at "post-net-1"; the
+                # comment must drop because THIS posting is skipped.
+                "Posting ID": "post-net-1",
                 "Text Content": "broken row",
-                "Timestamp": None,
+                "Timestamp": "2026-05-01T10:00:00+00:00",
                 "Crawled at": "2026-05-02T10:00:00+00:00",
-                "Author ID": "a-1",
-                "Author": "Alice",
+                # "Author ID" intentionally omitted -> KeyError in from_row.
                 "Network": "linkedin",
             }
 
@@ -219,6 +226,75 @@ def test_malformed_posting_row_is_skipped_and_does_not_abort(
     with migrated_driver.session() as s:
         assert s.run("MATCH (p:Posting) RETURN count(p) AS c").single()["c"] == 0  # type: ignore[index]
         assert s.run("MATCH (m:Message) RETURN count(m) AS c").single()["c"] == 1  # type: ignore[index]
+
+
+def test_posting_with_missing_timestamp_is_kept(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A posting with no Timestamp is ingested, not dropped; retention uses crawl time.
+
+    Content creation time is optional upstream. The posting lands with a null
+    ``timestamp`` and a ``retention_until`` anchored on ``Crawled at`` instead
+    of being skipped.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        monkeypatch: pytest monkeypatch fixture.
+    """
+    monkeypatch.setenv("NER_ENABLED", "false")
+
+    from chorus.ingestion.orchestrator import run_once
+    from chorus.ingestion.raw_store import RawStore
+    from chorus.utils.env_cfg import load_path_env, load_retention_env
+
+    class _NoTimestampPostingAdapter(FakeAdapter):
+        """FakeAdapter variant whose posting carries no creation timestamp."""
+
+        def fetch_postings(self, since: Any) -> Iterable[dict[str, Any]]:
+            yield {
+                "UUID": "p-1",
+                "Posting ID": "post-net-1",
+                "Text Content": "no timestamp",
+                "Timestamp": None,
+                "Crawled at": "2026-05-02T10:00:00+00:00",
+                "Author ID": "a-1",
+                "Author": "Alice",
+                "Network": "linkedin",
+            }
+
+    raw = RawStore(load_path_env().raw_store)
+    raw.init_schema()
+
+    result = run_once(_NoTimestampPostingAdapter(), migrated_driver, raw, load_retention_env())
+
+    assert result["counts"]["postings"] == 1
+    with migrated_driver.session() as s:
+        rec = s.run("MATCH (p:Posting {uuid: 'p-1'}) RETURN p.timestamp AS ts, p.retention_until AS ru").single()
+        assert rec["ts"] is None  # type: ignore[index]
+        assert rec["ru"] is not None  # type: ignore[index]
+
+
+def test_retention_disabled_writes_no_retention_until(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With RETENTION_ENABLED=false, a posting lands without a retention deadline.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        monkeypatch: pytest monkeypatch fixture.
+    """
+    monkeypatch.setenv("NER_ENABLED", "false")
+    monkeypatch.setenv("RETENTION_ENABLED", "false")
+
+    from chorus.ingestion.orchestrator import run_once
+    from chorus.ingestion.raw_store import RawStore
+    from chorus.utils.env_cfg import load_path_env, load_retention_env
+
+    raw = RawStore(load_path_env().raw_store)
+    raw.init_schema()
+
+    result = run_once(FakeAdapter(), migrated_driver, raw, load_retention_env())
+
+    assert result["counts"]["postings"] == 1
+    with migrated_driver.session() as s:
+        ru = s.run("MATCH (p:Posting {uuid: 'p-1'}) RETURN p.retention_until AS ru").single()["ru"]  # type: ignore[index]
+        assert ru is None
 
 
 def test_connections_stage_drops_no_signal_rows(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -262,3 +338,36 @@ def test_connections_stage_drops_no_signal_rows(migrated_driver: Driver, monkeyp
     with migrated_driver.session() as s:
         assert s.run("MATCH ()-[r:FOLLOWS]->() RETURN count(r) AS c").single()["c"] == 0  # type: ignore[index]
         assert s.run("MATCH ()-[r:FRIENDS_WITH]->() RETURN count(r) AS c").single()["c"] == 0  # type: ignore[index]
+
+
+def test_run_once_stamps_one_ingested_at_across_a_run(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
+    """run_once stamps a single injected ingested_at on every artifact in the run.
+
+    ingested_at is chorus-set (not read from the upstream row) and computed
+    once per run, so all posts/comments/messages from one run share it and
+    their retention anchors on it.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        monkeypatch: pytest monkeypatch fixture.
+    """
+    monkeypatch.setenv("NER_ENABLED", "false")
+
+    from datetime import UTC, datetime
+
+    from chorus.ingestion.orchestrator import run_once
+    from chorus.ingestion.raw_store import RawStore
+    from chorus.utils.env_cfg import load_path_env, load_retention_env
+
+    ingested = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    raw = RawStore(load_path_env().raw_store)
+    raw.init_schema()
+
+    run_once(FakeAdapter(), migrated_driver, raw, load_retention_env(), ingested_at=ingested)
+
+    with migrated_driver.session() as s:
+        rec = s.run("MATCH (p:Post) RETURN count(p) AS total, count(DISTINCT p.ingested_at) AS distinct_ia").single()
+        assert rec["total"] == 3  # type: ignore[index]
+        assert rec["distinct_ia"] == 1  # type: ignore[index]  # one ingested_at shared across the run
+        ia = s.run("MATCH (p:Posting {uuid: 'p-1'}) RETURN p.ingested_at AS ia").single()["ia"]  # type: ignore[index]
+        assert ia.to_native() == ingested
