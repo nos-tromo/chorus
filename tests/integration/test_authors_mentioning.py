@@ -71,9 +71,10 @@ def test_authors_mentioning_ranks_by_post_count(migrated_driver: Driver, in_memo
         ("auth-a", 2),
         ("auth-b", 1),
     ]
-    assert out.authors[0].display_name == "Anna"
-    assert out.authors[0].first_mention.isoformat() == "2026-05-01T10:00:00+00:00"
-    assert out.authors[0].last_mention.isoformat() == "2026-05-02T10:00:00+00:00"
+    top = out.authors[0]
+    assert top.display_name == "Anna"
+    assert top.first_mention is not None and top.first_mention.isoformat() == "2026-05-01T10:00:00+00:00"
+    assert top.last_mention is not None and top.last_mention.isoformat() == "2026-05-02T10:00:00+00:00"
 
 
 def test_authors_mentioning_counts_distinct_posts(migrated_driver: Driver, in_memory_audit: Any) -> None:
@@ -110,9 +111,7 @@ def test_authors_mentioning_counts_distinct_posts(migrated_driver: Driver, in_me
     assert [(a.author_id, a.mention_post_count) for a in out.authors] == [("auth-a", 1)]
 
 
-def test_authors_mentioning_time_window_excludes_entity_branch(
-    migrated_driver: Driver, in_memory_audit: Any
-) -> None:
+def test_authors_mentioning_time_window_excludes_entity_branch(migrated_driver: Driver, in_memory_audit: Any) -> None:
     """Entity-branch mentions outside the [from, to) window exclude the author.
 
     Regression guard for the AND/OR precedence bug that bit posts_mentioning:
@@ -153,9 +152,7 @@ def test_authors_mentioning_time_window_excludes_entity_branch(
     assert out.authors == []
 
 
-def test_authors_mentioning_resolved_alias_by_canonical_name(
-    migrated_driver: Driver, in_memory_audit: Any
-) -> None:
+def test_authors_mentioning_resolved_alias_by_canonical_name(migrated_driver: Driver, in_memory_audit: Any) -> None:
     """A canonical-name query matches through Alias -> Entity and records the id."""
     from chorus.tools.authors_mentioning import (
         AuthorsMentioningIn,
@@ -219,9 +216,7 @@ def test_authors_mentioning_unresolved_alias(migrated_driver: Driver, in_memory_
     assert out.audit_entities() == []
 
 
-def test_authors_mentioning_lockstep_with_posts_mentioning(
-    migrated_driver: Driver, in_memory_audit: Any
-) -> None:
+def test_authors_mentioning_lockstep_with_posts_mentioning(migrated_driver: Driver, in_memory_audit: Any) -> None:
     """authors_mentioning(X) returns exactly the authors behind posts_mentioning(X).
 
     Covers the matching-mirror guarantee and that comments (not just postings)
@@ -277,6 +272,7 @@ def test_authors_mentioning_lockstep_with_posts_mentioning(
             """,
             uuids=pm_uuids,
         ).single()
+    assert rec is not None
     expected_author_ids = set(rec["ids"])
 
     am = authors_mentioning(
@@ -291,9 +287,7 @@ def test_authors_mentioning_lockstep_with_posts_mentioning(
     assert am_author_ids == {"a1", "a2"}  # non-empty, both surfaces and a comment
 
 
-def test_authors_mentioning_does_not_merge_same_display_name(
-    migrated_driver: Driver, in_memory_audit: Any
-) -> None:
+def test_authors_mentioning_does_not_merge_same_display_name(migrated_driver: Driver, in_memory_audit: Any) -> None:
     """Two distinct authors sharing a display name are returned as two rows."""
     from chorus.tools.authors_mentioning import (
         AuthorsMentioningIn,
