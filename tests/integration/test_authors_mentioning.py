@@ -108,3 +108,46 @@ def test_authors_mentioning_counts_distinct_posts(migrated_driver: Driver, in_me
     )
 
     assert [(a.author_id, a.mention_post_count) for a in out.authors] == [("auth-a", 1)]
+
+
+def test_authors_mentioning_time_window_excludes_entity_branch(
+    migrated_driver: Driver, in_memory_audit: Any
+) -> None:
+    """Entity-branch mentions outside the [from, to) window exclude the author.
+
+    Regression guard for the AND/OR precedence bug that bit posts_mentioning:
+    an unparenthesised OR let the time predicates apply only to the Alias branch.
+    """
+    from chorus.tools.authors_mentioning import (
+        AuthorsMentioningIn,
+        authors_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (e:Entity {id: 'ent-old'}) ON CREATE SET e.canonical_name = 'Berlin'
+            MERGE (a:Author {id: 'auth-a'}) ON CREATE SET a.handle = 'a'
+            MERGE (p:Post:Posting {uuid: 'p-old'})
+              ON CREATE SET p.text = 'old entity-branch mention',
+                            p.timestamp = datetime('2026-01-01T10:00:00+00:00')
+            MERGE (a)-[:AUTHORED]->(p)
+            MERGE (p)-[:MENTIONS]->(e)
+            """
+        )
+
+    out = authors_mentioning(
+        migrated_driver,
+        AuthorsMentioningIn.model_validate(
+            {
+                "entity": "berlin",
+                "from": "2026-06-01T00:00:00+00:00",
+                "to": "2026-07-01T00:00:00+00:00",
+                "limit": 10,
+            }
+        ),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+
+    assert out.authors == []
