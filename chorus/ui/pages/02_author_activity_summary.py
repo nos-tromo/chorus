@@ -32,7 +32,9 @@ def _client() -> ChorusClient:
 client = _client()
 
 st.title("author activity summary")
-st.caption("Topic clustering is pending entity resolution — topics are alias surface forms for now.")
+st.caption(
+    "Topics cluster by canonical entity after a resolution pass; on un-resolved data they show as alias surface forms."
+)
 
 author = st.text_input("Author handle or display name", value="")
 
