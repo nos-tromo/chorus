@@ -327,3 +327,26 @@ def test_authors_mentioning_does_not_merge_same_display_name(
     assert len(out.authors) == 2
     assert {a.author_id for a in out.authors} == {"a1", "a2"}
     assert all(a.display_name == "Alex" for a in out.authors)
+
+
+def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> None:
+    """One audit row is written per tool call, with the resolved user."""
+    import sqlite3
+
+    from chorus.tools.authors_mentioning import (
+        AuthorsMentioningIn,
+        authors_mentioning,
+    )
+
+    authors_mentioning(
+        migrated_driver,
+        AuthorsMentioningIn(entity="Nowhere"),
+        user="alice",
+        audit=in_memory_audit,
+    )
+    rows = (
+        sqlite3.connect(in_memory_audit.db_path)
+        .execute("SELECT user, tool_name, result_count, status FROM audit_log")
+        .fetchall()
+    )
+    assert rows == [("alice", "authors_mentioning", 0, "ok")]
