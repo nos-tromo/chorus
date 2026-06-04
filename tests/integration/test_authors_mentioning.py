@@ -289,3 +289,41 @@ def test_authors_mentioning_lockstep_with_posts_mentioning(
 
     assert am_author_ids == expected_author_ids
     assert am_author_ids == {"a1", "a2"}  # non-empty, both surfaces and a comment
+
+
+def test_authors_mentioning_does_not_merge_same_display_name(
+    migrated_driver: Driver, in_memory_audit: Any
+) -> None:
+    """Two distinct authors sharing a display name are returned as two rows."""
+    from chorus.tools.authors_mentioning import (
+        AuthorsMentioningIn,
+        authors_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (al:Alias {surface_form: 'Berlin'})
+            MERGE (a1:Author {id: 'a1'}) ON CREATE SET a1.display_name = 'Alex', a1.handle = 'alex1'
+            MERGE (a2:Author {id: 'a2'}) ON CREATE SET a2.display_name = 'Alex', a2.handle = 'alex2'
+            MERGE (p1:Post:Posting {uuid: 'p1'})
+              ON CREATE SET p1.text = 'b1', p1.timestamp = datetime('2026-05-01T10:00:00+00:00')
+            MERGE (p2:Post:Posting {uuid: 'p2'})
+              ON CREATE SET p2.text = 'b2', p2.timestamp = datetime('2026-05-02T10:00:00+00:00')
+            MERGE (a1)-[:AUTHORED]->(p1)
+            MERGE (a2)-[:AUTHORED]->(p2)
+            MERGE (p1)-[:MENTIONS]->(al)
+            MERGE (p2)-[:MENTIONS]->(al)
+            """
+        )
+
+    out = authors_mentioning(
+        migrated_driver,
+        AuthorsMentioningIn(entity="berlin", limit=10),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+
+    assert len(out.authors) == 2
+    assert {a.author_id for a in out.authors} == {"a1", "a2"}
+    assert all(a.display_name == "Alex" for a in out.authors)
