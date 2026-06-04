@@ -89,6 +89,10 @@ class ConnectedAuthor(BaseModel):
         overlap: Number of distinct topics shared with the seed.
         shared_topics: Display names of the shared topics (resolved
             entity canonical names or alias surface forms).
+        shared_entity_ids: Canonical entity ids among the shared topics
+            (resolved only; unresolved aliases contribute none). Excluded
+            from the serialized output — it exists to feed the §76 audit
+            trail via :meth:`AuthorsConnectedByTopicOut.audit_entities`.
     """
 
     author_id: str
@@ -96,6 +100,7 @@ class ConnectedAuthor(BaseModel):
     display_name: str | None
     overlap: int
     shared_topics: list[str]
+    shared_entity_ids: list[str] = Field(default_factory=list, exclude=True)
 
 
 class SeedConnections(BaseModel):
@@ -121,14 +126,20 @@ class AuthorsConnectedByTopicOut(BaseModel):
     results: list[SeedConnections]
 
     def audit_entities(self) -> list[str]:
-        """Return resolved entity ids touched by this result set.
+        """Return distinct resolved entity ids among the shared topics.
 
         Returns:
-            An empty list in v1: shared topics are alias surface forms
-            (no canonical id) until entity resolution lands. Revisit to
-            surface entity ids once resolution writes ``:Entity`` nodes.
+            Entity ids in first-seen order, deduped, across every matched
+            seed's connected authors. Unresolved alias topics are omitted
+            because they have no canonical id.
         """
-        return []
+        seen: list[str] = []
+        for group in self.results:
+            for connected in group.connected:
+                for entity_id in connected.shared_entity_ids:
+                    if entity_id and entity_id not in seen:
+                        seen.append(entity_id)
+        return seen
 
     def audit_result_count(self) -> int:
         """Return the total number of connected authors across all seeds.
@@ -186,6 +197,7 @@ def authors_connected_by_topic(
                     display_name=c["display_name"],
                     overlap=c["overlap"],
                     shared_topics=list(c["shared_topics"]),
+                    shared_entity_ids=list(c["shared_entity_ids"]),
                 )
                 for c in row["connected"]
             ]

@@ -5,6 +5,8 @@
 // authors; results are grouped per matched seed. Both CALL subqueries end in a
 // collect so every matched seed yields exactly one row with a (possibly empty)
 // connected list — seeds with no topics or no matches are never dropped.
+// Resolved-topic entity ids are collected per connected author (nulls dropped)
+// to feed the §76 audit trail; unresolved aliases contribute no id.
 
 MATCH (seed:Author)
 WHERE toLower(coalesce(seed.handle, "")) = toLower(trim($seed_author))
@@ -26,15 +28,19 @@ CALL {
     CASE WHEN m2:Entity THEN m2.id ELSE coalesce(e2.id, m2.surface_form) END AS key2,
     CASE WHEN m2:Entity THEN m2.canonical_name
          WHEN e2 IS NOT NULL THEN e2.canonical_name
-         ELSE m2.surface_form END AS name2
+         ELSE m2.surface_form END AS name2,
+    CASE WHEN m2:Entity THEN m2.id ELSE e2.id END AS entity_id2
   WHERE key2 IN seed_keys
-  WITH other, collect(DISTINCT name2) AS shared_topics, count(DISTINCT key2) AS overlap
+  WITH other,
+    collect(DISTINCT name2) AS shared_topics,
+    collect(DISTINCT entity_id2) AS shared_entity_ids,
+    count(DISTINCT key2) AS overlap
   WHERE overlap >= $min_overlap
   ORDER BY overlap DESC, other.id ASC
   LIMIT $limit
   RETURN collect({
     author_id: other.id, handle: other.handle, display_name: other.display_name,
-    overlap: overlap, shared_topics: shared_topics
+    overlap: overlap, shared_topics: shared_topics, shared_entity_ids: shared_entity_ids
   }) AS connected
 }
 RETURN
