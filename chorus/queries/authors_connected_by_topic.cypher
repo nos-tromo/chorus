@@ -11,16 +11,14 @@
 MATCH (seed:Author)
 WHERE toLower(coalesce(seed.handle, "")) = toLower(trim($seed_author))
    OR toLower(coalesce(seed.display_name, "")) = toLower(trim($seed_author))
-CALL {
-  WITH seed
+CALL (seed) {
   OPTIONAL MATCH (seed)-[:AUTHORED]->(:Post)-[:MENTIONS]->(m)
   OPTIONAL MATCH (m:Alias)-[:RESOLVED_TO]->(e:Entity)
   WITH CASE WHEN m:Entity THEN m.id ELSE coalesce(e.id, m.surface_form) END AS key
   WHERE key IS NOT NULL
   RETURN collect(DISTINCT key) AS seed_keys
 }
-CALL {
-  WITH seed, seed_keys
+CALL (seed, seed_keys) {
   MATCH (other:Author)-[:AUTHORED]->(:Post)-[:MENTIONS]->(m2)
     WHERE other <> seed
   OPTIONAL MATCH (m2:Alias)-[:RESOLVED_TO]->(e2:Entity)
