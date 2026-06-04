@@ -247,6 +247,141 @@ def test_posts_mentioning_finds_resolved_alias_by_canonical_name(migrated_driver
     assert out.audit_entities() == ["ent-berlin"]
 
 
+def test_posts_mentioning_dedups_alias_with_multiple_resolved_edges(
+    migrated_driver: Driver, in_memory_audit: Any
+) -> None:
+    """An alias with two :RESOLVED_TO edges must not return its post twice.
+
+    Nothing structurally guarantees one ``:RESOLVED_TO`` edge per alias
+    (concurrent resolve / manual fix / threshold change can mint a second).
+    The OPTIONAL MATCH onto ``:Entity`` then fans the post out into one row
+    per edge, so without per-post aggregation the same post is reported
+    multiple times. Regression test for issue #23 (query-side).
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+    """
+    from chorus.tools.posts_mentioning import (
+        PostsMentioningIn,
+        posts_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (e1:Entity {id: 'ent-a'}) ON CREATE SET e1.canonical_name = 'Berlin'
+            MERGE (e2:Entity {id: 'ent-b'}) ON CREATE SET e2.canonical_name = 'Berlin'
+            MERGE (a:Alias {surface_form: 'Berlin'})
+            MERGE (a)-[:RESOLVED_TO]->(e1)
+            MERGE (a)-[:RESOLVED_TO]->(e2)
+            MERGE (p:Post:Posting {uuid: 'p-1'})
+              ON CREATE SET p.text = 'mentions berlin',
+                            p.timestamp = datetime('2026-05-01T10:00:00+00:00')
+            MERGE (p)-[:MENTIONS]->(a)
+            """
+        )
+
+    out = posts_mentioning(
+        migrated_driver,
+        PostsMentioningIn(entity="berlin", limit=10),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+
+    assert [hit.uuid for hit in out.hits] == ["p-1"]
+
+
+def test_posts_mentioning_limit_not_consumed_by_duplicate_edges(migrated_driver: Driver, in_memory_audit: Any) -> None:
+    """Duplicate rows from a multi-edge alias must not eat ``$limit`` slots.
+
+    With two posts each mentioning an alias that has two ``:RESOLVED_TO``
+    edges, a ``limit`` of 2 must still surface both *distinct* posts. Before
+    the fix, the newest post's two duplicate rows silently consumed the whole
+    limit and the older post vanished. Regression test for issue #23.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+    """
+    from chorus.tools.posts_mentioning import (
+        PostsMentioningIn,
+        posts_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (e1:Entity {id: 'ent-a'}) ON CREATE SET e1.canonical_name = 'Berlin'
+            MERGE (e2:Entity {id: 'ent-b'}) ON CREATE SET e2.canonical_name = 'Berlin'
+            MERGE (a:Alias {surface_form: 'Berlin'})
+            MERGE (a)-[:RESOLVED_TO]->(e1)
+            MERGE (a)-[:RESOLVED_TO]->(e2)
+            MERGE (p1:Post:Posting {uuid: 'p-old'})
+              ON CREATE SET p1.text = 'older berlin',
+                            p1.timestamp = datetime('2026-05-01T10:00:00+00:00')
+            MERGE (p2:Post:Posting {uuid: 'p-new'})
+              ON CREATE SET p2.text = 'newer berlin',
+                            p2.timestamp = datetime('2026-05-02T10:00:00+00:00')
+            MERGE (p1)-[:MENTIONS]->(a)
+            MERGE (p2)-[:MENTIONS]->(a)
+            """
+        )
+
+    out = posts_mentioning(
+        migrated_driver,
+        PostsMentioningIn(entity="berlin", limit=2),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+
+    uuids = [hit.uuid for hit in out.hits]
+    assert len(uuids) == len(set(uuids))  # no post returned twice
+    assert set(uuids) == {"p-old", "p-new"}
+
+
+def test_posts_mentioning_dedups_post_matched_via_two_aliases(migrated_driver: Driver, in_memory_audit: Any) -> None:
+    """A post matched via two distinct aliases is returned once, not twice.
+
+    A post can mention the query term through more than one alias (e.g. a
+    surface form ``Berlin`` and an abbreviation ``BER`` resolved to the same
+    canonical entity). Both ``:MENTIONS`` edges match the query, so per-post
+    aggregation is required to avoid a duplicate row.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+    """
+    from chorus.tools.posts_mentioning import (
+        PostsMentioningIn,
+        posts_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (e:Entity {id: 'ent-berlin'}) ON CREATE SET e.canonical_name = 'Berlin'
+            MERGE (a1:Alias {surface_form: 'Berlin'})
+            MERGE (a2:Alias {surface_form: 'BER'})
+            MERGE (a2)-[:RESOLVED_TO]->(e)
+            MERGE (p:Post:Posting {uuid: 'p-multi'})
+              ON CREATE SET p.text = 'Berlin a.k.a. BER',
+                            p.timestamp = datetime('2026-05-05T10:00:00+00:00')
+            MERGE (p)-[:MENTIONS]->(a1)
+            MERGE (p)-[:MENTIONS]->(a2)
+            """
+        )
+
+    out = posts_mentioning(
+        migrated_driver,
+        PostsMentioningIn(entity="berlin", limit=10),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+
+    assert [hit.uuid for hit in out.hits] == ["p-multi"]
+
+
 def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> None:
     """One audit row is written per tool call, with the resolved user.
 
