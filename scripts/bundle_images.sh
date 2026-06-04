@@ -30,45 +30,20 @@ echo "$CHORUS_VERSION" > .chorus-version
 # Build locally-defined services (backend + frontend).
 $COMPOSE build
 
-# Pull externally hosted services (any image:-only services).
-$COMPOSE pull --ignore-buildable
-
-# Partition compose's image list and ensure local tag bindings exist:
-#   built  = local-only names like "chorus-backend" (already tagged by build)
-#   pulled = registry refs like "docker.io/library/foo:1.2.3@sha256:..."
-#
-# Docker Desktop sometimes drops the name:tag binding when you pull
-# `name:tag@digest`, leaving only the digest. We re-tag explicitly so
-# `docker save` produces a tarball that loads back with both tag and digest
-# bindings — which compose needs for its `image: name:tag@digest` references.
+# Collect the built image names so docker save can bundle them. Every
+# service in this compose file is locally built (backend + frontend);
+# stateful/remote images (Neo4j) live in the data-plane project, not here,
+# so there is nothing to pull.
 built=()
-pulled=()
 while IFS= read -r img; do
   [[ -z "$img" ]] && continue
-  if [[ "$img" == */* ]]; then
-    if [[ "$img" =~ ^(.+):([^@]+)@(sha256:[a-f0-9]+)$ ]]; then
-      name="${BASH_REMATCH[1]}"
-      tag="${BASH_REMATCH[2]}"
-      digest="${BASH_REMATCH[3]}"
-      docker tag "${name}@${digest}" "${name}:${tag}"
-      pulled+=("${name}:${tag}")
-    else
-      pulled+=("$img")
-    fi
-  else
-    built+=("$img")
-  fi
+  built+=("$img")
 done < <($COMPOSE config --images)
 
-echo "Built images:  ${built[*]:-<none>}"
-echo "Pulled images: ${pulled[*]:-<none>}"
+echo "Built images: ${built[*]:-<none>}"
 
 if (( ${#built[@]} > 0 )); then
   docker save "${built[@]}" | gzip > "chorus-built-${CHORUS_VERSION}.tar.gz"
 fi
 
-if (( ${#pulled[@]} > 0 )); then
-  docker save "${pulled[@]}" | gzip > "chorus-pulled-${CHORUS_VERSION}.tar.gz"
-fi
-
-echo "Wrote: chorus-built-${CHORUS_VERSION}.tar.gz, chorus-pulled-${CHORUS_VERSION}.tar.gz"
+echo "Wrote: chorus-built-${CHORUS_VERSION}.tar.gz"
