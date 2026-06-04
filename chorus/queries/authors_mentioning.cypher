@@ -7,7 +7,11 @@
 // the authors behind the posts posts_mentioning(X) returns. Unlike posts_mentioning
 // there is no `text/timestamp IS NOT NULL` filter: this tool returns neither body
 // text nor a time ordering, and a mention on a timestamp-less post is still a real
-// mention. count(DISTINCT p) collapses a post matched via several aliases/entities
+// mention. (Lockstep with posts_mentioning therefore holds for timestamped,
+// text-bearing posts; a text-null mentioning post — which NER does not produce in
+// practice, as extraction runs on text — would count here but be dropped by
+// posts_mentioning's text filter.) count(DISTINCT p) collapses a post matched via
+// several aliases/entities
 // (or an alias with several :RESOLVED_TO edges) to a single contribution. Counts
 // span every :Post the author authored — postings, comments, and messages.
 

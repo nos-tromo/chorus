@@ -15,6 +15,9 @@ st.set_page_config(page_title="authors_mentioning — chorus")
 def _client() -> ChorusClient:
     """Construct (or return the cached) :class:`ChorusClient` for this page.
 
+    Streamlit caches the result across reruns via ``@st.cache_resource``
+    so we don't open a new HTTP pool on every script execution.
+
     Returns:
         A :class:`ChorusClient` bound to the configured API URL and
         identity, both pulled from the environment with development
