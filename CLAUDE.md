@@ -48,8 +48,9 @@ uv run mypy .                  # type check
 uv run pre-commit run --all-files               # pre-commit hooks
 ```
 
-Production images install via `uv sync --frozen --offline` against a
-pre-built wheelhouse — see *Airgapped operation* for why no
+Production images are built on the internet-connected CI side with
+`uv sync --locked` from the hash-locked `uv.lock`, baking the dependency
+venv into the image — see *Airgapped operation* for why no
 package-manager call in any image may reach the internet.
 
 ## Scope
@@ -166,9 +167,12 @@ against it.
 
 - **No network calls in production code paths.** Any library that fetches
   data, models, configs, or telemetry at runtime is disqualified.
-- **All Python dependencies pre-vendored via `uv`.** Production images
-  install from a local wheelhouse built by `uv` on the internet-connected
-  CI side. No package-manager call in any image reaches the internet.
+- **All Python dependencies installed into the image at build time via
+  `uv`.** On the internet-connected CI side the image build runs `uv sync
+  --locked` from the hash-locked `uv.lock`, baking a fully-populated
+  virtualenv into the image. The airgapped side loads the prebuilt image
+  and runs no package install. No package-manager call in any image reaches
+  the internet.
 - **Chorus ships no model weights.** All inference — including entity
   extraction — is reached through vllm-service. Chorus mounts no model
   volumes and contains no model files.
@@ -189,9 +193,8 @@ against it.
 ```
 internet-side CI                        airgapped environment
 ─────────────────                       ──────────────────────
-build uv wheelhouse ─┐
-build images         ├─▶ image + wheelhouse ─▶ load into registry
-                                                deploy via compose
+build images ──────────▶ image tarballs ──▶ load into registry
+                                            deploy via compose
 ```
 
 Model weights are provisioned separately by vllm-service infrastructure —
@@ -205,10 +208,10 @@ Concrete expectations:
 - `pyproject.toml` + `uv.lock` is the source of truth for dependencies.
   Dependencies are managed via `uv add` / `uv remove`; environments are
   built and refreshed via `uv sync`. `uv.lock` is hash-locked.
-- CI builds a wheelhouse from `uv.lock`; the Dockerfile populates the uv
-  cache (or wheelhouse via `--find-links`) and runs `uv sync --frozen
-  --offline` to install. No package-manager call in any image reaches
-  the internet.
+- The image build runs `uv sync --locked` from `uv.lock` on the
+  internet-connected CI side, installing every dependency into the image's
+  virtualenv. The shipped image is self-contained; no package-manager call
+  runs on the airgapped side.
 
 ### Dependency review
 
@@ -657,7 +660,7 @@ chorus/                      # top-level repo
   before commit. Full pytest runs in CI, not in the hook.
 - **CI**: GitHub Actions, matching docint conventions. Pipeline:
   ruff → mypy → pytest → build images → produce airgap delivery bundle
-  (images + uv wheelhouse). No CI-driven deploy in v1;
+  (image tarballs). No CI-driven deploy in v1;
   deploys are manual on the airgapped side via the data-plane and chorus
   compose projects.
 

@@ -26,7 +26,7 @@ help:
 	@echo "  make network    create the shared inference-net + data-net"
 	@echo "  make volumes    create the external chorus-state Docker volume"
 	@echo "  make build      build backend + frontend images"
-	@echo "  make bundle     produce airgap artifacts (images tarball + wheelhouse)"
+	@echo "  make bundle     ship the built images as a versioned .tar.gz"
 	@echo "  make up         start backend + frontend (production shape, no host ports)"
 	@echo "  make up-dev     like 'up', but publishes backend + frontend ports on the host"
 	@echo "  make stop       stop containers (keep them)"
@@ -54,9 +54,8 @@ volumes:
 build:
 	DOCKER_BUILDKIT=1 $(COMPOSE) build
 
-# Produce airgap delivery artifacts (images tarball + uv wheelhouse).
+# Build images and ship them as a versioned .tar.gz of locally-built images.
 bundle:
-	./scripts/build_wheelhouse.sh
 	./scripts/bundle_images.sh
 
 # Start backend + frontend in production shape (no host ports).
