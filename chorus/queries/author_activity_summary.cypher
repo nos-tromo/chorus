@@ -9,8 +9,7 @@
 MATCH (a:Author)
 WHERE toLower(coalesce(a.handle, "")) = toLower(trim($author))
    OR toLower(coalesce(a.display_name, "")) = toLower(trim($author))
-CALL {
-  WITH a
+CALL (a) {
   OPTIONAL MATCH (a)-[:AUTHORED]->(p:Post)
     WHERE ($from IS NULL OR p.timestamp >= datetime($from))
       AND ($to   IS NULL OR p.timestamp <  datetime($to))
@@ -26,8 +25,7 @@ CALL {
     sum(coalesce(p.expected_comments, 0))   AS expected_comments_total,
     sum(coalesce(p.collected_comments, 0))  AS collected_comments_total
 }
-CALL {
-  WITH a
+CALL (a) {
   OPTIONAL MATCH (a)-[:AUTHORED]->(p2:Post)
     WHERE ($from IS NULL OR p2.timestamp >= datetime($from))
       AND ($to   IS NULL OR p2.timestamp <  datetime($to))

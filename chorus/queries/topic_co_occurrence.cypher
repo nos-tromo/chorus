@@ -10,8 +10,7 @@
 // is excluded from its own list by ident, not by display name.
 
 WITH toLower(trim($topic)) AS q
-CALL {
-  WITH q
+CALL (q) {
   // aliases whose surface form is the seed → their entity id if resolved, else the form itself
   OPTIONAL MATCH (a:Alias) WHERE toLower(a.surface_form) = q
   OPTIONAL MATCH (a)-[:RESOLVED_TO]->(ae:Entity)
