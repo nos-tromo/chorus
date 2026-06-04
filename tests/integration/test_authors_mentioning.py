@@ -151,3 +151,69 @@ def test_authors_mentioning_time_window_excludes_entity_branch(
     )
 
     assert out.authors == []
+
+
+def test_authors_mentioning_resolved_alias_by_canonical_name(
+    migrated_driver: Driver, in_memory_audit: Any
+) -> None:
+    """A canonical-name query matches through Alias -> Entity and records the id."""
+    from chorus.tools.authors_mentioning import (
+        AuthorsMentioningIn,
+        authors_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (e:Entity {id: 'ent-berlin'}) ON CREATE SET e.canonical_name = 'Berlin'
+            MERGE (al:Alias {surface_form: 'BER'})
+            MERGE (al)-[:RESOLVED_TO]->(e)
+            MERGE (a:Author {id: 'auth-a'}) ON CREATE SET a.handle = 'a'
+            MERGE (p:Post:Posting {uuid: 'p-resolved'})
+              ON CREATE SET p.text = 'resolved alias mention',
+                            p.timestamp = datetime('2026-05-01T10:00:00+00:00')
+            MERGE (a)-[:AUTHORED]->(p)
+            MERGE (p)-[:MENTIONS]->(al)
+            """
+        )
+
+    out = authors_mentioning(
+        migrated_driver,
+        AuthorsMentioningIn(entity="berlin", limit=10),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+
+    assert [(a.author_id, a.mention_post_count) for a in out.authors] == [("auth-a", 1)]
+    assert out.audit_entities() == ["ent-berlin"]
+
+
+def test_authors_mentioning_unresolved_alias(migrated_driver: Driver, in_memory_audit: Any) -> None:
+    """An unresolved alias still matches the author; no entity id is recorded."""
+    from chorus.tools.authors_mentioning import (
+        AuthorsMentioningIn,
+        authors_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (al:Alias {surface_form: 'Berlin'})
+            MERGE (a:Author {id: 'auth-a'}) ON CREATE SET a.handle = 'a'
+            MERGE (p:Post:Posting {uuid: 'p-alias'})
+              ON CREATE SET p.text = 'alias only mention',
+                            p.timestamp = datetime('2026-05-02T10:00:00+00:00')
+            MERGE (a)-[:AUTHORED]->(p)
+            MERGE (p)-[:MENTIONS]->(al)
+            """
+        )
+
+    out = authors_mentioning(
+        migrated_driver,
+        AuthorsMentioningIn(entity="berlin", limit=10),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+
+    assert [(a.author_id, a.mention_post_count) for a in out.authors] == [("auth-a", 1)]
+    assert out.audit_entities() == []
