@@ -268,7 +268,7 @@ Edges:
   (Message)-[:REPLIES_TO]->(Message)           # chat thread
   (Posting)-[:IN_GROUP]->(Group)
   (Post)-[:ON_PLATFORM]->(Platform)
-  (Post)-[:MENTIONS {confidence, span_start, span_end, model_version}]->(Entity)
+  (Post)-[:MENTIONS {confidence, span_start, span_end, model_version}]->(Alias)
   (Post)-[:HAS_HASHTAG]->(Hashtag)
   (Post)-[:HAS_ATTACHMENT]->(Attachment)
   (Author)-[:FOLLOWS]->(Author)                # directed: "A follows B"
@@ -287,8 +287,13 @@ Edges:
 - **Aliases are nodes**, not properties on Entity. Resolution history stays
   queryable and reversible; bad merges can be undone without losing the
   original surface form.
-- **`MENTIONS` carries provenance** (span offsets, model version, confidence)
-  so re-extraction with a newer model is auditable.
+- **`MENTIONS` targets the `:Alias` surface form, not `:Entity`.** Extraction
+  writes `(:Post)-[:MENTIONS]->(:Alias {surface_form})`; resolution later adds
+  `(:Alias)-[:RESOLVED_TO]->(:Entity)`. "A post mentions an entity" is therefore
+  the two-hop path `Post → Alias → Entity`, which the graph tools collapse with a
+  `coalesce(entity, alias)` rule (entity when resolved, else the surface form).
+  The edge carries provenance (span offsets, model version, confidence) so
+  re-extraction with a newer model is auditable.
 - **`retention_until` on Post** drives nightly cleanup. Cascade behavior is
   defined explicitly — see `docs/retention.md` (to be written).
 - **Embeddings live on nodes** (`Post.embedding`, `Entity.embedding`), indexed
