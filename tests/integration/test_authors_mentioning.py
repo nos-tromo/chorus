@@ -74,3 +74,37 @@ def test_authors_mentioning_ranks_by_post_count(migrated_driver: Driver, in_memo
     assert out.authors[0].display_name == "Anna"
     assert out.authors[0].first_mention.isoformat() == "2026-05-01T10:00:00+00:00"
     assert out.authors[0].last_mention.isoformat() == "2026-05-02T10:00:00+00:00"
+
+
+def test_authors_mentioning_counts_distinct_posts(migrated_driver: Driver, in_memory_audit: Any) -> None:
+    """A post that matches the query via two aliases counts once, not twice."""
+    from chorus.tools.authors_mentioning import (
+        AuthorsMentioningIn,
+        authors_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (e:Entity {id: 'ent-berlin'}) ON CREATE SET e.canonical_name = 'Berlin'
+            MERGE (a1:Alias {surface_form: 'Berlin'})
+            MERGE (a2:Alias {surface_form: 'BER'})
+            MERGE (a2)-[:RESOLVED_TO]->(e)
+            MERGE (a:Author {id: 'auth-a'}) ON CREATE SET a.handle = 'a'
+            MERGE (p:Post:Posting {uuid: 'p-multi'})
+              ON CREATE SET p.text = 'Berlin a.k.a. BER',
+                            p.timestamp = datetime('2026-05-05T10:00:00+00:00')
+            MERGE (a)-[:AUTHORED]->(p)
+            MERGE (p)-[:MENTIONS]->(a1)
+            MERGE (p)-[:MENTIONS]->(a2)
+            """
+        )
+
+    out = authors_mentioning(
+        migrated_driver,
+        AuthorsMentioningIn(entity="berlin", limit=10),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+
+    assert [(a.author_id, a.mention_post_count) for a in out.authors] == [("auth-a", 1)]
