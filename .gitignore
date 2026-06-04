@@ -13,6 +13,7 @@ wheels/
 .idea/
 .vscode/
 *.code-workspace
+.keep
 
 # Directories
 __pypackages__/
