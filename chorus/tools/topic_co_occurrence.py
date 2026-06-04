@@ -4,7 +4,10 @@ Given a seed topic, returns the other topics mentioned in the same posts,
 ranked by the number of shared posts (1-hop, same-post co-occurrence). Topic
 identity follows the coalesce(entity, alias) rule used across the graph tools:
 a topic is the resolved ``:Entity`` when present, else the ``:Alias`` surface
-form, so results improve automatically once entity resolution lands.
+form. The seed string is resolved to its entity identity first, so seeding by
+any one of an entity's surface forms (or its canonical name) spans every post
+mentioning that entity, and the seed is excluded from its own list by identity
+rather than by display name.
 
 Pattern: Pydantic input + Cypher template + ``@audited`` wrapper, identical in
 shape to :mod:`chorus.tools.posts_mentioning`.
