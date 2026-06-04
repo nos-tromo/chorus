@@ -1,7 +1,7 @@
 # `authors_mentioning` tool — design
 
 **Date:** 2026-06-04
-**Status:** proposed (design) — pending user review
+**Status:** approved (design); implemented in PR #37
 **Scope:** add one graph-only retrieval tool, `authors_mentioning(entity, from, to,
 limit)`, that ranks the authors who mention an entity. It is the author-valued
 sibling of `posts_mentioning` and reuses that tool's matching semantics verbatim.
@@ -57,9 +57,10 @@ query `q`, a mention node `m` matches when either:
 
 This yields the **lockstep guarantee**:
 
-> For posts with a non-null timestamp, the authors returned by
-> `authors_mentioning(X)` are exactly the distinct authors of the posts returned by
-> `posts_mentioning(X)`.
+> For posts with a non-null timestamp **and body text** (the universe
+> `posts_mentioning` operates on — it filters `text/timestamp IS NOT NULL`), the
+> authors returned by `authors_mentioning(X)` are exactly the distinct authors of
+> the posts returned by `posts_mentioning(X)`.
 
 That makes the tool trivially explainable ("the authors behind the posts
 `posts_mentioning` would return") and gives us a cross-tool regression test (below).

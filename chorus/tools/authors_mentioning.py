@@ -4,7 +4,7 @@ Ranks the authors who mention an entity by how many of their posts mention it,
 within an optional ``[from, to)`` time window. The author-valued sibling of
 ``posts_mentioning``: the MENTIONS-target match is identical, so
 ``authors_mentioning(X)`` returns precisely the authors behind the posts
-``posts_mentioning(X)`` returns (for timestamped posts).
+``posts_mentioning(X)`` returns (for timestamped, text-bearing posts).
 
 Pattern: Pydantic input + Cypher template + ``@audited`` wrapper, identical in
 shape to :mod:`chorus.tools.posts_mentioning`.
