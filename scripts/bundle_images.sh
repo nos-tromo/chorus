@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
-# Save chorus-backend + chorus-frontend images as a versioned tarball for
-# airgap delivery.
-#
-# Expects the images to already be built (run `make build` first).
-# Produces: dist/chorus-images-<version>.tar.gz
-#
-# Version is YYYY-MM-DD[-<short-sha>] derived from the commit date (not the
-# build date) so repeated bundle runs of the same commit produce the same
-# tag. Falls back to today's date when not in a git repo. To pin a specific
-# tag, set CHORUS_VERSION_OVERRIDE in your shell before invoking make.
-
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+COMPOSE="docker compose --env-file .env -f docker/compose.yaml"
+
+# Always compute a fresh version from git so repeated bundle runs produce
+# distinct tags. Uses the commit date (not the build date) for reproducibility.
+# Falls back to today's date when not in a git repo.
+# .chorus-version (if present) is never used as input here — it is only
+# written as output for production hosts.
+# To pin a specific tag, set CHORUS_VERSION_OVERRIDE in your shell before
+# invoking make.
 if [[ -n "${CHORUS_VERSION_OVERRIDE:-}" ]]; then
   export CHORUS_VERSION="$CHORUS_VERSION_OVERRIDE"
 else
@@ -25,22 +23,52 @@ else
 fi
 echo "CHORUS_VERSION=$CHORUS_VERSION"
 
-# Persist the version so airgapped production hosts can run 'make up' without
-# git or the original build date. Copy this file alongside docker/compose.yaml.
+# Persist the version so production hosts can run 'make up' without git or the
+# original build date. Copy this file alongside docker/compose.yaml.
 echo "$CHORUS_VERSION" > .chorus-version
 
-mkdir -p dist
+# Build locally-defined services (backend + frontend).
+$COMPOSE build
 
-BACKEND_IMG="chorus-backend:${CHORUS_VERSION}"
-FRONTEND_IMG="chorus-frontend:${CHORUS_VERSION}"
+# Pull externally hosted services (any image:-only services).
+$COMPOSE pull --ignore-buildable
 
-for img in "$BACKEND_IMG" "$FRONTEND_IMG"; do
-  if ! docker image inspect "$img" >/dev/null 2>&1; then
-    echo "image not found: $img — run 'make build' first" >&2
-    exit 1
+# Partition compose's image list and ensure local tag bindings exist:
+#   built  = local-only names like "chorus-backend" (already tagged by build)
+#   pulled = registry refs like "docker.io/library/foo:1.2.3@sha256:..."
+#
+# Docker Desktop sometimes drops the name:tag binding when you pull
+# `name:tag@digest`, leaving only the digest. We re-tag explicitly so
+# `docker save` produces a tarball that loads back with both tag and digest
+# bindings — which compose needs for its `image: name:tag@digest` references.
+built=()
+pulled=()
+while IFS= read -r img; do
+  [[ -z "$img" ]] && continue
+  if [[ "$img" == */* ]]; then
+    if [[ "$img" =~ ^(.+):([^@]+)@(sha256:[a-f0-9]+)$ ]]; then
+      name="${BASH_REMATCH[1]}"
+      tag="${BASH_REMATCH[2]}"
+      digest="${BASH_REMATCH[3]}"
+      docker tag "${name}@${digest}" "${name}:${tag}"
+      pulled+=("${name}:${tag}")
+    else
+      pulled+=("$img")
+    fi
+  else
+    built+=("$img")
   fi
-done
+done < <($COMPOSE config --images)
 
-TARBALL="dist/chorus-images-${CHORUS_VERSION}.tar.gz"
-docker save "$BACKEND_IMG" "$FRONTEND_IMG" | gzip > "$TARBALL"
-echo "wrote $TARBALL ($(du -h "$TARBALL" | cut -f1))"
+echo "Built images:  ${built[*]:-<none>}"
+echo "Pulled images: ${pulled[*]:-<none>}"
+
+if (( ${#built[@]} > 0 )); then
+  docker save "${built[@]}" | gzip > "chorus-built-${CHORUS_VERSION}.tar.gz"
+fi
+
+if (( ${#pulled[@]} > 0 )); then
+  docker save "${pulled[@]}" | gzip > "chorus-pulled-${CHORUS_VERSION}.tar.gz"
+fi
+
+echo "Wrote: chorus-built-${CHORUS_VERSION}.tar.gz, chorus-pulled-${CHORUS_VERSION}.tar.gz"
