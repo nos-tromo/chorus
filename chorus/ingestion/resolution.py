@@ -3,7 +3,7 @@
 The per-alias pipeline is:
 
     normalize_surface
-      → lookup_alias                (cheap: exact match on Alias node)
+      → lookup_resolved_norm_key    (durable cross-run dedup by normalized key)
       → cluster_candidates          (vector index on Entity.embedding)
       → llm_tiebreaker              (only when cluster has > 1 candidate)
       → mint_entity                 (when no confident match)
@@ -36,8 +36,9 @@ def normalize_surface(s: str, cfg: ResolutionConfig) -> str:
     Strips surrounding whitespace and, when configured, casefolds for
     case-insensitive comparison. This is **not** the ``:Alias.surface_form``
     stored in the graph — extraction stores the raw NER text there. The
-    normalized value is used only as the in-run clustering key in
-    :func:`resolve_all` (paired with the alias label).
+    normalized value is the in-run clustering key in :func:`resolve_all` and
+    is persisted as ``:Alias.norm_key`` when an alias is resolved, so
+    case/whitespace variants cluster across runs too (paired with the label).
 
     Args:
         s: Raw surface form as extracted by NER.
@@ -52,24 +53,36 @@ def normalize_surface(s: str, cfg: ResolutionConfig) -> str:
     return out
 
 
-def lookup_alias(driver: Driver, surface: str) -> str | None:
-    """Return the entity id this surface form was previously resolved to.
+def lookup_resolved_norm_key(driver: Driver, norm_key: str, label: str | None) -> str | None:
+    """Return the entity an already-resolved alias with this (norm_key, label) points to.
+
+    This is the durable cross-run dedup: a case/whitespace variant ingested in
+    a later run (``berlin`` after ``Berlin``) finds the entity an earlier
+    variant minted, even when their embeddings would not vector-match. The
+    label predicate is null-safe and mirrors :func:`cluster_candidates`, so a
+    PERSON ``Apple`` never collapses into a FOOD ``apple``. Backed by the
+    ``alias_norm_key`` index (migration 004).
 
     Args:
         driver: Open Neo4j driver.
-        surface: Raw surface form, matched verbatim against the stored
-            ``:Alias.surface_form`` (which extraction writes unnormalized).
+        norm_key: Normalized surface form (see :func:`normalize_surface`).
+        label: Alias label (GLiNER type), or ``None`` to match only untyped
+            resolved aliases.
 
     Returns:
-        The matching entity id, or ``None`` if this surface form has
-        never been resolved.
+        The matching entity id, or ``None`` if no resolved alias shares this
+        normalized key and label. ``ORDER BY e.id`` keeps the choice
+        deterministic if legacy data exposes more than one.
     """
     cypher = """
-    MATCH (a:Alias {surface_form: $surface})-[:RESOLVED_TO]->(e:Entity)
-    RETURN e.id AS id LIMIT 1
+    MATCH (a:Alias)-[:RESOLVED_TO]->(e:Entity)
+    WHERE a.norm_key = $norm_key
+      AND (a.label = $label OR ($label IS NULL AND a.label IS NULL))
+    RETURN e.id AS id
+    ORDER BY e.id LIMIT 1
     """
     with driver.session() as s:
-        record = s.run(cypher, surface=surface).single()
+        record = s.run(cypher, norm_key=norm_key, label=label).single()
     return record["id"] if record else None
 
 
@@ -145,6 +158,7 @@ def mint_entity(
     *,
     entity_type: str | None = None,
     embed_model: str = "",
+    norm_key: str,
 ) -> str:
     """Mint a new :Entity for an alias and link it, atomically; return its id.
 
@@ -160,6 +174,8 @@ def mint_entity(
         embedding: Name embedding stored on the entity for future matching.
         entity_type: Entity type (from the alias label), or ``None``.
         embed_model: Embedding model id, recorded on the edge for provenance.
+        norm_key: Normalized surface form, stamped on the alias for durable
+            cross-run dedup.
 
     Returns:
         The minted entity's id (a fresh UUID4 string).
@@ -177,7 +193,8 @@ def mint_entity(
     })
     CREATE (a)-[r:RESOLVED_TO]->(e)
     SET r.method = 'minted', r.score = null,
-        r.embed_model = $embed_model, r.resolved_at = datetime()
+        r.embed_model = $embed_model, r.resolved_at = datetime(),
+        a.norm_key = $norm_key
     RETURN e.id AS id
     """
     with driver.session() as session:
@@ -188,6 +205,7 @@ def mint_entity(
             entity_type=entity_type,
             embedding=embedding,
             embed_model=embed_model,
+            norm_key=norm_key,
         ).single()
     if record is None:
         raise RuntimeError(f"cannot mint entity: no :Alias node for surface_form={surface!r}")
@@ -238,9 +256,10 @@ def resolve_alias_to_entity(
     """End-to-end resolution from surface form to entity id.
 
     Runs the full pipeline:
-    :func:`lookup_alias` (cache) → :func:`cluster_candidates` →
-    :func:`llm_tiebreaker` → mint a new entity if nothing returns a
-    confident match — then writes the ``:RESOLVED_TO`` edge.
+    :func:`lookup_resolved_norm_key` (durable cross-run dedup) →
+    :func:`cluster_candidates` → :func:`llm_tiebreaker` → mint a new entity
+    if nothing returns a confident match — then writes the ``:RESOLVED_TO``
+    edge.
 
     Args:
         driver: Open Neo4j driver.
@@ -254,12 +273,20 @@ def resolve_alias_to_entity(
 
     Returns:
         ``(entity_id, method)`` — the entity this surface maps to and how it
-        was decided: ``skipped`` (already resolved), ``minted``,
-        ``vector_single``, ``vector_llm``, or ``vector_topk``.
+        was decided: ``cross_run`` (matched an already-resolved variant by
+        normalized key), ``minted``, ``vector_single``, ``vector_llm``, or
+        ``vector_topk``.
     """
-    existing = lookup_alias(driver, surface)
+    norm_key = normalize_surface(surface, cfg)
+    existing = lookup_resolved_norm_key(driver, norm_key, entity_type)
     if existing is not None:
-        return existing, "skipped"
+        # A prior run (or this alias itself) already resolved this normalized
+        # surface+label; re-attach idempotently. The cardinality guard in
+        # _write_resolved_to keeps the alias at a single edge.
+        _write_resolved_to(
+            driver, surface, existing, method="cross_run", score=None, embed_model=embed_model, norm_key=norm_key
+        )
+        return existing, "cross_run"
 
     candidates = cluster_candidates(
         driver, embedding, cfg.embed_cluster_threshold, k=cfg.vector_k, entity_type=entity_type
@@ -267,7 +294,12 @@ def resolve_alias_to_entity(
     # Mint paths call mint_entity, which writes the entity AND its RESOLVED_TO
     # edge atomically and returns; attach paths fall through to _write_resolved_to.
     if not candidates:
-        return mint_entity(driver, surface, embedding, entity_type=entity_type, embed_model=embed_model), "minted"
+        return (
+            mint_entity(
+                driver, surface, embedding, entity_type=entity_type, embed_model=embed_model, norm_key=norm_key
+            ),
+            "minted",
+        )
 
     if len(candidates) == 1:
         entity_id, method, score = candidates[0]["id"], "vector_single", candidates[0]["score"]
@@ -278,7 +310,12 @@ def resolve_alias_to_entity(
         # rather than force-merge into the top score.
         chosen = llm_tiebreaker(surface, candidates)
         if chosen is None:
-            return mint_entity(driver, surface, embedding, entity_type=entity_type, embed_model=embed_model), "minted"
+            return (
+                mint_entity(
+                    driver, surface, embedding, entity_type=entity_type, embed_model=embed_model, norm_key=norm_key
+                ),
+                "minted",
+            )
         entity_id, method = chosen, "vector_llm"
         score = next((c["score"] for c in candidates if c["id"] == chosen), None)
     else:
@@ -286,7 +323,9 @@ def resolve_alias_to_entity(
         # ambiguity (that would fragment). Attach to the top-scoring candidate.
         entity_id, method, score = candidates[0]["id"], "vector_topk", candidates[0]["score"]
 
-    _write_resolved_to(driver, surface, entity_id, method=method, score=score, embed_model=embed_model)
+    _write_resolved_to(
+        driver, surface, entity_id, method=method, score=score, embed_model=embed_model, norm_key=norm_key
+    )
     return entity_id, method
 
 
@@ -298,8 +337,20 @@ def _write_resolved_to(
     method: str,
     score: float | None,
     embed_model: str,
+    norm_key: str,
 ) -> None:
     """MERGE the :RESOLVED_TO edge from an alias to an entity with provenance.
+
+    Enforces one outgoing ``:RESOLVED_TO`` edge per alias (last-writer-wins):
+    any existing edge to a *different* entity is dropped before the new one is
+    merged, so a re-run that picks a different entity corrects the link rather
+    than leaving two. Re-resolution to the *same* entity deletes nothing and
+    the MERGE stays idempotent. Neo4j CE has no relationship-cardinality
+    constraint, so this app-level guard is the enforcement; under concurrent
+    writers a transient second edge is still possible and is collapsed on the
+    next run (see ADR 0012). The alias's ``norm_key`` is stamped in the same
+    statement, so an alias can never carry a ``:RESOLVED_TO`` edge without its
+    durable key.
 
     Args:
         driver: Open Neo4j driver.
@@ -308,13 +359,19 @@ def _write_resolved_to(
         method: How the resolution was decided (recorded on the edge).
         score: Vector similarity score, when applicable.
         embed_model: Embedding model id used, for provenance.
+        norm_key: Normalized surface form, stamped on the alias for durable
+            cross-run dedup.
     """
     cypher = """
     MATCH (a:Alias {surface_form: $surface})
     MATCH (e:Entity {id: $entity_id})
+    OPTIONAL MATCH (a)-[old:RESOLVED_TO]->(other:Entity)
+    WHERE other.id <> $entity_id
+    DELETE old
     MERGE (a)-[r:RESOLVED_TO]->(e)
     SET r.method = $method, r.score = $score,
-        r.embed_model = $embed_model, r.resolved_at = datetime()
+        r.embed_model = $embed_model, r.resolved_at = datetime(),
+        a.norm_key = $norm_key
     """
     with driver.session() as session:
         session.run(
@@ -324,6 +381,7 @@ def _write_resolved_to(
             method=method,
             score=score,
             embed_model=embed_model,
+            norm_key=norm_key,
         ).consume()
 
 
@@ -337,9 +395,11 @@ class ResolutionSummary:
         attached_llm: Resolved via the LLM tie-breaker.
         attached_topk: Resolved to the top-score candidate (LLM abstained).
         attached_cache: Resolved via the in-run normalized cache.
+        attached_cross_run: Resolved to an entity an earlier run had already
+            linked, matched by durable normalized key (see issue #24).
         minted: New entities created.
-        skipped: Already resolved (defensive; resolve_all only fetches
-            unresolved aliases).
+        skipped: Retained for compatibility; superseded by
+            ``attached_cross_run`` and no longer emitted.
     """
 
     processed: int = 0
@@ -347,6 +407,7 @@ class ResolutionSummary:
     attached_llm: int = 0
     attached_topk: int = 0
     attached_cache: int = 0
+    attached_cross_run: int = 0
     minted: int = 0
     skipped: int = 0
 
@@ -360,6 +421,7 @@ _METHOD_FIELD = {
     "vector_llm": "attached_llm",
     "vector_topk": "attached_topk",
     "run_cache": "attached_cache",
+    "cross_run": "attached_cross_run",
     "minted": "minted",
     "skipped": "skipped",
 }
@@ -433,10 +495,19 @@ def resolve_all(driver: Driver, cfg: ResolutionConfig, audit: AuditLogger, *, us
         touched: set[str] = set()
 
         for (surface, label), vec in zip(aliases, vectors, strict=True):
-            cache_key = (normalize_surface(surface, cfg), label)
+            norm_key = normalize_surface(surface, cfg)
+            cache_key = (norm_key, label)
             if cache_key in run_cache:
                 entity_id = run_cache[cache_key]
-                _write_resolved_to(driver, surface, entity_id, method="run_cache", score=None, embed_model=embed_model)
+                _write_resolved_to(
+                    driver,
+                    surface,
+                    entity_id,
+                    method="run_cache",
+                    score=None,
+                    embed_model=embed_model,
+                    norm_key=norm_key,
+                )
                 counts["attached_cache"] += 1
             else:
                 entity_id, method = resolve_alias_to_entity(
@@ -451,3 +522,46 @@ def resolve_all(driver: Driver, cfg: ResolutionConfig, audit: AuditLogger, *, us
         slot.result_count = counts["processed"]
         logger.info("resolution complete: {}", counts)
         return ResolutionSummary(**counts)
+
+
+def backfill_norm_keys(driver: Driver, cfg: ResolutionConfig, *, batch: int = 500) -> int:
+    """Stamp ``norm_key`` on resolved aliases that predate the durable-key change.
+
+    Cross-run dedup matches on ``(norm_key, label)``, so aliases resolved
+    before ``norm_key`` existed must be backfilled — otherwise a new variant
+    could mint a duplicate before the old alias is re-touched. The key is
+    computed with the same Python :func:`normalize_surface` as live resolution
+    (``str.casefold()``, which differs from Cypher ``toLower()`` for non-ASCII
+    such as German ``ß`` → ``ss``), so a Cypher backfill is deliberately
+    avoided. Idempotent: only resolved aliases with a missing ``norm_key`` are
+    touched, so re-running is a no-op. See ADR 0012.
+
+    Args:
+        driver: Open Neo4j driver.
+        cfg: Resolution configuration (controls case-normalization).
+        batch: UNWIND write-back chunk size, mirroring the connections writer.
+
+    Returns:
+        Number of aliases stamped this run.
+    """
+    fetch = """
+    MATCH (a:Alias)-[:RESOLVED_TO]->(:Entity)
+    WHERE a.norm_key IS NULL
+    RETURN a.surface_form AS surface_form
+    """
+    with driver.session() as session:
+        surfaces = [r["surface_form"] for r in session.run(fetch)]
+    if not surfaces:
+        return 0
+
+    rows = [{"surface_form": sf, "norm_key": normalize_surface(sf, cfg)} for sf in surfaces]
+    write = """
+    UNWIND $rows AS row
+    MATCH (a:Alias {surface_form: row.surface_form})
+    SET a.norm_key = row.norm_key
+    """
+    with driver.session() as session:
+        for i in range(0, len(rows), batch):
+            session.run(write, rows=rows[i : i + batch]).consume()
+    logger.info("norm_key backfill stamped {} aliases", len(rows))
+    return len(rows)

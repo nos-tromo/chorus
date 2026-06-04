@@ -68,12 +68,14 @@ def test_mint_entity_creates_typed_entity_and_links_alias(migrated_driver: Drive
 
     with migrated_driver.session() as s:
         s.run("MERGE (:Alias {surface_form: 'Bratwurst'})")
-    eid = mint_entity(migrated_driver, "Bratwurst", _vec(0.5, 0.5), entity_type="FOOD", embed_model="bge-m3")
+    eid = mint_entity(
+        migrated_driver, "Bratwurst", _vec(0.5, 0.5), entity_type="FOOD", embed_model="bge-m3", norm_key="bratwurst"
+    )
     assert eid
     with migrated_driver.session() as s:
         rec = s.run(
             "MATCH (a:Alias {surface_form: 'Bratwurst'})-[r:RESOLVED_TO]->(e:Entity {id: $id}) "
-            "RETURN e.canonical_name AS n, e.type AS t, e.description AS d, r.method AS m",
+            "RETURN e.canonical_name AS n, e.type AS t, e.description AS d, r.method AS m, a.norm_key AS nk",
             id=eid,
         ).single()
     assert rec is not None
@@ -81,6 +83,7 @@ def test_mint_entity_creates_typed_entity_and_links_alias(migrated_driver: Drive
     assert rec["t"] == "FOOD"
     assert rec["d"] is None
     assert rec["m"] == "minted"
+    assert rec["nk"] == "bratwurst"
 
 
 def test_llm_tiebreaker_picks_and_abstains(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -192,12 +195,21 @@ def test_resolve_alias_attaches_to_single_candidate(migrated_driver: Driver) -> 
 
 
 def test_resolve_alias_is_idempotent(migrated_driver: Driver) -> None:
-    """Re-resolving an already-resolved alias is a no-op returning method=skipped."""
+    """Re-resolving an already-resolved alias returns the same entity (method=cross_run).
+
+    The durable norm_key lookup finds the alias's own prior resolution, so the
+    second call re-attaches to the identical entity idempotently rather than
+    minting again. The cardinality guard keeps it at a single edge.
+    """
     from chorus.ingestion.resolution import resolve_alias_to_entity
     from chorus.utils.env_cfg import load_resolution_env
 
+    # The alias label matches the entity_type passed below — as it always does
+    # in resolve_all, which reads entity_type from a.label. The durable lookup
+    # keys on (norm_key, label), so this consistency is what makes the re-run
+    # self-match its prior resolution.
     with migrated_driver.session() as s:
-        s.run("MERGE (:Alias {surface_form: 'Aachen'})")
+        s.run("MERGE (a:Alias {surface_form: 'Aachen'}) ON CREATE SET a.label='LOCATION'")
     cfg = load_resolution_env()
     eid1, _ = resolve_alias_to_entity(
         migrated_driver, "Aachen", _vec(0.2, 0.9), cfg, entity_type="LOCATION", embed_model="bge-m3"
@@ -206,7 +218,12 @@ def test_resolve_alias_is_idempotent(migrated_driver: Driver) -> None:
         migrated_driver, "Aachen", _vec(0.2, 0.9), cfg, entity_type="LOCATION", embed_model="bge-m3"
     )
     assert eid2 == eid1
-    assert method2 == "skipped"
+    assert method2 == "cross_run"
+    with migrated_driver.session() as s:
+        rec = s.run(
+            "MATCH (a:Alias {surface_form:'Aachen'}) OPTIONAL MATCH (a)-[r:RESOLVED_TO]->() RETURN count(r) AS edges"
+        ).single()
+    assert rec is not None and rec["edges"] == 1  # idempotent: still exactly one edge
 
 
 def test_resolve_all_clusters_and_is_rerunnable(
@@ -255,6 +272,13 @@ def test_resolve_all_clusters_and_is_rerunnable(
     assert same_rec is not None
     assert n_rec["n"] == 2
     assert same_rec["same"] is True
+
+    # Both case-variant aliases now carry the durable normalized key.
+    with migrated_driver.session() as s:
+        keys = sorted(
+            r["k"] for r in s.run("MATCH (a:Alias) WHERE a.surface_form IN ['Berlin','berlin'] RETURN a.norm_key AS k")
+        )
+    assert keys == ["berlin", "berlin"]
 
     again = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test")
     assert again.processed == 0
@@ -506,3 +530,213 @@ def test_resolve_all_empty_writes_no_audit_row(migrated_driver: Driver, in_memor
     assert summary.processed == 0
     row = sqlite3.connect(in_memory_audit.db_path).execute("SELECT count(*) FROM audit_log").fetchone()
     assert row[0] == 0
+
+
+def test_cross_run_dedup_below_threshold(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A case-variant seen in a LATER run resolves to the earlier entity (#24).
+
+    The in-run cache only collapses variants within a single run. Here
+    ``resolve_all`` runs twice: ``Berlin`` first (mints e1, stamps
+    ``norm_key='berlin'``), then ``berlin`` in a fresh run with a vector
+    ORTHOGONAL to ``Berlin`` so nothing but the durable ``norm_key`` can link
+    them. Without the durable key, run 2 mints a duplicate entity.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        monkeypatch: pytest monkeypatch fixture.
+    """
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import resolve_all
+    from chorus.utils.env_cfg import load_resolution_env
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (p:Post {uuid: 'pp'}) ON CREATE SET p.text='t',
+                  p.timestamp = datetime('2026-05-01T00:00:00+00:00')
+            MERGE (a1:Alias {surface_form: 'Berlin'}) ON CREATE SET a1.label='LOCATION'
+            MERGE (p)-[:MENTIONS]->(a1)
+            """
+        )
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(1.0) for _ in texts])
+    run1 = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="t")
+    assert run1.minted == 1
+
+    with migrated_driver.session() as s:
+        nk = s.run("MATCH (a:Alias {surface_form:'Berlin'}) RETURN a.norm_key AS k").single()
+    assert nk is not None and nk["k"] == "berlin"
+
+    # Second run: a NEW 'berlin' alias with a vector orthogonal to 'Berlin'.
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MATCH (p:Post {uuid:'pp'})
+            MERGE (a2:Alias {surface_form: 'berlin'}) ON CREATE SET a2.label='LOCATION'
+            MERGE (p)-[:MENTIONS]->(a2)
+            """
+        )
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(0.0, 0.0, 1.0) for _ in texts])
+    run2 = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="t")
+    assert run2.processed == 1
+
+    with migrated_driver.session() as s:
+        n = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()
+        same = s.run(
+            "MATCH (:Alias {surface_form:'Berlin'})-[:RESOLVED_TO]->(e1), "
+            "(:Alias {surface_form:'berlin'})-[:RESOLVED_TO]->(e2) RETURN e1.id=e2.id AS same"
+        ).single()
+    assert n is not None and n["n"] == 1  # no duplicate entity minted across runs
+    assert same is not None and same["same"] is True
+    assert run2.minted == 0
+    assert run2.attached_cross_run == 1
+
+
+def test_cross_run_respects_label(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Durable cross-run dedup must not collapse same-surface, different-label aliases.
+
+    ``Apple`` (ORG) in run 1 and ``apple`` (FOOD) in run 2 share a normalized
+    surface but differ in type, so the norm_key lookup's label predicate must
+    keep them as two distinct entities.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        monkeypatch: pytest monkeypatch fixture.
+    """
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import resolve_all
+    from chorus.utils.env_cfg import load_resolution_env
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (p:Post {uuid:'pp'}) ON CREATE SET p.text='t',
+                  p.timestamp=datetime('2026-05-01T00:00:00+00:00')
+            MERGE (a1:Alias {surface_form:'Apple'}) ON CREATE SET a1.label='ORG'
+            MERGE (p)-[:MENTIONS]->(a1)
+            """
+        )
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(1.0) for _ in texts])
+    resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="t")
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MATCH (p:Post {uuid:'pp'})
+            MERGE (a2:Alias {surface_form:'apple'}) ON CREATE SET a2.label='FOOD'
+            MERGE (p)-[:MENTIONS]->(a2)
+            """
+        )
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(0.0, 1.0) for _ in texts])
+    resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="t")
+
+    with migrated_driver.session() as s:
+        rec = s.run(
+            "MATCH (:Alias {surface_form:'Apple'})-[:RESOLVED_TO]->(e1), "
+            "(:Alias {surface_form:'apple'})-[:RESOLVED_TO]->(e2) RETURN e1.id<>e2.id AS distinct"
+        ).single()
+        n = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()
+    assert rec is not None and rec["distinct"] is True
+    assert n is not None and n["n"] == 2
+
+
+def test_norm_key_set_on_attach_and_mint(migrated_driver: Driver) -> None:
+    """Both the mint path and the attach path stamp norm_key on the alias.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
+    from chorus.ingestion.resolution import resolve_alias_to_entity
+    from chorus.utils.env_cfg import load_resolution_env
+
+    cfg = load_resolution_env()
+
+    # Mint path: no candidates -> mint; norm_key stamped on the alias.
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: 'Mainz'})")
+    resolve_alias_to_entity(migrated_driver, "Mainz", _vec(0.2, 0.8), cfg, entity_type="LOCATION", embed_model="m")
+
+    # Attach path: a close same-type entity -> attach; norm_key stamped too.
+    _seed_entity(migrated_driver, "e-koeln", "Koeln", "LOCATION", _vec(1.0))
+    _await_vector(migrated_driver, "e-koeln", _vec(0.99, 0.01))
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: 'KOELN'})")
+    _, method = resolve_alias_to_entity(
+        migrated_driver, "KOELN", _vec(0.99, 0.01), cfg, entity_type="LOCATION", embed_model="m"
+    )
+    assert method == "vector_single"
+
+    with migrated_driver.session() as s:
+        rows = {
+            r["sf"]: r["nk"]
+            for r in s.run(
+                "MATCH (a:Alias) WHERE a.surface_form IN ['Mainz','KOELN'] "
+                "RETURN a.surface_form AS sf, a.norm_key AS nk"
+            )
+        }
+    assert rows["Mainz"] == "mainz"
+    assert rows["KOELN"] == "koeln"
+
+
+def test_reresolve_to_different_entity_single_edge(migrated_driver: Driver) -> None:
+    """Re-resolving an alias to a different entity leaves exactly one edge (#23).
+
+    ``_write_resolved_to`` is last-writer-wins: a re-run that picks a different
+    entity must drop the stale ``:RESOLVED_TO`` edge (not the old entity) and
+    leave the alias with a single edge to the new entity.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
+    from chorus.ingestion.resolution import resolve_alias_to_entity
+    from chorus.utils.env_cfg import load_resolution_env
+
+    _seed_entity(migrated_driver, "e-old", "Old", "LOCATION", _vec(0.0, 0.0, 1.0))
+    _seed_entity(migrated_driver, "e-new", "New", "LOCATION", _vec(1.0))
+    _await_vector(migrated_driver, "e-new", _vec(0.99, 0.01))
+    with migrated_driver.session() as s:
+        s.run("MATCH (e:Entity {id:'e-old'}) MERGE (a:Alias {surface_form:'X'}) MERGE (a)-[:RESOLVED_TO]->(e)")
+
+    eid, _ = resolve_alias_to_entity(
+        migrated_driver, "X", _vec(0.99, 0.01), load_resolution_env(), entity_type="LOCATION", embed_model="m"
+    )
+    assert eid == "e-new"
+
+    with migrated_driver.session() as s:
+        rec = s.run(
+            "MATCH (a:Alias {surface_form:'X'}) OPTIONAL MATCH (a)-[r:RESOLVED_TO]->(e) "
+            "RETURN count(r) AS edges, collect(e.id) AS targets"
+        ).single()
+        old = s.run("MATCH (e:Entity {id:'e-old'}) RETURN count(e) AS n").single()
+    assert rec is not None and rec["edges"] == 1
+    assert rec["targets"] == ["e-new"]
+    assert old is not None and old["n"] == 1  # the old entity survives; only its edge is dropped
+
+
+def test_case_normalize_off_uses_raw_surface_as_norm_key(migrated_driver: Driver) -> None:
+    """With case_normalize disabled, norm_key is the trimmed (un-casefolded) surface.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
+    from chorus.ingestion.resolution import resolve_alias_to_entity
+    from chorus.utils.env_cfg import ResolutionConfig
+
+    cfg = ResolutionConfig(
+        embed_cluster_threshold=0.86,
+        llm_tiebreak_enabled=False,
+        case_normalize=False,
+        vector_k=5,
+    )
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: '  Berlin  '})")
+    resolve_alias_to_entity(migrated_driver, "  Berlin  ", _vec(0.3, 0.7), cfg, entity_type="LOCATION", embed_model="m")
+
+    with migrated_driver.session() as s:
+        rec = s.run("MATCH (a:Alias {surface_form:'  Berlin  '}) RETURN a.norm_key AS k").single()
+    assert rec is not None and rec["k"] == "Berlin"  # trimmed, NOT casefolded

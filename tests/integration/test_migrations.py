@@ -54,6 +54,24 @@ def test_vector_indexes_present(migrated_driver: Driver) -> None:
     assert {"post_embedding", "entity_embedding"} <= names
 
 
+def test_alias_norm_key_index_present(migrated_driver: Driver) -> None:
+    """The :Alias.norm_key range index backs durable cross-run resolution.
+
+    ``norm_key`` holds the normalized (trim + casefold) surface form the
+    resolution stage writes when it links an alias. Many raw ``surface_form``
+    values share one ``norm_key``, so this is a NON-UNIQUE range index, not a
+    constraint. See issue #24 / ADR 0012.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+    """
+    with migrated_driver.session() as s:
+        rows = s.run("SHOW INDEXES YIELD name, type RETURN name, type").data()
+    by_name = {r["name"]: r["type"] for r in rows}
+    assert "alias_norm_key" in by_name, f"alias_norm_key index missing; have {sorted(by_name)}"
+    assert by_name["alias_norm_key"] == "RANGE"
+
+
 def test_relationship_indexes_present(migrated_driver: Driver) -> None:
     """Edge indexes for FOLLOWS / FRIENDS_WITH / MENTIONS are present.
 

@@ -124,3 +124,51 @@ def test_resolve_writes_audit_row_with_principal(
 
     rows = sqlite3.connect(load_audit_env().db_path).execute("SELECT user, tool_name FROM audit_log").fetchall()
     assert ("operator-1", "resolve_all") in rows
+
+
+def test_backfill_norm_keys_cli(
+    migrated_driver: Driver,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``backfill-norm-keys`` stamps norm_key on resolved aliases that lack it.
+
+    Aliases resolved before the durable-key change carry no norm_key. The
+    backfill must compute it with the same Python ``normalize_surface``
+    (``str.casefold()``) used at resolution time — not Cypher ``toLower()``,
+    which differs for non-ASCII (German ``ß`` → ``ss`` under casefold but
+    unchanged under toLower). Unresolved aliases are left untouched, and the
+    command is idempotent.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        capsys: stdout capture so we can assert on the printed count.
+    """
+    from chorus.ingestion import cli
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            CREATE (e1:Entity {id:'e-strasse', canonical_name:'Straße', type:'LOCATION'})
+            CREATE (a1:Alias {surface_form:'Straße', label:'LOCATION'})
+            CREATE (a1)-[:RESOLVED_TO]->(e1)
+            CREATE (e2:Entity {id:'e-berlin', canonical_name:'Berlin', type:'LOCATION'})
+            CREATE (a2:Alias {surface_form:'  Berlin ', label:'LOCATION'})
+            CREATE (a2)-[:RESOLVED_TO]->(e2)
+            CREATE (a3:Alias {surface_form:'Unresolved', label:'LOCATION'})
+            """
+        )
+
+    exit_code = cli.main(["backfill-norm-keys"])
+    assert exit_code == 0
+    assert "backfilled: 2" in capsys.readouterr().out
+
+    with migrated_driver.session() as s:
+        rows = {r["sf"]: r["nk"] for r in s.run("MATCH (a:Alias) RETURN a.surface_form AS sf, a.norm_key AS nk")}
+    assert rows["Straße"] == "strasse"  # casefold (ß→ss), NOT Cypher toLower ('straße')
+    assert rows["  Berlin "] == "berlin"  # trimmed + casefold
+    assert rows["Unresolved"] is None  # only resolved aliases are backfilled
+
+    # Idempotent: a second run finds nothing left to stamp.
+    exit_code = cli.main(["backfill-norm-keys"])
+    assert exit_code == 0
+    assert "backfilled: 0" in capsys.readouterr().out
