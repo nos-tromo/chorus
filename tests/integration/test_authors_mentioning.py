@@ -217,3 +217,75 @@ def test_authors_mentioning_unresolved_alias(migrated_driver: Driver, in_memory_
 
     assert [(a.author_id, a.mention_post_count) for a in out.authors] == [("auth-a", 1)]
     assert out.audit_entities() == []
+
+
+def test_authors_mentioning_lockstep_with_posts_mentioning(
+    migrated_driver: Driver, in_memory_audit: Any
+) -> None:
+    """authors_mentioning(X) returns exactly the authors behind posts_mentioning(X).
+
+    Covers the matching-mirror guarantee and that comments (not just postings)
+    count toward authorship.
+    """
+    from chorus.tools.authors_mentioning import (
+        AuthorsMentioningIn,
+        authors_mentioning,
+    )
+    from chorus.tools.posts_mentioning import (
+        PostsMentioningIn,
+        posts_mentioning,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (e:Entity {id: 'ent-berlin'}) ON CREATE SET e.canonical_name = 'Berlin'
+            MERGE (al:Alias {surface_form: 'BER'})
+            MERGE (al)-[:RESOLVED_TO]->(e)
+            MERGE (al2:Alias {surface_form: 'Berlin'})
+            MERGE (a1:Author {id: 'a1'}) ON CREATE SET a1.handle = 'a1'
+            MERGE (a2:Author {id: 'a2'}) ON CREATE SET a2.handle = 'a2'
+            MERGE (p1:Post:Posting {uuid: 'p1'})
+              ON CREATE SET p1.text = 'via entity', p1.timestamp = datetime('2026-05-01T10:00:00+00:00')
+            MERGE (p2:Post:Posting {uuid: 'p2'})
+              ON CREATE SET p2.text = 'via resolved alias', p2.timestamp = datetime('2026-05-02T10:00:00+00:00')
+            MERGE (p3:Post:Comment {uuid: 'p3'})
+              ON CREATE SET p3.text = 'via unresolved alias', p3.timestamp = datetime('2026-05-03T10:00:00+00:00')
+            MERGE (a1)-[:AUTHORED]->(p1)
+            MERGE (a1)-[:AUTHORED]->(p2)
+            MERGE (a2)-[:AUTHORED]->(p3)
+            MERGE (p1)-[:MENTIONS]->(e)
+            MERGE (p2)-[:MENTIONS]->(al)
+            MERGE (p3)-[:MENTIONS]->(al2)
+            """
+        )
+
+    pm = posts_mentioning(
+        migrated_driver,
+        PostsMentioningIn(entity="berlin", limit=500),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+    pm_uuids = [h.uuid for h in pm.hits]
+
+    with migrated_driver.session() as s:
+        rec = s.run(
+            """
+            MATCH (au:Author)-[:AUTHORED]->(p:Post)
+            WHERE p.uuid IN $uuids
+            RETURN collect(DISTINCT au.id) AS ids
+            """,
+            uuids=pm_uuids,
+        ).single()
+    expected_author_ids = set(rec["ids"])
+
+    am = authors_mentioning(
+        migrated_driver,
+        AuthorsMentioningIn(entity="berlin", limit=500),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+    am_author_ids = {a.author_id for a in am.authors}
+
+    assert am_author_ids == expected_author_ids
+    assert am_author_ids == {"a1", "a2"}  # non-empty, both surfaces and a comment
