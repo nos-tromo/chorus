@@ -7,7 +7,14 @@
 
 .PHONY: help network volumes build bundle up up-dev stop down migrate ingest resolve bootstrap pre-commit test
 
-CHORUS_VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+# Versioned image tag.
+# On production: read from .chorus-version written by bundle_images.sh.
+# On dev: compute YYYY-MM-DD[-<short-sha>] on the fly.
+# Override entirely by exporting CHORUS_VERSION before invoking make.
+CHORUS_VERSION ?= $(shell \
+    cat .chorus-version 2>/dev/null || \
+    { _s=$$(git rev-parse --short HEAD 2>/dev/null); \
+      echo "$$(date +%Y-%m-%d)$${_s:+-$$_s}"; } )
 export CHORUS_VERSION
 
 COMPOSE     := docker compose --env-file .env -f docker/compose.yaml
