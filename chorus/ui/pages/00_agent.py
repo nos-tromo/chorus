@@ -53,8 +53,9 @@ client = _client()
 
 st.title("chorus agent")
 st.caption(
-    "Ask in plain language; the agent picks the right tools. Topic clustering is "
-    "pending entity resolution — topics are alias surface forms for now."
+    "Ask in plain language; the agent picks the right tools. Topics cluster by "
+    "canonical entity after a resolution pass; on un-resolved data they show as "
+    "alias surface forms."
 )
 
 if "turns" not in st.session_state:

@@ -73,6 +73,45 @@ def test_connected_by_shared_topic_with_overlap(migrated_driver: Driver, in_memo
     assert out.audit_result_count() == 1
 
 
+def test_audit_entities_surfaces_resolved_ids_only(migrated_driver: Driver, in_memory_audit: Any) -> None:
+    """audit_entities() reports resolved shared-topic entity ids, omitting aliases.
+
+    The §76 audit trail must record the canonical entities a query touched. When
+    two authors share a resolved topic (``Berlin`` -> ``e-berlin``) and an
+    unresolved one (``Paris``), only the resolved entity id is surfaced — the
+    bare surface form has no canonical id and must not be logged as one.
+    """
+    from chorus.tools.authors_connected_by_topic import (
+        AuthorsConnectedByTopicIn,
+        authors_connected_by_topic,
+    )
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (seed:Author {id: 'seed'}) ON CREATE SET seed.display_name = 'Seed'
+            MERGE (b:Author {id: 'b'})       ON CREATE SET b.display_name = 'B'
+            MERGE (berlin:Entity {id: 'e-berlin'})
+              ON CREATE SET berlin.canonical_name = 'Berlin', berlin.type = 'LOC'
+            MERGE (al:Alias {surface_form: 'Berlin'})
+            MERGE (al)-[:RESOLVED_TO]->(berlin)
+            MERGE (paris:Alias {surface_form: 'Paris'})
+            MERGE (ps:Post:Posting {uuid: 'ps'}) MERGE (seed)-[:AUTHORED]->(ps)
+            MERGE (ps)-[:MENTIONS]->(al)    MERGE (ps)-[:MENTIONS]->(paris)
+            MERGE (pb:Post:Posting {uuid: 'pb'}) MERGE (b)-[:AUTHORED]->(pb)
+            MERGE (pb)-[:MENTIONS]->(al)    MERGE (pb)-[:MENTIONS]->(paris)
+            """
+        )
+    out = authors_connected_by_topic(
+        migrated_driver,
+        AuthorsConnectedByTopicIn(seed_author="Seed", min_overlap=2),
+        user="test-user",
+        audit=in_memory_audit,
+    )
+    assert [c.author_id for c in out.results[0].connected] == ["b"]
+    assert out.audit_entities() == ["e-berlin"]  # resolved id only; 'Paris' omitted
+
+
 def test_registered_in_tools(migrated_driver: Driver) -> None:
     """The tool self-registers into the global TOOLS registry."""
     from chorus.tools import TOOLS

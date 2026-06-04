@@ -32,7 +32,9 @@ def _client() -> ChorusClient:
 client = _client()
 
 st.title("topic co-occurrence")
-st.caption("Topic clustering is pending entity resolution — topics are alias surface forms for now.")
+st.caption(
+    "Topics cluster by canonical entity after a resolution pass; on un-resolved data they show as alias surface forms."
+)
 
 topic = st.text_input("Seed topic (entity or alias)", value="")
 limit = st.slider("Limit", min_value=1, max_value=200, value=50)

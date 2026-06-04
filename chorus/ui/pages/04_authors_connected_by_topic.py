@@ -32,7 +32,10 @@ def _client() -> ChorusClient:
 client = _client()
 
 st.title("authors connected by topic")
-st.caption("1-hop only. Topic clustering is pending entity resolution — topics are alias surface forms for now.")
+st.caption(
+    "1-hop only. Topics cluster by canonical entity after a resolution pass; "
+    "on un-resolved data they show as alias surface forms."
+)
 
 seed_author = st.text_input("Seed author handle or display name", value="")
 min_overlap = st.number_input("Minimum shared topics", min_value=1, value=1, step=1)
