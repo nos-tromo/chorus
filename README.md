@@ -91,6 +91,14 @@ CHORUS_DEFAULT_IDENTITY=dev
 trusted-header principal seam. Leave it unset in production — without
 it, requests without an `X-Auth-User` header fail with 401.
 
+chorus defaults to English. Set `RESPONSE_LANGUAGE=de` in `.env` to switch
+the whole app to German: the agent answers in German and strips leading
+articles when building entity queries (`die AfD` → `AfD`), and the Streamlit
+UI renders its captions in German. This is the same variable docint reads, so
+one setting flips both apps; it must live in this repo-root `.env` because
+`docker compose` interpolates it into both the backend and frontend services.
+Unknown values fall back to English. See ADR 0013.
+
 ### 3. Apply migrations
 
 Migrations are idempotent and the app applies pending ones on
