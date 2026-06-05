@@ -8,6 +8,7 @@ import streamlit as st
 
 from chorus.ui.client import ChorusClient
 from chorus.ui.network_dot import to_dot
+from chorus.utils.ui_strings import ui_string
 
 st.set_page_config(page_title="network_around — chorus")
 
@@ -29,21 +30,16 @@ def _client() -> ChorusClient:
 
 client = _client()
 
-st.title("network around an entity")
-st.caption(
-    "Bipartite author-topic network. depth 1 = the authors who mention the entity; "
-    "depth 2 also adds the other topics those authors mention. The view is capped "
-    "by the limits below. Topics cluster by canonical entity once a resolution pass "
-    "has run; on unresolved data they are raw alias surface forms."
-)
+st.title(ui_string("network.title"))
+st.caption(ui_string("network.caption"))
 
-entity = st.text_input("Entity name or alias", value="")
-depth = st.slider("Depth", min_value=1, max_value=2, value=2)
+entity = st.text_input(ui_string("common.entity_input"), value="")
+depth = st.slider(ui_string("network.depth"), min_value=1, max_value=2, value=2)
 col_a, col_b = st.columns(2)
-limit = col_a.slider("Author limit", min_value=1, max_value=200, value=25)
-topic_limit = col_b.slider("Topic limit (depth 2)", min_value=1, max_value=500, value=50)
+limit = col_a.slider(ui_string("network.author_limit"), min_value=1, max_value=200, value=25)
+topic_limit = col_b.slider(ui_string("network.topic_limit"), min_value=1, max_value=500, value=50)
 
-if st.button("Build network", disabled=not entity):
+if st.button(ui_string("network.build"), disabled=not entity):
     payload: dict[str, object] = {
         "entity": entity,
         "depth": depth,
@@ -53,16 +49,20 @@ if st.button("Build network", disabled=not entity):
     try:
         result = client.call_tool("network_around", payload)
     except Exception as exc:
-        st.error(f"tool call failed: {exc}")
+        st.error(ui_string("common.tool_call_failed").format(error=exc))
     else:
         nodes = result.get("nodes", [])
         edges = result.get("edges", [])
         if not nodes:
-            st.info("no network — the entity matched nothing")
+            st.info(ui_string("network.empty"))
         else:
             author_count = sum(1 for n in nodes if n.get("kind") == "author")
             topic_count = sum(1 for n in nodes if n.get("kind") == "topic")
-            st.write(f"{len(nodes)} node(s): {author_count} author(s), {topic_count} topic(s); {len(edges)} edge(s)")
+            st.write(
+                ui_string("network.counts").format(
+                    n=len(nodes), authors=author_count, topics=topic_count, edges=len(edges)
+                )
+            )
             if result.get("truncated"):
-                st.warning("Capped view — raise the author/topic limits to see more of the network.")
+                st.warning(ui_string("network.capped"))
             st.graphviz_chart(to_dot(result), use_container_width=True)

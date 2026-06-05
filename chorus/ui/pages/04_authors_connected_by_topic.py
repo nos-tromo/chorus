@@ -7,6 +7,7 @@ import os
 import streamlit as st
 
 from chorus.ui.client import ChorusClient
+from chorus.utils.ui_strings import ui_string
 
 st.set_page_config(page_title="authors_connected_by_topic — chorus")
 
@@ -31,17 +32,14 @@ def _client() -> ChorusClient:
 
 client = _client()
 
-st.title("authors connected by topic")
-st.caption(
-    "1-hop only. Topics cluster by canonical entity after a resolution pass; "
-    "on un-resolved data they show as alias surface forms."
-)
+st.title(ui_string("authors_connected.title"))
+st.caption(ui_string("authors_connected.caption"))
 
-seed_author = st.text_input("Seed author handle or display name", value="")
-min_overlap = st.number_input("Minimum shared topics", min_value=1, value=1, step=1)
-limit = st.slider("Limit (per matched seed)", min_value=1, max_value=200, value=50)
+seed_author = st.text_input(ui_string("authors_connected.seed_author_input"), value="")
+min_overlap = st.number_input(ui_string("authors_connected.min_overlap"), min_value=1, value=1, step=1)
+limit = st.slider(ui_string("authors_connected.limit"), min_value=1, max_value=200, value=50)
 
-if st.button("Find connected authors", disabled=not seed_author):
+if st.button(ui_string("authors_connected.find"), disabled=not seed_author):
     payload: dict[str, object] = {
         "seed_author": seed_author,
         "min_overlap": int(min_overlap),
@@ -50,17 +48,17 @@ if st.button("Find connected authors", disabled=not seed_author):
     try:
         result = client.call_tool("authors_connected_by_topic", payload)
     except Exception as exc:
-        st.error(f"tool call failed: {exc}")
+        st.error(ui_string("common.tool_call_failed").format(error=exc))
     else:
         groups = result.get("results", [])
         if not groups:
-            st.info("no matching seed author")
+            st.info(ui_string("authors_connected.no_seed"))
         for group in groups:
             seed = group.get("seed", {})
             label = seed.get("display_name") or seed.get("handle") or seed.get("author_id")
             connected = group.get("connected", [])
-            st.subheader(f"{label}  ·  {len(connected)} connected")
+            st.subheader(ui_string("authors_connected.connected_count").format(label=label, n=len(connected)))
             if connected:
                 st.dataframe(connected, use_container_width=True)
             else:
-                st.info("no connected authors at this overlap threshold")
+                st.info(ui_string("authors_connected.none"))
