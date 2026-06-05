@@ -14,6 +14,7 @@ import httpx
 import streamlit as st
 
 from chorus.ui.client import ChorusClient
+from chorus.utils.ui_strings import ui_string
 
 st.set_page_config(page_title="agent — chorus", layout="wide")
 
@@ -37,31 +38,27 @@ def _render_trace(trace: list[dict[str, Any]]) -> None:
     """Render the agent's tool-call trace inside an expander."""
     if not trace:
         return
-    with st.expander(f"Tool calls ({len(trace)})"):
+    with st.expander(ui_string("agent.tool_calls").format(n=len(trace))):
         for step in trace:
             tool = step.get("tool", "?")
             if step.get("error"):
-                st.markdown(f"**{tool}** — error: {step['error']}")
+                st.markdown(ui_string("agent.trace_error").format(tool=tool, error=step["error"]))
             else:
                 count = step.get("result_count")
-                suffix = f" — {count} result(s)" if count is not None else ""
+                suffix = ui_string("agent.trace_results").format(count=count) if count is not None else ""
                 st.markdown(f"**{tool}**{suffix}")
             st.json(step.get("arguments", {}))
 
 
 client = _client()
 
-st.title("chorus agent")
-st.caption(
-    "Ask in plain language; the agent picks the right tools. Topics cluster by "
-    "canonical entity after a resolution pass; on un-resolved data they show as "
-    "alias surface forms."
-)
+st.title(ui_string("agent.title"))
+st.caption(ui_string("agent.caption"))
 
 if "turns" not in st.session_state:
     st.session_state.turns = []
 
-if st.button("Clear conversation"):
+if st.button(ui_string("agent.clear")):
     st.session_state.turns = []
 
 # Replay the conversation so far.
@@ -71,7 +68,7 @@ for turn in st.session_state.turns:
         if turn["role"] == "assistant":
             _render_trace(turn.get("trace", []))
 
-if prompt := st.chat_input("Ask a question about the network…"):
+if prompt := st.chat_input(ui_string("agent.chat_input")):
     st.session_state.turns.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -79,20 +76,20 @@ if prompt := st.chat_input("Ask a question about the network…"):
     api_messages = [{"role": t["role"], "content": t["content"]} for t in st.session_state.turns]
     with st.chat_message("assistant"):
         try:
-            with st.spinner("Thinking…"):
+            with st.spinner(ui_string("agent.thinking")):
                 result = client.agent_query(api_messages)
         except httpx.HTTPStatusError as exc:
             try:
                 detail = exc.response.json().get("detail")
             except Exception:
                 detail = None
-            st.error(detail or f"agent call failed: {exc}")
+            st.error(detail or ui_string("agent.call_failed").format(error=exc))
         except Exception as exc:
-            st.error(f"agent call failed: {exc}")
+            st.error(ui_string("agent.call_failed").format(error=exc))
         else:
-            answer = result.get("answer") or "(no answer)"
+            answer = result.get("answer") or ui_string("agent.no_answer")
             if result.get("truncated"):
-                st.warning("Stopped at the tool-call limit before reaching a final answer.")
+                st.warning(ui_string("agent.truncated"))
             st.markdown(answer)
             trace = result.get("trace", [])
             _render_trace(trace)
