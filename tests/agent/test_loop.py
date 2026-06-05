@@ -418,3 +418,53 @@ def test_model_not_found_is_inference_error_not_unsupported(
             messages=[{"role": "user", "content": "hi"}],
         )
     assert not isinstance(excinfo.value, ToolCallingUnsupportedError)
+
+
+def test_language_selects_system_prompt(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_agent(language='de') sends the German system prompt to the provider."""
+    from chorus.agent.loop import run_agent
+    from chorus.agent.prompts import get_system_prompt
+    from chorus.inference import provider
+
+    captured: list[dict[str, Any]] = []
+
+    def _capture(messages: list[dict[str, Any]], **kwargs: Any) -> _FakeMessage:
+        captured.append(messages[0])
+        return _FakeMessage(content="ok")
+
+    monkeypatch.setattr(provider, "chat_message", _capture)
+    run_agent(
+        migrated_driver,
+        in_memory_audit,
+        user="u",
+        messages=[{"role": "user", "content": "hallo"}],
+        language="de",
+    )
+    assert captured[0]["role"] == "system"
+    assert captured[0]["content"] == get_system_prompt("de")
+
+
+def test_default_language_is_english_prompt(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no language argument, the English prompt is used."""
+    from chorus.agent.loop import run_agent
+    from chorus.agent.prompts import get_system_prompt
+    from chorus.inference import provider
+
+    captured: list[dict[str, Any]] = []
+
+    def _capture(messages: list[dict[str, Any]], **kwargs: Any) -> _FakeMessage:
+        captured.append(messages[0])
+        return _FakeMessage(content="ok")
+
+    monkeypatch.setattr(provider, "chat_message", _capture)
+    run_agent(
+        migrated_driver,
+        in_memory_audit,
+        user="u",
+        messages=[{"role": "user", "content": "hi"}],
+    )
+    assert captured[0]["content"] == get_system_prompt("en")

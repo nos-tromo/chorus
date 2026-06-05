@@ -20,7 +20,7 @@ from neo4j import Driver
 from pydantic import BaseModel, ValidationError
 
 from chorus.agent.openai_tools import tool_definitions
-from chorus.agent.prompts import SYSTEM_PROMPT
+from chorus.agent.prompts import get_system_prompt
 from chorus.audit.logger import AuditLogger
 from chorus.inference import provider
 from chorus.tools import TOOLS
@@ -95,6 +95,7 @@ def run_agent(
     messages: list[dict[str, Any]],
     max_iterations: int = 6,
     model: str | None = None,
+    language: str = "en",
     tool_message_max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
     tool_message_max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
 ) -> AgentResult:
@@ -109,6 +110,8 @@ def run_agent(
             should be the new user message.
         max_iterations: Maximum model-tool rounds before giving up.
         model: Chat model id override; defaults to the provider's TEXT_MODEL.
+        language: Response-language code (``en``/``de``) selecting the system
+            prompt; defaults to English.
         tool_message_max_items: Maximum list items kept per tool result fed
             back to the model; longer lists are truncated.
         tool_message_max_chars: Maximum characters kept per string in a tool
@@ -117,7 +120,7 @@ def run_agent(
     Returns:
         An :class:`AgentResult` with the final answer and the tool-call trace.
     """
-    convo: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
+    convo: list[dict[str, Any]] = [{"role": "system", "content": get_system_prompt(language)}, *messages]
     tools = tool_definitions()
     trace: list[TraceStep] = []
     with audit.time_tool(user, "agent_query", {"messages": messages}) as slot:
