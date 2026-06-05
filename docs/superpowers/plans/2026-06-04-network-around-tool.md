@@ -4,7 +4,11 @@
 > commit). Steps use checkbox (`- [ ]`) syntax. Integration tests need Docker
 > running (testcontainers boots Neo4j 5.26.26).
 
-**Status:** 📋 planned (not started).
+**Status:** ✅ implemented on `claude/network-around-tool-design-4KSKN`. Tool +
+Cypher + UI page + tests landed; ruff + ruff-format + mypy clean; offline-runnable
+tests (DOT-builder unit tests, registry, `depth > 2` validation) green. The Neo4j
+integration tests (`tests/integration/test_network_around.py`) require Docker and
+run in CI — they could not be executed in the authoring sandbox (no Docker daemon).
 
 **Goal:** Add one graph-only retrieval tool — `network_around` — that returns the
 **bipartite Author↔Topic ego network** around a seed entity as a renderer-ready

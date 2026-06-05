@@ -1,7 +1,7 @@
 # `network_around` tool — design
 
 **Date:** 2026-06-04
-**Status:** proposed (design); pending approval → implementation plan
+**Status:** approved (design); implemented on `claude/network-around-tool-design-4KSKN`
 **Scope:** add one graph-only retrieval tool, `network_around(entity, depth,
 limit, topic_limit)`, that returns the **ego network** around a topic as a
 node/edge list for visualization. It is the visual companion to the tabular
