@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from chorus.agent.loop import AgentInferenceError, run_agent
 from chorus.api.auth.principal import resolve_principal
-from chorus.utils.env_cfg import load_agent_env
+from chorus.utils.env_cfg import load_agent_env, load_language_env
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -79,6 +79,7 @@ def agent_query(
             messages=[m.model_dump() for m in body.messages],
             max_iterations=cfg.max_tool_iterations,
             model=cfg.model,
+            language=load_language_env().code,
             tool_message_max_items=cfg.tool_message_max_items,
             tool_message_max_chars=cfg.tool_message_max_chars,
         )

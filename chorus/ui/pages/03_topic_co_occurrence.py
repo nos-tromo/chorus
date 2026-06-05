@@ -7,6 +7,7 @@ import os
 import streamlit as st
 
 from chorus.ui.client import ChorusClient
+from chorus.utils.ui_strings import ui_string
 
 st.set_page_config(page_title="topic_co_occurrence — chorus")
 
@@ -31,19 +32,17 @@ def _client() -> ChorusClient:
 
 client = _client()
 
-st.title("topic co-occurrence")
-st.caption(
-    "Topics cluster by canonical entity after a resolution pass; on un-resolved data they show as alias surface forms."
-)
+st.title(ui_string("topic_cooc.title"))
+st.caption(ui_string("common.resolution_note"))
 
-topic = st.text_input("Seed topic (entity or alias)", value="")
-limit = st.slider("Limit", min_value=1, max_value=200, value=50)
+topic = st.text_input(ui_string("topic_cooc.seed_input"), value="")
+limit = st.slider(ui_string("common.limit"), min_value=1, max_value=200, value=50)
 
 col_from, col_to = st.columns(2)
-from_dt = col_from.text_input("From (ISO timestamp, optional)", value="")
-to_dt = col_to.text_input("To (ISO timestamp, optional)", value="")
+from_dt = col_from.text_input(ui_string("common.from_ts"), value="")
+to_dt = col_to.text_input(ui_string("common.to_ts"), value="")
 
-if st.button("Find co-occurring topics", disabled=not topic):
+if st.button(ui_string("topic_cooc.find"), disabled=not topic):
     payload: dict[str, object] = {"topic": topic, "limit": limit}
     if from_dt:
         payload["from"] = from_dt
@@ -52,11 +51,11 @@ if st.button("Find co-occurring topics", disabled=not topic):
     try:
         result = client.call_tool("topic_co_occurrence", payload)
     except Exception as exc:
-        st.error(f"tool call failed: {exc}")
+        st.error(ui_string("common.tool_call_failed").format(error=exc))
     else:
         cooccurring = result.get("cooccurring", [])
-        st.write(f"{len(cooccurring)} co-occurring topic(s) with '{result.get('seed', topic)}'")
+        st.write(ui_string("topic_cooc.count").format(n=len(cooccurring), seed=result.get("seed", topic)))
         if cooccurring:
             st.dataframe(cooccurring, use_container_width=True)
         else:
-            st.info("no co-occurring topics")
+            st.info(ui_string("topic_cooc.none"))

@@ -16,6 +16,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 
@@ -196,6 +197,24 @@ class AgentConfig:
     model: str | None
     tool_message_max_items: int
     tool_message_max_chars: int
+
+
+SUPPORTED_LANGUAGES: tuple[str, ...] = ("en", "de")
+
+
+@dataclass(frozen=True)
+class LanguageConfig:
+    """Response-language configuration.
+
+    Selects the agent system-prompt variant and the UI string catalog.
+    There is no on-disk prompt tree in chorus (prompts are in-code), so
+    this only drives an in-process selection.
+
+    Attributes:
+        code: Active language code, ``"en"`` or ``"de"``.
+    """
+
+    code: Literal["en", "de"]
 
 
 @dataclass(frozen=True)
@@ -426,6 +445,30 @@ def load_agent_env() -> AgentConfig:
         tool_message_max_items=_env_int("AGENT_TOOL_MESSAGE_MAX_ITEMS", 8),
         tool_message_max_chars=_env_int("AGENT_TOOL_MESSAGE_MAX_CHARS", 280),
     )
+
+
+def load_language_env(default: str = "en") -> LanguageConfig:
+    """Load the response language from ``RESPONSE_LANGUAGE``.
+
+    Case-insensitive; surrounding whitespace is ignored. Unknown values
+    fall back silently to ``default`` so a typo cannot break app bring-up.
+    Shared by convention with docint, which reads the same variable.
+
+    Args:
+        default: Language code used when ``RESPONSE_LANGUAGE`` is unset or
+            unrecognised. Defaults to ``"en"``.
+
+    Returns:
+        A populated :class:`LanguageConfig`.
+    """
+    raw = _env("RESPONSE_LANGUAGE")
+    candidate = (raw if raw is not None else default).strip().lower()
+    if candidate not in SUPPORTED_LANGUAGES:
+        candidate = default.strip().lower()
+        if candidate not in SUPPORTED_LANGUAGES:
+            candidate = "en"
+    code: Literal["en", "de"] = "de" if candidate == "de" else "en"
+    return LanguageConfig(code=code)
 
 
 def load_ner_client_env(

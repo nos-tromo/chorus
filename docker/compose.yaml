@@ -36,6 +36,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LOG_FORMAT: ${LOG_FORMAT:-json}
       CHORUS_HOME: ${CHORUS_HOME:-/var/lib/chorus}
+      RESPONSE_LANGUAGE: ${RESPONSE_LANGUAGE:-en}
     volumes:
       - chorus-state:/var/lib/chorus
     networks:
@@ -67,6 +68,9 @@ services:
     environment:
       CHORUS_API_URL: http://backend:8000
       CHORUS_UI_IDENTITY: dev
+      # Must match the backend; the frontend has no env_file, so it is set
+      # here explicitly. Drives the German UI captions (see ADR 0013).
+      RESPONSE_LANGUAGE: ${RESPONSE_LANGUAGE:-en}
     depends_on:
       backend:
         condition: service_healthy

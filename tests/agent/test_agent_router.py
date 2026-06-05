@@ -154,3 +154,61 @@ def test_context_window_exceeded_returns_502(
     )
     assert resp.status_code == 502
     assert "context window" in resp.json()["detail"].lower()
+
+
+def test_response_language_de_uses_german_prompt(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RESPONSE_LANGUAGE=de makes /agent/query send the German system prompt."""
+    from chorus.agent.prompts import get_system_prompt
+    from chorus.api.routers import agent as agent_router
+    from chorus.inference import provider
+
+    monkeypatch.setenv("RESPONSE_LANGUAGE", "de")
+    captured: list[dict[str, Any]] = []
+
+    def _capture(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        captured.append(messages[0])
+        return _FakeMessage(content="ok")
+
+    monkeypatch.setattr(provider, "chat_message", _capture)
+    app = FastAPI()
+    app.include_router(agent_router.router)
+    app.state.driver = migrated_driver
+    app.state.audit = in_memory_audit
+    resp = TestClient(app).post(
+        "/agent/query",
+        json={"messages": [{"role": "user", "content": "hallo"}]},
+        headers={"X-Auth-User": "analyst"},
+    )
+    assert resp.status_code == 200
+    assert captured[0]["content"] == get_system_prompt("de")
+
+
+def test_default_response_language_uses_english_prompt(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With RESPONSE_LANGUAGE unset, /agent/query sends the English prompt."""
+    from chorus.agent.prompts import get_system_prompt
+    from chorus.api.routers import agent as agent_router
+    from chorus.inference import provider
+
+    monkeypatch.delenv("RESPONSE_LANGUAGE", raising=False)
+    captured: list[dict[str, Any]] = []
+
+    def _capture(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        captured.append(messages[0])
+        return _FakeMessage(content="ok")
+
+    monkeypatch.setattr(provider, "chat_message", _capture)
+    app = FastAPI()
+    app.include_router(agent_router.router)
+    app.state.driver = migrated_driver
+    app.state.audit = in_memory_audit
+    resp = TestClient(app).post(
+        "/agent/query",
+        json={"messages": [{"role": "user", "content": "hi"}]},
+        headers={"X-Auth-User": "analyst"},
+    )
+    assert resp.status_code == 200
+    assert captured[0]["content"] == get_system_prompt("en")

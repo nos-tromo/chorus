@@ -14,6 +14,7 @@ import os
 import streamlit as st
 
 from chorus.ui.client import ChorusClient
+from chorus.utils.ui_strings import ui_string
 
 st.set_page_config(page_title="chorus", layout="wide")
 
@@ -39,22 +40,22 @@ def _client() -> ChorusClient:
 client = _client()
 
 st.title("chorus")
-st.caption("GraphRAG for social network analysis")
+st.caption(ui_string("landing.caption"))
 
 col_h, col_t = st.columns(2)
 with col_h:
-    st.subheader("backend health")
+    st.subheader(ui_string("landing.backend_health"))
     try:
         st.json(client.health())
     except Exception as exc:
-        st.error(f"unreachable: {exc}")
+        st.error(ui_string("common.unreachable").format(error=exc))
 
 with col_t:
-    st.subheader("registered tools")
+    st.subheader(ui_string("landing.registered_tools"))
     try:
         tools = client.list_tools()
         st.write([t["name"] for t in tools])
     except Exception as exc:
-        st.error(f"unreachable: {exc}")
+        st.error(ui_string("common.unreachable").format(error=exc))
 
-st.info("Pick a tool from the sidebar (left) to explore the graph.")
+st.info(ui_string("landing.pick_tool"))
