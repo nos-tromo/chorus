@@ -27,6 +27,11 @@ _POSTINGS_CSV = (
 )
 
 
+def _unit_vector() -> list[float]:
+    """A finite, positive-norm 1024-d embedding (zero vectors fail the index)."""
+    return [1.0] + [0.0] * 1023
+
+
 def _await_job(client: TestClient, job_id: str, timeout: float = 20.0) -> dict[str, Any]:
     """Poll GET /ingestion/jobs/{id} until the job is terminal or time out."""
     deadline = time.monotonic() + timeout
@@ -101,6 +106,7 @@ def test_feature_reports_enabled_when_flag_set(monkeypatch: pytest.MonkeyPatch) 
     [
         ("get", "/ingestion/migrations"),
         ("post", "/ingestion/migrate"),
+        ("post", "/ingestion/resolve"),
         ("get", "/ingestion/jobs/job-1"),
     ],
 )
@@ -413,6 +419,95 @@ def test_ingest_error_marks_job_error_and_cleans_staging(
         leftovers = list(uploads.iterdir()) if uploads.exists() else []
         assert leftovers == [], f"staging not cleaned: {leftovers}"
     finally:
+        jobs.shutdown()
+
+
+def test_ingest_then_resolve_chains_and_audits_twice(
+    migrated_driver: Driver,
+    in_memory_audit: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """then_resolve=true runs ingest then resolution in one job, auditing both."""
+    from chorus.inference import provider
+
+    monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
+    monkeypatch.setenv("NER_ENABLED", "false")
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_unit_vector() for _ in texts])
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: 'Bratwurst'})")
+
+    jobs = JobRegistry()
+    try:
+        client = TestClient(_build_app(migrated_driver, in_memory_audit, jobs))
+        resp = client.post(
+            "/ingestion/ingest",
+            files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
+            data={"then_resolve": "true"},
+            headers={"X-Auth-User": "analyst"},
+        )
+        assert resp.status_code == 202, resp.text
+        done = _await_job(client, resp.json()["job_id"])
+        assert done["status"] == "done", done
+        assert done["result"]["counts"]["postings"] == 1
+        assert done["result"]["resolution"]["processed"] >= 1
+
+        kinds = [r["tool_name"] for r in _audit_rows(in_memory_audit)]
+        assert kinds.count("ingest") == 1
+        assert kinds.count("resolve_all") == 1
+    finally:
+        jobs.shutdown()
+
+
+def test_resolve_runs_job_and_self_audits(
+    migrated_driver: Driver,
+    in_memory_audit: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /ingestion/resolve resolves aliases; resolve_all writes its own row."""
+    from chorus.inference import provider
+
+    monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_unit_vector() for _ in texts])
+    with migrated_driver.session() as s:
+        s.run("MERGE (:Alias {surface_form: 'Bratwurst'})")
+
+    jobs = JobRegistry()
+    try:
+        client = TestClient(_build_app(migrated_driver, in_memory_audit, jobs))
+        resp = client.post("/ingestion/resolve", headers={"X-Auth-User": "analyst"})
+        assert resp.status_code == 202, resp.text
+        assert resp.json()["kind"] == "resolve"
+
+        done = _await_job(client, resp.json()["job_id"])
+        assert done["status"] == "done", done
+        assert done["result"]["resolution"]["processed"] >= 1
+
+        kinds = [r["tool_name"] for r in _audit_rows(in_memory_audit)]
+        assert kinds.count("resolve_all") == 1
+        assert "resolve" not in kinds  # the route must not add a wrapper audit row
+    finally:
+        jobs.shutdown()
+
+
+def test_resolve_409_when_a_job_is_active(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A resolve is rejected while a job is in flight."""
+    monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
+    jobs = JobRegistry()
+    started, release = threading.Event(), threading.Event()
+
+    def _block(_job: Job) -> dict[str, Any]:
+        started.set()
+        release.wait(timeout=5.0)
+        return {"ok": True}
+
+    try:
+        jobs.submit("ingest", _block)
+        assert started.wait(timeout=5.0)
+        client = TestClient(_build_app(None, None, jobs))
+        resp = client.post("/ingestion/resolve", headers={"X-Auth-User": "analyst"})
+        assert resp.status_code == 409
+    finally:
+        release.set()
         jobs.shutdown()
 
 

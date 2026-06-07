@@ -34,11 +34,13 @@ from chorus.api.auth.principal import resolve_principal
 from chorus.ingestion.jobs import Job, JobBusyError, JobKind, JobStatus
 from chorus.ingestion.orchestrator import run_once
 from chorus.ingestion.raw_store import RawStore
+from chorus.ingestion.resolution import resolve_all
 from chorus.ingestion.upstream import TABLES, FileUpstreamAdapter, table_for_filename
 from chorus.migrations.runner import applied_versions, apply_all, pending_versions
 from chorus.utils.env_cfg import (
     load_ingestion_ui_env,
     load_path_env,
+    load_resolution_env,
     load_retention_env,
 )
 
@@ -220,6 +222,7 @@ def ingest(
     request: Request,
     files: list[UploadFile] = File(...),  # noqa: B008 — FastAPI reads this marker from the default
     since: str | None = Form(default=None),
+    then_resolve: bool = Form(default=False),
     user: str = Depends(resolve_principal),
 ) -> JobAccepted:
     """Accept uploaded CSV table dumps and run one ingestion pass as a job.
@@ -235,6 +238,8 @@ def ingest(
             job registry on ``app.state``.
         files: Uploaded CSV files (one or more), named per upstream table.
         since: Optional ISO-8601 cutoff; only rows newer than this are pulled.
+        then_resolve: When true, run alias→entity resolution in the same job
+            after ingestion succeeds (the common end-to-end path).
         user: Resolved principal, attributed on the ingest audit row.
 
     Returns:
@@ -301,6 +306,16 @@ def ingest(
             with audit.time_tool(user, "ingest", params) as slot:
                 out = run_once(adapter, driver, raw, load_retention_env(), since=since_dt)
                 slot.result_count = sum(out["counts"].values())
+            if then_resolve:
+                # Chain resolution after a successful ingest. resolve_all writes
+                # its own audit row, so it is not wrapped in time_tool here. A
+                # resolution failure must not discard the (successful) ingest
+                # counts — record it alongside them instead.
+                try:
+                    summary = resolve_all(driver, load_resolution_env(), audit, user=user)
+                    out = {**out, "resolution": summary.as_dict()}
+                except Exception as exc:  # keep ingest counts; surface the resolve failure
+                    out = {**out, "resolution_error": f"{type(exc).__name__}: {exc}"}
             return out
         finally:
             shutil.rmtree(staging, ignore_errors=True)
@@ -309,6 +324,42 @@ def ingest(
         job = request.app.state.jobs.submit("ingest", _ingest_job, created_by=user)
     except JobBusyError as exc:
         shutil.rmtree(staging, ignore_errors=True)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "An ingestion job is already running; wait for it to finish."
+        ) from exc
+    return JobAccepted(job_id=job.id, status=job.status, kind=job.kind)
+
+
+@router.post("/resolve", status_code=status.HTTP_202_ACCEPTED)
+def resolve(request: Request, user: str = Depends(resolve_principal)) -> JobAccepted:
+    """Run alias→entity resolution over the graph as a background job.
+
+    Returns ``202`` with a job id; poll ``GET /ingestion/jobs/{job_id}`` for the
+    per-method resolution summary. ``resolve_all`` writes its own
+    ``resolve_all`` audit row (and none on an empty run), so this route adds no
+    wrapper audit row.
+
+    Args:
+        request: Active request, for the shared driver, audit logger, and job
+            registry on ``app.state``.
+        user: Resolved principal, attributed on the resolution audit row.
+
+    Returns:
+        A :class:`JobAccepted` with the new job id.
+
+    Raises:
+        HTTPException: ``409`` when a job is already running.
+    """
+    driver = request.app.state.driver
+    audit = request.app.state.audit
+
+    def _resolve_job(_job: Job) -> dict[str, Any]:
+        summary = resolve_all(driver, load_resolution_env(), audit, user=user)
+        return {"resolution": summary.as_dict()}
+
+    try:
+        job = request.app.state.jobs.submit("resolve", _resolve_job, created_by=user)
+    except JobBusyError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "An ingestion job is already running; wait for it to finish."
         ) from exc
