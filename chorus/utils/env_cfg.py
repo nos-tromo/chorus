@@ -382,6 +382,23 @@ class IngestionConfig:
 
 
 @dataclass(frozen=True)
+class IngestionUIConfig:
+    """Toggle for the frontend-triggered ingestion path (ADR 0014).
+
+    Gates the ``/ingestion/*`` upload-and-run endpoints and the matching
+    Streamlit page. Default off so the data-mutating upload surface is
+    never exposed by accident; an operator enables it explicitly. The
+    CLI/bind-mount ingestion path (``make ingest``) is unaffected by this
+    flag.
+
+    Attributes:
+        enabled: Whether the UI ingestion endpoints and page are active.
+    """
+
+    enabled: bool
+
+
+@dataclass(frozen=True)
 class PathConfig:
     """Filesystem paths used by the running app.
 
@@ -608,6 +625,19 @@ def load_ingestion_env() -> IngestionConfig:
     raw = _env("INGESTION_SOURCE_DIR")
     src = Path(raw).expanduser() if raw else load_path_env().chorus_home / "ingest"
     return IngestionConfig(source_dir=src)
+
+
+def load_ingestion_ui_env() -> IngestionUIConfig:
+    """Load the frontend-ingestion toggle from the environment.
+
+    ``INGESTION_UI_ENABLED`` (default ``false``) gates the
+    ``/ingestion/*`` upload-and-run endpoints and the Streamlit page. See
+    ADR 0014.
+
+    Returns:
+        A populated :class:`IngestionUIConfig`.
+    """
+    return IngestionUIConfig(enabled=_env_bool("INGESTION_UI_ENABLED", False))
 
 
 def load_path_env() -> PathConfig:

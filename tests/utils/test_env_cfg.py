@@ -236,3 +236,38 @@ def test_retention_config_until_none_without_anchor() -> None:
     from chorus.utils.env_cfg import RetentionConfig
 
     assert RetentionConfig(default_days=30).until(None) is None
+
+
+def test_load_ingestion_ui_env_defaults_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With ``INGESTION_UI_ENABLED`` unset, the UI ingestion path is off.
+
+    Production-safe default: the upload/run endpoints stay gated unless an
+    operator explicitly opts in. The loader reads ``os.environ`` per call,
+    so ``delenv`` without a reload exercises the default (a reload would
+    re-trigger ``load_dotenv`` and could restore a local ``.env`` value).
+    """
+    monkeypatch.delenv("INGESTION_UI_ENABLED", raising=False)
+
+    from chorus.utils.env_cfg import load_ingestion_ui_env
+
+    assert load_ingestion_ui_env().enabled is False
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "on", "TRUE", "On"])
+def test_load_ingestion_ui_env_truthy(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """Any accepted truthy literal enables the UI ingestion path."""
+    monkeypatch.setenv("INGESTION_UI_ENABLED", value)
+
+    from chorus.utils.env_cfg import load_ingestion_ui_env
+
+    assert load_ingestion_ui_env().enabled is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", "garbage", ""])
+def test_load_ingestion_ui_env_falsey(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """Non-truthy, unrecognized, or empty values keep the path off."""
+    monkeypatch.setenv("INGESTION_UI_ENABLED", value)
+
+    from chorus.utils.env_cfg import load_ingestion_ui_env
+
+    assert load_ingestion_ui_env().enabled is False
