@@ -21,12 +21,26 @@ ingest.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+import shutil
+import tempfile
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 
 from chorus.api.auth.principal import resolve_principal
+from chorus.ingestion.jobs import Job, JobBusyError, JobKind, JobStatus
+from chorus.ingestion.orchestrator import run_once
+from chorus.ingestion.raw_store import RawStore
+from chorus.ingestion.upstream import TABLES, FileUpstreamAdapter, table_for_filename
 from chorus.migrations.runner import applied_versions, apply_all, pending_versions
-from chorus.utils.env_cfg import load_ingestion_ui_env
+from chorus.utils.env_cfg import (
+    load_ingestion_ui_env,
+    load_path_env,
+    load_retention_env,
+)
 
 
 def require_ingestion_ui_enabled() -> None:
@@ -91,6 +105,45 @@ class MigrateResult(BaseModel):
     """
 
     applied: list[str]
+
+
+class JobAccepted(BaseModel):
+    """Acknowledgement that a background job was enqueued.
+
+    Attributes:
+        job_id: Identifier to poll on ``GET /ingestion/jobs/{job_id}``.
+        status: Initial job status (``"queued"``).
+        kind: Job kind (``"ingest"`` or ``"resolve"``).
+    """
+
+    job_id: str
+    status: JobStatus
+    kind: JobKind
+
+
+class JobStatusOut(BaseModel):
+    """Pollable state of a background job.
+
+    Attributes:
+        id: Job identifier.
+        kind: Job kind.
+        status: ``queued`` / ``running`` / ``done`` / ``error``.
+        created_by: Principal that submitted the job.
+        created_at: ISO-8601 submission time.
+        finished_at: ISO-8601 completion time; ``None`` until terminal.
+        result: Job output when ``status == "done"`` (ingest counts and,
+            when chained, a ``resolution`` summary).
+        error: Type-prefixed message when ``status == "error"``.
+    """
+
+    id: str
+    kind: JobKind
+    status: JobStatus
+    created_by: str
+    created_at: str
+    finished_at: str | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
 
 
 status_router = APIRouter(prefix="/ingestion", tags=["ingestion"])
@@ -160,3 +213,126 @@ def migrate(request: Request, user: str = Depends(resolve_principal)) -> Migrate
         newly = apply_all(driver)
         slot.result_count = len(newly)
     return MigrateResult(applied=newly)
+
+
+@router.post("/ingest", status_code=status.HTTP_202_ACCEPTED)
+def ingest(
+    request: Request,
+    files: list[UploadFile] = File(...),  # noqa: B008 — FastAPI reads this marker from the default
+    since: str | None = Form(default=None),
+    user: str = Depends(resolve_principal),
+) -> JobAccepted:
+    """Accept uploaded CSV table dumps and run one ingestion pass as a job.
+
+    The request only validates and stages the upload, then returns ``202``
+    with a job id; the pipeline runs on the shared single-worker registry and
+    is polled via ``GET /ingestion/jobs/{job_id}``. Uploaded filenames must
+    match a known table (``<table>.csv`` or ``*_<table>.csv``) — anything else
+    is rejected so a mis-named file cannot produce a silent zero-row run.
+
+    Args:
+        request: Active request, for the shared driver, audit logger, and
+            job registry on ``app.state``.
+        files: Uploaded CSV files (one or more), named per upstream table.
+        since: Optional ISO-8601 cutoff; only rows newer than this are pulled.
+        user: Resolved principal, attributed on the ingest audit row.
+
+    Returns:
+        A :class:`JobAccepted` with the new job id.
+
+    Raises:
+        HTTPException: ``422`` for no files, an unrecognized filename, or an
+            unparseable ``since``; ``409`` when a job is already running.
+    """
+    if not files:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "no files uploaded")
+    unrecognized = [f.filename or "<unnamed>" for f in files if table_for_filename(f.filename or "") is None]
+    if unrecognized:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"unrecognized filename(s): {unrecognized}; expected one of {list(TABLES)} "
+            "as '<table>.csv' or '*_<table>.csv'",
+        )
+    since_dt: datetime | None = None
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since)
+        except ValueError as exc:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, f"invalid 'since' timestamp: {since!r}"
+            ) from exc
+
+    _reject_if_busy(request)
+
+    uploads_root = load_path_env().chorus_home / "uploads"
+    uploads_root.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix="chorus-upload-", dir=uploads_root))
+    names: list[str] = []
+    try:
+        for upload in files:
+            name = upload.filename or ""
+            names.append(name)
+            with (staging / name).open("wb") as dest:
+                shutil.copyfileobj(upload.file, dest)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    driver = request.app.state.driver
+    audit = request.app.state.audit
+
+    def _ingest_job(_job: Job) -> dict[str, Any]:
+        """Run one ingestion pass over the staged files; clean up on exit."""
+        try:
+            adapter = FileUpstreamAdapter(staging)
+            raw = RawStore(load_path_env().raw_store)
+            raw.init_schema()
+            params = {"since": since, "files": sorted(names)}
+            with audit.time_tool(user, "ingest", params) as slot:
+                out = run_once(adapter, driver, raw, load_retention_env(), since=since_dt)
+                slot.result_count = sum(out["counts"].values())
+            return out
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
+    try:
+        job = request.app.state.jobs.submit("ingest", _ingest_job, created_by=user)
+    except JobBusyError as exc:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "An ingestion job is already running; wait for it to finish."
+        ) from exc
+    return JobAccepted(job_id=job.id, status=job.status, kind=job.kind)
+
+
+@router.get("/jobs/{job_id}")
+def job_status(job_id: str, request: Request) -> JobStatusOut:
+    """Return the current state of a background ingestion job.
+
+    A failed job is reported as ``200`` with ``status="error"`` and the
+    message in ``error`` — the read succeeded even though the job did not.
+    Only an unknown id is a ``404``.
+
+    Args:
+        job_id: The job identifier returned by an enqueue route.
+        request: Active request, for the job registry on ``app.state``.
+
+    Returns:
+        A :class:`JobStatusOut`.
+
+    Raises:
+        HTTPException: ``404`` when no job is known under ``job_id``.
+    """
+    job = request.app.state.jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"unknown job: {job_id}")
+    return JobStatusOut(
+        id=job.id,
+        kind=job.kind,
+        status=job.status,
+        created_by=job.created_by,
+        created_at=job.created_at,
+        finished_at=job.finished_at,
+        result=job.result,
+        error=job.error,
+    )
