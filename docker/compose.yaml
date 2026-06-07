@@ -37,6 +37,9 @@ services:
       LOG_FORMAT: ${LOG_FORMAT:-json}
       CHORUS_HOME: ${CHORUS_HOME:-/var/lib/chorus}
       RESPONSE_LANGUAGE: ${RESPONSE_LANGUAGE:-en}
+      # Gates the UI upload-and-run path + /ingestion/* endpoints (ADR 0014).
+      # Default off; only the backend reads it (the frontend asks /ingestion/feature).
+      INGESTION_UI_ENABLED: ${INGESTION_UI_ENABLED:-false}
     volumes:
       - chorus-state:/var/lib/chorus
     networks:

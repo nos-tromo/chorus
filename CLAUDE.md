@@ -20,8 +20,12 @@ a natural-language agent (`POST /agent/query`, ADR 0009) that selects and
 calls those tools via OpenAI tool-calling. The `Alias → Entity` resolution
 stage is implemented (vector clustering + same-type filter + LLM tie-break,
 run via `python -m chorus.ingestion.cli resolve`), so the tools cluster by
-canonical entity once a resolve pass has run. See *Repository conventions*
-below for the live layout.
+canonical entity once a resolve pass has run. A frontend ingestion path
+(ADR 0014) lets an authenticated user upload CSV exports and run
+migrate/ingest/resolve as background jobs from the Streamlit UI
+(`POST /ingestion/*`, polled via `GET /ingestion/jobs/{id}`), gated by
+`INGESTION_UI_ENABLED` (default off); `make ingest` remains for
+bulk/server-side loads. See *Repository conventions* below for the live layout.
 
 Python: `pyproject.toml` accepts `>=3.11,<=3.13`; `.python-version`
 pins dev to `3.12`. CI should run across the full range.
