@@ -11,7 +11,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -22,7 +22,7 @@ from chorus.ingestion.jobs import Job, JobRegistry
 
 _POSTINGS_CSV = (
     b"UUID,Posting ID,Text Content,Timestamp,Crawled at,Author ID,Author,Network,Tags\r\n"
-    b'p-1,post-net-1,hello berlin,2026-05-01T10:00:00+00:00,2026-05-02T10:00:00+00:00,'
+    b"p-1,post-net-1,hello berlin,2026-05-01T10:00:00+00:00,2026-05-02T10:00:00+00:00,"
     b'a-1,Alice,linkedin,"news, politics"\r\n'
 )
 
@@ -40,7 +40,7 @@ def _await_job(client: TestClient, job_id: str, timeout: float = 20.0) -> dict[s
         assert resp.status_code == 200, resp.text
         body = resp.json()
         if body["status"] in ("done", "error"):
-            return body
+            return cast(dict[str, Any], body)
         time.sleep(0.05)
     raise AssertionError(f"job {job_id} did not finish within {timeout}s")
 
@@ -78,9 +78,7 @@ def test_feature_reports_disabled_by_default(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.delenv("INGESTION_UI_ENABLED", raising=False)
     jobs = JobRegistry()
     try:
-        resp = TestClient(_build_app(None, None, jobs)).get(
-            "/ingestion/feature", headers={"X-Auth-User": "analyst"}
-        )
+        resp = TestClient(_build_app(None, None, jobs)).get("/ingestion/feature", headers={"X-Auth-User": "analyst"})
         assert resp.status_code == 200
         assert resp.json() == {"enabled": False}
     finally:
@@ -92,9 +90,7 @@ def test_feature_reports_enabled_when_flag_set(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        resp = TestClient(_build_app(None, None, jobs)).get(
-            "/ingestion/feature", headers={"X-Auth-User": "analyst"}
-        )
+        resp = TestClient(_build_app(None, None, jobs)).get("/ingestion/feature", headers={"X-Auth-User": "analyst"})
         assert resp.status_code == 200
         assert resp.json() == {"enabled": True}
     finally:
@@ -265,8 +261,8 @@ def test_ingest_happy_path_runs_job_and_audits(
         assert done["result"]["counts"]["postings"] == 1
 
         with migrated_driver.session() as s:
-            n = s.run("MATCH (p:Post:Posting {uuid:'p-1'}) RETURN count(p) AS n").single()["n"]
-        assert n == 1
+            rec = s.run("MATCH (p:Post:Posting {uuid:'p-1'}) RETURN count(p) AS n").single()
+        assert rec is not None and rec["n"] == 1
 
         rows = [r for r in _audit_rows(in_memory_audit) if r["tool_name"] == "ingest"]
         assert len(rows) == 1

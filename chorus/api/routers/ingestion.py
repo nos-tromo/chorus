@@ -276,9 +276,7 @@ def ingest(
         try:
             since_dt = datetime.fromisoformat(since)
         except ValueError as exc:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY, f"invalid 'since' timestamp: {since!r}"
-            ) from exc
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"invalid 'since' timestamp: {since!r}") from exc
 
     _reject_if_busy(request)
 

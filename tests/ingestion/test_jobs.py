@@ -35,6 +35,11 @@ def _wait_running(reg: JobRegistry, started: threading.Event, timeout: float = 5
         raise AssertionError("job did not start within timeout")
 
 
+def _boom(_job: Job) -> dict[str, Any]:
+    """A job fn that always raises (typed to satisfy the submit signature)."""
+    raise ValueError("boom")
+
+
 def _blocking_fn(
     started: threading.Event, release: threading.Event, result: dict[str, Any] | None = None
 ) -> Callable[[Job], dict[str, Any]]:
@@ -69,7 +74,7 @@ def test_job_failure_is_captured_not_raised() -> None:
     """A raising job ends ``error`` with a type-prefixed message, no result."""
     reg = JobRegistry()
     try:
-        job = reg.submit("ingest", lambda _job: (_ for _ in ()).throw(ValueError("boom")))
+        job = reg.submit("ingest", _boom)
         terminal = _wait_terminal(reg, job.id)
         assert terminal.status == "error"
         assert terminal.error == "ValueError: boom"
@@ -83,7 +88,7 @@ def test_worker_survives_a_failed_job() -> None:
     """After a job errors, the single worker keeps serving later jobs."""
     reg = JobRegistry()
     try:
-        bad = reg.submit("ingest", lambda _job: 1 / 0)
+        bad = reg.submit("ingest", _boom)
         _wait_terminal(reg, bad.id)
         good = reg.submit("resolve", lambda _job: {"ok": True})
         terminal = _wait_terminal(reg, good.id)

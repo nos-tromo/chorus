@@ -108,8 +108,7 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
             "Large bulk loads still belong on the server via `make ingest`."
         ),
         "ingest.disabled": (
-            "Data ingestion via the UI is disabled. "
-            "Set INGESTION_UI_ENABLED=true on the backend to enable it."
+            "Data ingestion via the UI is disabled. Set INGESTION_UI_ENABLED=true on the backend to enable it."
         ),
         "ingest.migrations.header": "Schema migrations",
         "ingest.migrations.pending": "Pending migrations: {versions}",
