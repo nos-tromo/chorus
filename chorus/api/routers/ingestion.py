@@ -246,11 +246,24 @@ def ingest(
     """
     if not files:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "no files uploaded")
-    unrecognized = [f.filename or "<unnamed>" for f in files if table_for_filename(f.filename or "") is None]
-    if unrecognized:
+    # Reduce each upload to a bare basename and require it to (a) equal what
+    # the client sent — rejecting any path component or ".." — and (b) match a
+    # known table. Writing the derived basename (never the raw client string)
+    # keeps the staged write provably inside the staging dir independent of
+    # table_for_filename's internals: defense in depth for the write below.
+    safe_names: list[str] = []
+    rejected: list[str] = []
+    for f in files:
+        raw = f.filename or ""
+        base = Path(raw).name
+        if base != raw or table_for_filename(base) is None:
+            rejected.append(raw or "<unnamed>")
+        else:
+            safe_names.append(base)
+    if rejected:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"unrecognized filename(s): {unrecognized}; expected one of {list(TABLES)} "
+            f"unrecognized or unsafe filename(s): {rejected}; expected one of {list(TABLES)} "
             "as '<table>.csv' or '*_<table>.csv'",
         )
     since_dt: datetime | None = None
@@ -267,12 +280,9 @@ def ingest(
     uploads_root = load_path_env().chorus_home / "uploads"
     uploads_root.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix="chorus-upload-", dir=uploads_root))
-    names: list[str] = []
     try:
-        for upload in files:
-            name = upload.filename or ""
-            names.append(name)
-            with (staging / name).open("wb") as dest:
+        for upload, safe in zip(files, safe_names, strict=True):
+            with (staging / safe).open("wb") as dest:
                 shutil.copyfileobj(upload.file, dest)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
@@ -287,7 +297,7 @@ def ingest(
             adapter = FileUpstreamAdapter(staging)
             raw = RawStore(load_path_env().raw_store)
             raw.init_schema()
-            params = {"since": since, "files": sorted(names)}
+            params = {"since": since, "files": sorted(safe_names)}
             with audit.time_tool(user, "ingest", params) as slot:
                 out = run_once(adapter, driver, raw, load_retention_env(), since=since_dt)
                 slot.result_count = sum(out["counts"].values())

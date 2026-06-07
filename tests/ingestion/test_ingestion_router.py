@@ -289,6 +289,24 @@ def test_ingest_rejects_unrecognized_filename(monkeypatch: pytest.MonkeyPatch) -
         jobs.shutdown()
 
 
+@pytest.mark.parametrize("evil", ["../postings.csv", "sub/postings.csv", "..\\postings.csv"])
+def test_ingest_rejects_path_traversal_filename(monkeypatch: pytest.MonkeyPatch, evil: str) -> None:
+    """A filename carrying a path or '..' is 422'd and never staged or run."""
+    monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
+    jobs = JobRegistry()
+    try:
+        client = TestClient(_build_app(None, None, jobs))
+        resp = client.post(
+            "/ingestion/ingest",
+            files=[("files", (evil, _POSTINGS_CSV, "text/csv"))],
+            headers={"X-Auth-User": "analyst"},
+        )
+        assert resp.status_code == 422, resp.text
+        assert jobs.get("job-1") is None
+    finally:
+        jobs.shutdown()
+
+
 def test_ingest_rejects_bad_since(monkeypatch: pytest.MonkeyPatch) -> None:
     """An unparseable 'since' is 422'd before any job is created."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
