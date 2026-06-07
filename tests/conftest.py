@@ -43,7 +43,10 @@ _CHORUS_ENV_MODULES = (
     "chorus.agent.loop",
     "chorus.agent",
     "chorus.inference.ner_client",
-    "chorus.ingestion.jobs",
+    # NOTE: chorus.ingestion.jobs is deliberately NOT reloaded. It snapshots no
+    # env, and reloading it would mint a second JobBusyError/JobRegistry class
+    # identity that the test module's top-level import wouldn't share — making
+    # the router's `except JobBusyError` silently miss. Keep it singular.
     "chorus.ingestion.raw_store",
     "chorus.ingestion.postings",
     "chorus.ingestion.comments",

@@ -350,6 +350,7 @@ def resolve(request: Request, user: str = Depends(resolve_principal)) -> JobAcce
     Raises:
         HTTPException: ``409`` when a job is already running.
     """
+    _reject_if_busy(request)
     driver = request.app.state.driver
     audit = request.app.state.audit
 
