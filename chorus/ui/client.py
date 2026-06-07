@@ -20,7 +20,14 @@ class ChorusClient:
     construct their own client with real auth.
     """
 
-    def __init__(self, base_url: str, identity: str, *, timeout: float = 30.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        identity: str,
+        *,
+        timeout: float = 30.0,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
         """Construct a client bound to ``base_url`` and ``identity``.
 
         Args:
@@ -29,6 +36,8 @@ class ChorusClient:
             identity: Dev-mode identity to send as the ``X-Auth-User``
                 header on every request.
             timeout: Per-request timeout in seconds.
+            transport: Optional httpx transport, used by tests to mock the
+                server; production callers leave it ``None``.
         """
         self.base_url = base_url.rstrip("/")
         self.identity = identity
@@ -36,6 +45,7 @@ class ChorusClient:
             base_url=self.base_url,
             timeout=timeout,
             headers={"X-Auth-User": identity},
+            transport=transport,
         )
 
     def health(self) -> dict[str, Any]:
@@ -98,6 +108,110 @@ class ChorusClient:
             httpx.HTTPStatusError: If the service returns a non-2xx status.
         """
         r = self._client.post("/agent/query", json={"messages": messages})
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def ingestion_status(self) -> dict[str, Any]:
+        """Call ``GET /ingestion/feature`` (ungated) and return its body.
+
+        Returns:
+            ``{"enabled": bool}`` — whether the UI ingestion feature is on.
+
+        Raises:
+            httpx.HTTPStatusError: If the service returns a non-2xx status.
+        """
+        r = self._client.get("/ingestion/feature")
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def migrations(self) -> dict[str, Any]:
+        """Call ``GET /ingestion/migrations`` and return applied/pending versions.
+
+        Returns:
+            ``{"applied": [...], "pending": [...]}``.
+
+        Raises:
+            httpx.HTTPStatusError: If the service returns a non-2xx status.
+        """
+        r = self._client.get("/ingestion/migrations")
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def migrate(self) -> dict[str, Any]:
+        """Apply pending migrations via ``POST /ingestion/migrate`` (synchronous).
+
+        A longer timeout is used because DDL on a cold database can take well
+        over the default.
+
+        Returns:
+            ``{"applied": [...]}`` — versions applied on this call.
+
+        Raises:
+            httpx.HTTPStatusError: If the service returns a non-2xx status
+                (e.g. ``409`` when a job is running).
+        """
+        r = self._client.post("/ingestion/migrate", timeout=120.0)
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def ingest(
+        self,
+        files: list[tuple[str, bytes]],
+        *,
+        since: str | None = None,
+        then_resolve: bool = False,
+    ) -> dict[str, Any]:
+        """Upload CSV table dumps via ``POST /ingestion/ingest`` (returns a job).
+
+        Args:
+            files: ``(filename, content)`` pairs; filenames must match an
+                upstream table (e.g. ``"postings.csv"``).
+            since: Optional ISO-8601 cutoff; omitted entirely when ``None``.
+            then_resolve: When true, chain resolution after ingestion.
+
+        Returns:
+            ``{"job_id", "status", "kind"}`` for the enqueued job.
+
+        Raises:
+            httpx.HTTPStatusError: For a non-2xx status (``422`` bad filename
+                or since, ``409`` busy, ``403`` disabled).
+        """
+        multipart = [("files", (name, content, "text/csv")) for name, content in files]
+        data: dict[str, str] = {"then_resolve": "true" if then_resolve else "false"}
+        if since:
+            data["since"] = since
+        # The upload is sent in full before the 202 returns, so allow ample time.
+        r = self._client.post("/ingestion/ingest", files=multipart, data=data, timeout=300.0)
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def resolve(self) -> dict[str, Any]:
+        """Start alias→entity resolution via ``POST /ingestion/resolve`` (a job).
+
+        Returns:
+            ``{"job_id", "status", "kind"}`` for the enqueued job.
+
+        Raises:
+            httpx.HTTPStatusError: For a non-2xx status (``409`` when busy).
+        """
+        r = self._client.post("/ingestion/resolve")
+        r.raise_for_status()
+        return cast(dict[str, Any], r.json())
+
+    def job_status(self, job_id: str) -> dict[str, Any]:
+        """Fetch a background job's state via ``GET /ingestion/jobs/{job_id}``.
+
+        Args:
+            job_id: Identifier returned by :meth:`ingest` or :meth:`resolve`.
+
+        Returns:
+            The job state; a failed job is ``200`` with ``status="error"``
+            and an ``error`` message in the body.
+
+        Raises:
+            httpx.HTTPStatusError: ``404`` for an unknown job id.
+        """
+        r = self._client.get(f"/ingestion/jobs/{job_id}")
         r.raise_for_status()
         return cast(dict[str, Any], r.json())
 
