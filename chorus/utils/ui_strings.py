@@ -34,6 +34,8 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
         "landing.backend_health": "backend health",
         "landing.registered_tools": "registered tools",
         "landing.pick_tool": "Pick a tool from the sidebar (left) to explore the graph.",
+        "landing.ingestion_on": "Data ingestion is enabled — see the Data ingestion page in the sidebar.",
+        "landing.ingestion_off": "Data ingestion is disabled.",
         # agent (00_agent.py)
         "agent.title": "chorus agent",
         "agent.caption": (
@@ -159,6 +161,8 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
         "landing.backend_health": "Backend-Status",
         "landing.registered_tools": "Registrierte Werkzeuge",
         "landing.pick_tool": "Wähle links in der Seitenleiste ein Werkzeug, um den Graphen zu erkunden.",
+        "landing.ingestion_on": "Datenimport ist aktiviert — siehe die Seite „Datenimport“ in der Seitenleiste.",
+        "landing.ingestion_off": "Datenimport ist deaktiviert.",
         # agent (00_agent.py)
         "agent.title": "chorus Agent",
         "agent.caption": (

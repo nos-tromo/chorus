@@ -42,6 +42,19 @@ client = _client()
 st.title("chorus")
 st.caption(ui_string("landing.caption"))
 
+# Status bar: is the frontend data-ingestion feature enabled on the backend?
+# Sourced from /ingestion/feature (the single source of truth). On an
+# unreachable backend the health panel below surfaces the error, so the banner
+# stays quiet rather than double-reporting.
+try:
+    _ingestion_enabled: bool | None = bool(client.ingestion_status().get("enabled", False))
+except Exception:
+    _ingestion_enabled = None
+if _ingestion_enabled is True:
+    st.success(ui_string("landing.ingestion_on"))
+elif _ingestion_enabled is False:
+    st.info(ui_string("landing.ingestion_off"))
+
 col_h, col_t = st.columns(2)
 with col_h:
     st.subheader(ui_string("landing.backend_health"))
