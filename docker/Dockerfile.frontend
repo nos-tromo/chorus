@@ -10,10 +10,11 @@ ENV UV_CACHE_DIR=/root/.cache/uv \
 
 WORKDIR /app
 
-# Install only the frontend dependency group (Streamlit + httpx). The UI
-# talks to the API over HTTP and imports nothing from the rest of the chorus
-# package, so it needs neither the backend libraries (neo4j, openai, fastapi,
-# …) nor the project wheel itself — hence --only-group and --no-install-project.
+# Install only the frontend dependency group (Streamlit + httpx +
+# python-dotenv). The UI talks to the API over HTTP and imports only
+# `chorus.ui` and `chorus.utils` (the localization catalog + its env loader),
+# so it needs neither the backend libraries (neo4j, openai, fastapi, …) nor the
+# project wheel itself — hence --only-group and --no-install-project.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -29,13 +30,17 @@ ENV PYTHONUNBUFFERED=1 \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
 WORKDIR /app
-# Copy just the prebuilt venv and the UI source. chorus/__init__.py (a bare
-# version string, no backend imports) makes `chorus` a package; PYTHONPATH=/app
-# lets the un-installed `from chorus.ui.client import ChorusClient` resolve
-# over the copied source.
+# Copy just the prebuilt venv and the source the UI imports. chorus/__init__.py
+# (a bare version string, no backend imports) makes `chorus` a package;
+# PYTHONPATH=/app lets the un-installed `from chorus.ui...` / `from chorus.utils...`
+# imports resolve over the copied source. chorus/utils carries the localization
+# catalog (`ui_strings`) and its env loader (`env_cfg`), which every page imports;
+# omitting it makes the image boot but crash every page with ModuleNotFoundError
+# (guarded by tests/ui/test_frontend_image_surface.py).
 COPY --from=builder /app/.venv /app/.venv
 COPY chorus/__init__.py /app/chorus/__init__.py
 COPY chorus/ui /app/chorus/ui
+COPY chorus/utils /app/chorus/utils
 
 EXPOSE 8501
 
