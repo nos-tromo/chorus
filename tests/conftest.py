@@ -37,6 +37,7 @@ _CHORUS_ENV_MODULES = (
     "chorus.tools.authors_connected_by_topic",
     "chorus.tools.authors_mentioning",
     "chorus.tools.network_around",
+    "chorus.tools.social_network_around",
     "chorus.tools",
     "chorus.agent.prompts",
     "chorus.agent.openai_tools",

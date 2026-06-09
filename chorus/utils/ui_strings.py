@@ -103,7 +103,23 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
         "network.empty": "no network — the entity matched nothing",
         "network.counts": "{n} node(s): {authors} author(s), {topics} topic(s); {edges} edge(s)",
         "network.capped": "Capped view — raise the author/topic limits to see more of the network.",
-        # data ingestion (07_data_ingestion.py)
+        # social_network_around (08)
+        "social.title": "social network around an author",
+        "social.caption": (
+            "The follows/friends ego network around an author. depth 1 = the author's direct "
+            "ties (people they follow, their followers, friends); depth 2 also adds those "
+            "neighbours' ties. Follows are drawn with arrowheads, friendships as plain lines. "
+            "The view is capped by the limits below."
+        ),
+        "social.author_input": "Author handle or display name",
+        "social.depth": "Depth",
+        "social.limit": "Direct-tie limit",
+        "social.second_ring_limit": "Second-ring limit (depth 2)",
+        "social.build": "Build network",
+        "social.empty": "no network — the author matched nothing",
+        "social.counts": "{n} author(s); {edges} tie(s): {follows} follows, {friends} friends",
+        "social.capped": "Capped view — raise the limits to see more of the network.",
+        # data ingestion (01_data_ingestion.py)
         "ingest.title": "Data ingestion",
         "ingest.caption": (
             "Upload table exports and run the pipeline end-to-end: migrate, ingest, resolve. "
@@ -233,7 +249,24 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
         "network.empty": "kein Netzwerk — die Entität ergab keine Treffer",
         "network.counts": "{n} Knoten: {authors} Autor(en), {topics} Thema/Themen; {edges} Kante(n)",
         "network.capped": "Begrenzte Ansicht — erhöhe die Autoren-/Themen-Limits, um mehr des Netzwerks zu sehen.",
-        # data ingestion (07_data_ingestion.py)
+        # social_network_around (08)
+        "social.title": "Soziales Netzwerk rund um einen Autor",
+        "social.caption": (
+            "Das Follows-/Freundschafts-Ego-Netzwerk rund um einen Autor. Tiefe 1 = die "
+            "direkten Verbindungen des Autors (wem er folgt, seine Follower, Freunde); Tiefe 2 "
+            "ergänzt zusätzlich deren Verbindungen. Follows werden mit Pfeilspitzen gezeichnet, "
+            "Freundschaften als einfache Linien. Die Ansicht wird durch die untenstehenden "
+            "Limits begrenzt."
+        ),
+        "social.author_input": "Handle oder Anzeigename des Autors",
+        "social.depth": "Tiefe",
+        "social.limit": "Limit direkter Verbindungen",
+        "social.second_ring_limit": "Limit des zweiten Rings (Tiefe 2)",
+        "social.build": "Netzwerk aufbauen",
+        "social.empty": "kein Netzwerk — der Autor ergab keine Treffer",
+        "social.counts": "{n} Autor(en); {edges} Verbindung(en): {follows} Follows, {friends} Freundschaften",
+        "social.capped": "Begrenzte Ansicht — erhöhe die Limits, um mehr des Netzwerks zu sehen.",
+        # data ingestion (01_data_ingestion.py)
         "ingest.title": "Datenimport",
         "ingest.caption": (
             "Tabellen-Exporte hochladen und die Pipeline durchgängig ausführen: migrieren, "

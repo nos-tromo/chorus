@@ -7,7 +7,6 @@ shows an expandable trace of the tools the agent called, for transparency.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import httpx
@@ -28,10 +27,7 @@ def _client() -> ChorusClient:
         both pulled from the environment with development defaults
         (``http://localhost:8000`` and ``"dev"``).
     """
-    return ChorusClient(
-        base_url=os.environ.get("CHORUS_API_URL", "http://localhost:8000"),
-        identity=os.environ.get("CHORUS_UI_IDENTITY", "dev"),
-    )
+    return ChorusClient.from_env()
 
 
 def _render_trace(trace: list[dict[str, Any]]) -> None:

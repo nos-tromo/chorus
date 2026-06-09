@@ -10,6 +10,8 @@ from typing import Any, cast
 
 import httpx
 
+from chorus.utils.env_cfg import load_ui_env
+
 
 class ChorusClient:
     """HTTP client for chorus's FastAPI surface.
@@ -45,6 +47,29 @@ class ChorusClient:
             base_url=self.base_url,
             timeout=timeout,
             headers={"X-Auth-User": identity},
+            transport=transport,
+        )
+
+    @classmethod
+    def from_env(
+        cls,
+        *,
+        transport: httpx.BaseTransport | None = None,
+    ) -> ChorusClient:
+        """Construct a client from the typed UI environment config.
+
+        Args:
+            transport: Optional httpx transport, primarily for tests.
+
+        Returns:
+            A client configured from ``CHORUS_API_URL``,
+            ``CHORUS_UI_IDENTITY``, and ``CHORUS_UI_TIMEOUT_S``.
+        """
+        cfg = load_ui_env()
+        return cls(
+            base_url=cfg.api_url,
+            identity=cfg.identity,
+            timeout=cfg.timeout_s,
             transport=transport,
         )
 

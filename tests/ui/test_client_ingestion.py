@@ -113,5 +113,19 @@ def test_default_timeout_unchanged() -> None:
     client.close()
 
 
+def test_from_env_honors_timeout_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """from_env() wires CHORUS_UI_TIMEOUT_S into the underlying client."""
+    monkeypatch.setenv("CHORUS_API_URL", "http://api:8000")
+    monkeypatch.setenv("CHORUS_UI_IDENTITY", "analyst")
+    monkeypatch.setenv("CHORUS_UI_TIMEOUT_S", "75")
+
+    client = ChorusClient.from_env()
+    assert client.base_url == "http://api:8000"
+    assert client.identity == "analyst"
+    assert client._client.timeout.connect == 75.0
+    assert client._client.timeout.read == 75.0
+    client.close()
+
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__, "-q"])

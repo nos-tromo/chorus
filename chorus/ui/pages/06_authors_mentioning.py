@@ -1,15 +1,13 @@
-"""UI for the `posts_mentioning` tool."""
+"""UI for the `authors_mentioning` tool."""
 
 from __future__ import annotations
-
-import os
 
 import streamlit as st
 
 from chorus.ui.client import ChorusClient
 from chorus.utils.ui_strings import ui_string
 
-st.set_page_config(page_title="posts_mentioning — chorus")
+st.set_page_config(page_title="authors_mentioning — chorus")
 
 
 @st.cache_resource
@@ -24,15 +22,13 @@ def _client() -> ChorusClient:
         identity, both pulled from the environment with development
         defaults (``http://localhost:8000`` and ``"dev"``).
     """
-    return ChorusClient(
-        base_url=os.environ.get("CHORUS_API_URL", "http://localhost:8000"),
-        identity=os.environ.get("CHORUS_UI_IDENTITY", "dev"),
-    )
+    return ChorusClient.from_env()
 
 
 client = _client()
 
-st.title(ui_string("posts.title"))
+st.title(ui_string("authors_mentioning.title"))
+st.caption(ui_string("authors_mentioning.caption"))
 
 entity = st.text_input(ui_string("common.entity_input"), value="")
 limit = st.slider(ui_string("common.limit"), min_value=1, max_value=200, value=50)
@@ -48,13 +44,13 @@ if st.button(ui_string("common.search"), disabled=not entity):
     if to_dt:
         payload["to"] = to_dt
     try:
-        result = client.call_tool("posts_mentioning", payload)
+        result = client.call_tool("authors_mentioning", payload)
     except Exception as exc:
         st.error(ui_string("common.tool_call_failed").format(error=exc))
     else:
-        hits = result.get("hits", [])
-        st.write(ui_string("posts.hits").format(n=len(hits)))
-        if hits:
-            st.dataframe(hits, use_container_width=True)
+        authors = result.get("authors", [])
+        st.write(ui_string("authors_mentioning.count").format(n=len(authors)))
+        if authors:
+            st.dataframe(authors, use_container_width=True)
         else:
-            st.info(ui_string("posts.no_hits"))
+            st.info(ui_string("authors_mentioning.none"))

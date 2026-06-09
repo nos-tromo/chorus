@@ -7,6 +7,7 @@ from chorus.tools import (
     authors_mentioning,  # noqa: F401
     network_around,  # noqa: F401
     posts_mentioning,  # noqa: F401
+    social_network_around,  # noqa: F401
     topic_co_occurrence,  # noqa: F401
 )
 from chorus.tools._audit import TOOLS, ToolSpec, audited, register_tool
