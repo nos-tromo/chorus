@@ -10,11 +10,14 @@ queries against it.
 The FastAPI app boots, applies Neo4j migrations on startup, and exposes
 `/health`. On top of that, the following is working and stable on `main`:
 
-- **Four graph retrieval tools** dispatched end-to-end with §76 BDSG
-  audit logging: `posts_mentioning`, `author_activity_summary`,
-  `topic_co_occurrence`, and `authors_connected_by_topic`. Each has a
-  Pydantic input/output schema and version-controlled Cypher under
-  `chorus/queries/`. The registry is served at `/tools`.
+- **Seven graph retrieval tools** dispatched end-to-end with §76 BDSG
+  audit logging: `posts_mentioning`, `authors_mentioning`,
+  `author_activity_summary`, `topic_co_occurrence`,
+  `authors_connected_by_topic`, `network_around`, and
+  `social_network_around`. Each has a Pydantic input/output schema and
+  version-controlled Cypher under `chorus/queries/`. The registry is
+  served at `/tools`. The two `*_around` tools return nodes-and-edges
+  payloads the UI renders as network graphs.
 - **A natural-language agent** at `POST /agent/query` (ADR 0009). It
   selects and calls the registered tools via OpenAI tool-calling to
   answer a free-text question — it never writes Cypher itself.
@@ -28,19 +31,22 @@ The FastAPI app boots, applies Neo4j migrations on startup, and exposes
   that clusters the `:Alias` nodes extraction writes onto canonical
   `:Entity` nodes — vector similarity + a same-type filter + an LLM
   tie-break, minting a new entity when nothing matches — and records
-  `:RESOLVED_TO` provenance. It is idempotent, and because the four tools
+  `:RESOLVED_TO` provenance. It is idempotent, and because the tools
   read through `:RESOLVED_TO`, a resolve pass upgrades them with no tool
   change ("Berlin" and "berlin" collapse to one entity).
-- **A Streamlit UI** with one page per tool plus an agent page.
+- **A Streamlit UI** with one page per tool, an agent page, and a
+  data-ingestion page — upload CSV exports and run migrate/ingest/resolve
+  as background jobs, gated by `INGESTION_UI_ENABLED` (default off; ADR
+  0014).
 - **Migrations** (constraints, indexes, vector indexes) applied in order
   and idempotently, with a CLI (`apply` / `status`).
 - **App compose project + Makefile** for building and running the api
   and ui services.
 
-Still on the roadmap — the `semantic_search` / `network_around` /
-`escape_hatch_cypher` tools, the retention sweeper job, and real OIDC
-wiring — is tracked in `docs/` and `docs/decisions/`. See *Current state*
-in `CLAUDE.md` for the punch list.
+Still on the roadmap — the `semantic_search` and `escape_hatch_cypher`
+tools, the retention sweeper job, and real OIDC wiring — is tracked in
+`docs/` and `docs/decisions/`. See *Current state* in `CLAUDE.md` for
+the punch list.
 
 ## Prerequisites
 
@@ -50,7 +56,7 @@ in `CLAUDE.md` for the punch list.
   `requirements.txt`.
 - **Docker** to run the app stack. The data-plane compose project
   (separate repo) owns Neo4j and must be up before starting chorus.
-- **(Optional) An inference endpoint.** The four graph tools don't
+- **(Optional) An inference endpoint.** The graph tools don't
   exercise inference, so you can defer this. The agent (`/agent/query`),
   inline NER during ingestion, and the resolve stage do need it: point
   `OPENAI_API_BASE` at vllm-service's LiteLLM proxy (or any
@@ -150,8 +156,9 @@ curl -s http://localhost:8000/tools | jq
 ```
 
 Lists every registered tool with its Pydantic input/output schemas:
-`posts_mentioning`, `author_activity_summary`, `topic_co_occurrence`,
-and `authors_connected_by_topic`.
+`posts_mentioning`, `authors_mentioning`, `author_activity_summary`,
+`topic_co_occurrence`, `authors_connected_by_topic`, `network_around`,
+and `social_network_around`.
 
 ### Seed a posting and an entity
 
@@ -185,9 +192,8 @@ sqlite3 var/audit.sqlite \
   "SELECT user, tool_name, result_count, status FROM audit_log;"
 ```
 
-The other three tools (`author_activity_summary`, `topic_co_occurrence`,
-`authors_connected_by_topic`) are invoked the same way — `POST
-/tools/<name>` with the body matching the schema from `/tools`.
+The other tools are invoked the same way — `POST /tools/<name>` with
+the body matching the schema from `/tools`.
 
 ### Ask the agent
 
@@ -236,7 +242,7 @@ similarity over `Entity.embedding` plus a same-type filter and an LLM
 tie-break, minting a new entity when nothing matches — and writes
 `:RESOLVED_TO` provenance. It needs the inference endpoint (it embeds the
 surface forms and asks the chat model to break ties) and is idempotent, so
-a re-run only resolves aliases added since. Because the four tools read
+a re-run only resolves aliases added since. Because the tools read
 through `:RESOLVED_TO`, a resolve pass clusters their results by canonical
 entity with no tool change. Thresholds are env-driven
 (`RES_EMBED_THRESHOLD`, `RES_LLM_TIEBREAK`, `RES_VECTOR_K`).
@@ -273,14 +279,15 @@ suite runs in CI, not in the hook.
 
 The app's compose project lives in `docker/` and is wired up via the
 top-level Makefile. It assumes Neo4j is already reachable on the
-shared `inference-net` Docker network as `neo4j-chorus:7687` — bring
-the data-plane compose project up first (see *Orchestration topology*
+shared `data-net` Docker network as `neo4j:7687` — bring the
+data-plane compose project up first (see *Orchestration topology*
 in `CLAUDE.md`), then:
 
 ```bash
-make network    # create the shared inference-net (idempotent)
-make build      # build api + ui images
-make up         # start api + ui (production shape, no host ports)
+make network    # create the shared inference-net + data-net (idempotent)
+make volumes    # create the external chorus-state volume (idempotent)
+make build      # build backend + frontend images
+make up         # start backend + frontend (production shape, no host ports)
 make up-dev     # like 'up', but publishes backend + frontend ports on the host
 make migrate    # apply Neo4j migrations from inside the api container
 make ingest     # run one ingestion pass from INGESTION_SOURCE_DIR
