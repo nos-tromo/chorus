@@ -740,3 +740,101 @@ def test_case_normalize_off_uses_raw_surface_as_norm_key(migrated_driver: Driver
     with migrated_driver.session() as s:
         rec = s.run("MATCH (a:Alias {surface_form:'  Berlin  '}) RETURN a.norm_key AS k").single()
     assert rec is not None and rec["k"] == "Berlin"  # trimmed, NOT casefolded
+
+
+def test_resolve_all_paginates_across_page_boundary(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """resolve_all resolves all aliases correctly when they span multiple pages.
+
+    Seeds three aliases (one per LOCATION) so that with page_size=2 the run
+    takes two pages. Checks that all three are minted and that re-running on
+    an empty pool is a no-op.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        monkeypatch: pytest monkeypatch fixture.
+    """
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import resolve_all
+    from chorus.utils.env_cfg import load_resolution_env
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (p:Post {uuid: 'pp'}) ON CREATE SET p.text='t',
+                  p.timestamp = datetime('2026-05-01T00:00:00+00:00')
+            MERGE (a1:Alias {surface_form: 'Aachen'})  ON CREATE SET a1.label='LOCATION'
+            MERGE (a2:Alias {surface_form: 'Berlin'})  ON CREATE SET a2.label='LOCATION'
+            MERGE (a3:Alias {surface_form: 'Hamburg'}) ON CREATE SET a3.label='LOCATION'
+            MERGE (p)-[:MENTIONS]->(a1)
+            MERGE (p)-[:MENTIONS]->(a2)
+            MERGE (p)-[:MENTIONS]->(a3)
+            """
+        )
+
+    vectors = {
+        "Aachen": _vec(1.0),
+        "Berlin": _vec(0.0, 1.0),
+        "Hamburg": _vec(0.0, 0.0, 1.0),
+    }
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
+
+    summary = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test", page_size=2)
+    assert summary.processed == 3
+    assert summary.minted == 3
+
+    with migrated_driver.session() as s:
+        rec = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()
+    assert rec is not None and rec["n"] == 3
+
+    again = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test", page_size=2)
+    assert again.processed == 0
+
+
+def test_resolve_all_run_cache_spans_pages(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_cache persists across pages so intra-run case-variants always cluster.
+
+    "Berlin" lands on page 1 (minted); "berlin" lands on page 2. Their vectors
+    are orthogonal so vector search cannot link them — only the run_cache can.
+    With page_size=1, page 2 must still cluster "berlin" via the cache.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        monkeypatch: pytest monkeypatch fixture.
+    """
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import resolve_all
+    from chorus.utils.env_cfg import load_resolution_env
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (p:Post {uuid: 'pp'}) ON CREATE SET p.text='t',
+                  p.timestamp = datetime('2026-05-01T00:00:00+00:00')
+            MERGE (a1:Alias {surface_form: 'Berlin'}) ON CREATE SET a1.label='LOCATION'
+            MERGE (a2:Alias {surface_form: 'berlin'}) ON CREATE SET a2.label='LOCATION'
+            MERGE (p)-[:MENTIONS]->(a1)
+            MERGE (p)-[:MENTIONS]->(a2)
+            """
+        )
+
+    vectors = {"Berlin": _vec(1.0), "berlin": _vec(0.0, 0.0, 1.0)}
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
+
+    summary = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test", page_size=1)
+    assert summary.processed == 2
+    assert summary.minted == 1
+    assert summary.attached_cache == 1
+
+    with migrated_driver.session() as s:
+        rec = s.run(
+            "MATCH (:Alias {surface_form:'Berlin'})-[:RESOLVED_TO]->(e1), "
+            "(:Alias {surface_form:'berlin'})-[:RESOLVED_TO]->(e2) "
+            "RETURN e1.id = e2.id AS same"
+        ).single()
+    assert rec is not None and rec["same"] is True
