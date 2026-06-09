@@ -13,11 +13,13 @@ guitar effect. The latter is not load-bearing.
 ## Current state
 
 Foundation is up. The app boots, applies Neo4j migrations, serves
-`/health`, dispatches four graph retrieval tools (`posts_mentioning`,
-`author_activity_summary`, `topic_co_occurrence`,
-`authors_connected_by_topic`) end-to-end with audit logging, and exposes
-a natural-language agent (`POST /agent/query`, ADR 0009) that selects and
-calls those tools via OpenAI tool-calling. The `Alias → Entity` resolution
+`/health`, dispatches seven graph retrieval tools (`posts_mentioning`,
+`authors_mentioning`, `author_activity_summary`, `topic_co_occurrence`,
+`authors_connected_by_topic`, `network_around`, `social_network_around`)
+end-to-end with audit logging, and exposes a natural-language agent
+(`POST /agent/query`, ADR 0009) that selects and calls those tools via
+OpenAI tool-calling. The two `*_around` tools feed Graphviz/DOT network
+visualizations in the UI (`ui/network_dot.py`, `ui/social_network_dot.py`). The `Alias → Entity` resolution
 stage is implemented (vector clustering + same-type filter + LLM tie-break,
 run via `python -m chorus.ingestion.cli resolve`), so the tools cluster by
 canonical entity once a resolve pass has run. A frontend ingestion path
@@ -27,30 +29,50 @@ migrate/ingest/resolve as background jobs from the Streamlit UI
 `INGESTION_UI_ENABLED` (default off); `make ingest` remains for
 bulk/server-side loads. See *Repository conventions* below for the live layout.
 
-Python: `pyproject.toml` accepts `>=3.11,<=3.13`; `.python-version`
-pins dev to `3.12`. CI should run across the full range.
+`RESPONSE_LANGUAGE=de` flips the whole app to German — agent answers,
+entity-query article stripping, Streamlit captions (ADR 0013). Default
+is English; the variable lives in the repo-root `.env` so compose
+interpolates it into both services.
+
+Python: `pyproject.toml` accepts `>=3.11,<3.14`; `.python-version`
+pins dev to `3.12`. CI runs 3.11/3.12/3.13. The ruff/mypy config
+mirrors `nos-tromo/.github/configs/python-strict/`; drift fails CI.
 
 Not yet landed (tracked in `docs/decisions/` / open tickets):
 - Semantic search — `Post.embedding` backfill + `semantic_search` tool
 - Retention sweeper job
 - Real OIDC wiring (`principal.py` is the seam)
+- `escape_hatch_cypher` power-user tool
 
 ## Common commands
-
-Once dependencies are added with `uv add ...`, the conventions defined
-in *Development tooling* below imply the following commands. They are
-not wired up yet; the first scaffolding work should make them runnable.
 
 ```
 uv sync                        # install/refresh the venv from uv.lock
 uv add <pkg>                   # add a dependency (updates pyproject + lock)
-uv run pytest                  # full test suite
+uv run pytest                  # full test suite (integration tests need Docker)
 uv run pytest tests/path/test_x.py::test_name   # single test
+uv run pytest tests/integration -k <name>       # one integration case
 uv run ruff check .            # lint
 uv run ruff format .           # format
 uv run mypy .                  # type check
 uv run pre-commit run --all-files               # pre-commit hooks
+
+uv run python -m chorus.migrations.cli apply    # apply Neo4j migrations (or: status)
+uv run python -m chorus.ingestion.cli run       # one ingestion pass from INGESTION_SOURCE_DIR
+uv run python -m chorus.ingestion.cli resolve   # Alias → Entity resolution pass
+uv run uvicorn chorus.api.main:app --reload --port 8000   # dev API
 ```
+
+Integration tests (`tests/integration/`) boot an ephemeral
+`neo4j:5.26.26-community` testcontainer — Docker must be reachable, and
+the first run pulls the image. The other test dirs are unit tests that
+stub inference and need no services.
+
+The Makefile wraps the compose workflow: `make network` / `volumes` /
+`build` / `up` / `up-dev` / `down` / `migrate` / `ingest` / `resolve` /
+`bootstrap` (wait for data-plane health, then up) / `test` /
+`pre-commit` / `bundle` (airgap image tarball). `README.md` has the
+local quick start (env vars, seeding, first queries).
 
 Production images are built on the internet-connected CI side with
 `uv sync --locked` from the hash-locked `uv.lock`, baking the dependency
@@ -98,7 +120,7 @@ redesign of the ingestion pipeline, not an incremental feature add.
 - **Inference**: shared vLLM / Ollama via `inference-net` Docker network;
   OpenAI-compatible HTTP, provider swappable via env vars
 - **Orchestration**: three Docker Compose projects (chorus app, data-plane,
-  inference). See Orchestration topology below.
+  vllm-service inference). See Orchestration topology below.
 - **Reverse proxy**: existing Nginx (new vhost for chorus UI)
 
 ### Invariants
@@ -109,11 +131,12 @@ redesign of the ingestion pipeline, not an incremental feature add.
   below).
 - **Vectors live in Neo4j**, not in a separate vector store. Vector search
   and graph traversal happen in the same Cypher statement.
-- **State lives in the data plane, not in the app stack.** Chorus's
-  `compose.yaml` declares no application-state volumes. Neo4j and its
-  volumes are owned by the separate `data-plane/` compose project.
-  `docker compose down -v` in chorus must never be able to destroy graph
-  data.
+- **State lives in the data plane, not in the app stack.** Neo4j and its
+  volumes are owned by the separate `data-plane/` compose project. The
+  only state chorus keeps (audit log, raw store, operational logs under
+  `CHORUS_HOME`) lives in the `chorus-state` volume, declared
+  `external: true` — so `docker compose down -v` in chorus can never
+  destroy graph data or chorus-local state.
 - **Airgapped in production.** Chorus production environments have no
   internet access. This is non-negotiable and shapes every dependency,
   image, and model choice. See Airgapped operation.
@@ -131,34 +154,30 @@ touch persistent data, and so that backup, retention, and access-control
 policies for stored data live next to the data itself.
 
 ```
-inference/                # existing, owns vLLM + Ollama
-  compose.yaml            # exposes inference endpoints on `inference-net`
+vllm-service/             # existing, owns the LiteLLM router + vLLM backends
+  compose.yaml            # inference endpoints on `inference-net` (alias `vllm-router`)
 
-data-plane/               # owns Neo4j and any future stateful chorus services
-  compose.yaml
-    services:
-      neo4j-chorus:       # joins `inference-net` so the app can reach it
-    volumes:
-      neo4j-chorus-data:  # named volume, owned by this compose project
+data-plane/               # owns Neo4j (chorus) and Qdrant (docint) + their volumes
+  compose.yaml            # Neo4j reachable as `neo4j` on `data-net`
   backup/                 # backup + restore runbooks live next to the data
 
 chorus/                   # this repo — app only
   docker/compose.yaml
     services:
-      api:                # connects to neo4j-chorus:7687
-      ui:
-    networks: [inference-net]
-    # no named volumes for application state
+      backend:            # joins inference-net + data-net; bolt://neo4j:7687
+      frontend:           # internal chorus-net only; talks to backend:8000
+    volumes:
+      chorus-state:       # external — audit log, raw store, op logs ($CHORUS_HOME)
 ```
 
-`docker compose down -v` in the chorus repo must always be safe — chorus's
-compose declares no application-state volumes, so the worst case is a fast
-restart. Persistent data lives exclusively in the `data-plane/` project.
+`docker compose down -v` in the chorus repo must always be safe — graph
+data lives in `data-plane/`, and chorus's one volume (`chorus-state`) is
+external, so compose never removes it. The worst case is a fast restart.
 
-A short Makefile (or shell wrapper) in the chorus repo brings the projects
-up in dependency order: data-plane first (Neo4j must be healthy), then the
-chorus app. Inference is assumed to be already running and is not chorus's
-responsibility to manage.
+`make bootstrap` brings the app up in dependency order: create the
+networks and the `chorus-state` volume, wait for data-plane health
+(`scripts/check_dataplane_health.sh`), then `up`. Inference is assumed
+to be already running and is not chorus's responsibility to manage.
 
 ## Airgapped operation
 
@@ -263,7 +282,7 @@ Nodes:
   (:Platform       {name})                     # network name
   (:Group          {id, name, platform})       # posting groups and chat groups
   (:Attachment     {filename, kind})           # future: audio/video processing
-  (:Alias          {surface_form})             # entity resolution history
+  (:Alias          {surface_form, norm_key})   # entity resolution history
 
 Edges:
   (Author)-[:AUTHORED]->(Post)
@@ -293,7 +312,9 @@ Edges:
   the narrowest applicable label.
 - **Aliases are nodes**, not properties on Entity. Resolution history stays
   queryable and reversible; bad merges can be undone without losing the
-  original surface form.
+  original surface form. Resolution stamps a normalized `norm_key`
+  (trim + casefold) on resolved aliases so case variants cluster durably
+  across runs (ADR 0012, migration 004).
 - **`MENTIONS` targets the `:Alias` surface form, not `:Entity`.** Extraction
   writes `(:Post)-[:MENTIONS]->(:Alias {surface_form})`; resolution later adds
   `(:Alias)-[:RESOLVED_TO]->(:Entity)`. "A post mentions an entity" is therefore
@@ -301,8 +322,8 @@ Edges:
   `coalesce(entity, alias)` rule (entity when resolved, else the surface form).
   The edge carries provenance (span offsets, model version, confidence) so
   re-extraction with a newer model is auditable.
-- **`retention_until` on Post** drives nightly cleanup. Cascade behavior is
-  defined explicitly — see `docs/retention.md` (to be written).
+- **`retention_until` on Post** drives nightly cleanup (sweeper not yet
+  landed). Cascade behavior is defined explicitly — see `docs/retention.md`.
 - **Embeddings live on nodes** (`Post.embedding`, `Entity.embedding`), indexed
   via Neo4j vector indexes. No separate vector store.
 - **`system_tags` vs hashtags.** `system_tags` is the upstream `Tags` field
@@ -523,18 +544,44 @@ parameterized tools, with the Cypher in version-controlled template files
 under `queries/`. The agent selects tools and parameters; Cypher stays under
 human control and auditable.
 
-Starter tool set:
+Implemented tool set (self-registered in `chorus/tools/`, served at
+`/tools`, callable by the agent):
 
-- `semantic_search(query, k, filters)` — vector index on `Post.embedding`
 - `posts_mentioning(entity, time_range)` — graph filter
-- `authors_connected_by_topic(seed_author, min_overlap, max_hops)`
-- `topic_co_occurrence(entity, hops)`
+- `authors_mentioning(entity, time_range)` — entity → author leaderboard
 - `author_activity_summary(author, time_range)`
-- `network_around(entity, depth)` — for visualization
+- `topic_co_occurrence(entity, hops)`
+- `authors_connected_by_topic(seed_author, min_overlap, max_hops)`
+- `network_around(entity, depth, limit)` — entity neighborhood, for
+  visualization
+- `social_network_around(author, depth, limit)` — author ego network over
+  `:FOLLOWS` / `:FRIENDS_WITH`, for visualization
 
-`escape_hatch_cypher(query)` exists for power users but is behind a permission
-flag and **not** exposed in the default UI. Calls are logged with full Cypher
-text.
+Planned: `semantic_search(query, k, filters)` (vector index on
+`Post.embedding`), and `escape_hatch_cypher(query)` for power users —
+behind a permission flag, **not** exposed in the default UI, calls
+logged with full Cypher text.
+
+### Adding a graph tool
+
+A new tool touches six files; registration alone surfaces it to both the
+REST `/tools` surface and the NL agent (each iterates the `TOOLS`
+registry):
+
+1. `chorus/queries/<tool>.cypher` — the query (never inline in Python)
+2. `chorus/tools/<tool>.py` — Pydantic in/out models + `@register_tool`
+   + `@audited`. The function's first docstring line becomes the
+   agent-facing description (enforced by `tests/tools/test_registry.py`);
+   audit metadata flows via `audit_entities()` / `audit_result_count()`
+   on the output model — keep audit-only data on a `PrivateAttr`.
+3. `chorus/tools/__init__.py` — import the module so it self-registers
+4. `tests/conftest.py` — add the module to `_CHORUS_ENV_MODULES`; easy
+   to miss, and without it the tool silently drops out of the registry
+   after the per-test module reload
+5. `chorus/ui/pages/NN_<tool>.py` — thin Streamlit form over
+   `ChorusClient.call_tool` (next free `NN`)
+6. `tests/integration/test_<tool>.py` — per-tool tests live in
+   `tests/integration/` (`tests/tools/` holds only the registry test)
 
 ## Ingestion pipeline
 
@@ -579,10 +626,14 @@ alongside at repo root.
 chorus/                      # top-level repo
   chorus/                    # the importable package
     __init__.py
+    agent/
+      loop.py                # NL agent: OpenAI tool-calling loop over TOOLS (ADR 0009)
+      openai_tools.py        # TOOLS registry → OpenAI tool schemas
+      prompts.py
     api/
       main.py                # FastAPI entrypoint (lifespan: logger → driver → migrations → audit)
       auth/principal.py      # trusted-header principal seam (OIDC swap-in)
-      routers/               # health.py, tools.py
+      routers/               # health.py, tools.py, agent.py, ingestion.py
     audit/
       logger.py              # §76 BDSG audit log (SQLite, append-only, trigger-enforced)
       schema.sql
@@ -601,6 +652,8 @@ chorus/                      # top-level repo
       extraction.py          # ner_client.extract_entities → :MENTIONS with provenance
       resolution.py          # alias / embed-cluster / LLM tiebreak
       raw_store.py           # separate SQLite, not the audit DB
+      jobs.py                # background job registry for the ingestion UI (ADR 0014)
+      cli.py                 # python -m chorus.ingestion.cli {run,resolve}
     migrations/
       runner.py              # idempotent applier, tracked via (:_Migration {version})
       cli.py                 # python -m chorus.migrations.cli {apply,status}
@@ -616,21 +669,25 @@ chorus/                      # top-level repo
     ui/
       streamlit_app.py
       client.py              # thin httpx wrapper over the FastAPI surface
-      pages/                 # one file per UI screen
+      network_dot.py / social_network_dot.py    # DOT builders for the *_around pages
+      pages/                 # one numbered file per UI screen
     utils/
       env_cfg.py             # every env var loader as a frozen dataclass
       logger_cfg.py          # loguru sinks (stderr + rotating file)
-  tests/                     # mirrors chorus/ subpackages
+      ui_strings.py          # localized UI captions (ADR 0013)
+  tests/                     # unit dirs mirror chorus/; per-tool tests in tests/integration/
   docker/
     Dockerfile.backend / Dockerfile.frontend
-    compose.yaml             # app services only — NO persistent volumes
+    compose.yaml             # app services only — the lone volume (chorus-state) is external
+    compose.override.yaml    # dev overlay: publishes backend/frontend host ports
   docs/
     architecture.md / retention.md / compliance.md / airgap.md
     decisions/               # ADRs, one file per significant decision
-  Makefile                   # network / build / up / stop / bundle / migrate / bootstrap
-  pyproject.toml + uv.lock
+  scripts/                   # bundle_images.sh, check_dataplane_health.sh
+  Makefile                   # network / volumes / build / up / bundle / migrate / ingest / resolve / bootstrap
+  pyproject.toml + uv.lock + pytest.ini
   .pre-commit-config.yaml
-  .github/workflows/ci.yml
+  .github/workflows/ci.yml   # delegates to the shared nos-tromo python-app-ci workflow
 ```
 
 ### Rules of thumb
@@ -648,10 +705,15 @@ chorus/                      # top-level repo
 - **Package management**: `uv`. Used for development environments, lockfile
   generation, and Docker builds. `pyproject.toml` + `uv.lock` are the
   source of truth — no hand-edited `requirements.txt` checked in.
-- **Tests**: `pytest`. Neo4j-dependent tests run against an ephemeral
-  instance (test compose profile or testcontainers — pick during
-  scaffolding). Unit tests stub the inference provider (covering chat,
-  embed, NER); only integration tests touch real services.
+- **Tests**: `pytest`. Neo4j-dependent tests live in `tests/integration/`
+  and run against an ephemeral `neo4j:5.26.26-community` testcontainer
+  (session-scoped; Docker required). Unit tests stub the inference
+  provider via the `fake_inference` fixture (chat, embed, rerank, NER).
+  Several chorus modules snapshot env vars at import time, so
+  `tests/conftest.py` reloads the modules in `_CHORUS_ENV_MODULES` per
+  test — env-snapshotting or self-registering modules must be on that
+  list, and env-free ones (e.g. `ingestion.jobs`) must stay off it, or
+  class identities duplicate and `except`/`isinstance` checks break.
 - **Logging**: `loguru`, same configuration pattern as docint —
   structured output, JSON in production, human-readable in dev.
   Operational logging and the §76 BDSG audit logger are separate
@@ -662,11 +724,13 @@ chorus/                      # top-level repo
   `black`).
 - **Pre-commit**: `pre-commit` runs ruff and mypy on changed files
   before commit. Full pytest runs in CI, not in the hook.
-- **CI**: GitHub Actions, matching docint conventions. Pipeline:
-  ruff → mypy → pytest → build images → produce airgap delivery bundle
-  (image tarballs). No CI-driven deploy in v1;
-  deploys are manual on the airgapped side via the data-plane and chorus
-  compose projects.
+- **CI**: GitHub Actions. `.github/workflows/ci.yml` delegates to the
+  shared `nos-tromo/.github` python-app-ci workflow (pinned tag):
+  ruff → mypy → pytest across 3.11/3.12/3.13 (`uv sync --frozen`) →
+  Docker build. The airgap delivery bundle is `make bundle` (versioned
+  image tarballs via `scripts/bundle_images.sh`). No CI-driven deploy in
+  v1; deploys are manual on the airgapped side via the data-plane and
+  chorus compose projects.
 
 ## Inference provider abstraction
 
@@ -729,7 +793,7 @@ Art. 9 categories. This shapes several defaults:
 - **DSFA is required**, scoped specifically to social network analysis for
   the defined organizational purpose. Narrow scope > flexible platform.
 
-Detailed compliance design lives in `docs/compliance.md` (to be written).
+Detailed compliance design lives in `docs/compliance.md`.
 
 ## Relationship to docint
 
