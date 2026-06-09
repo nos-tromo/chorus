@@ -9,7 +9,7 @@
 services:
   backend:
     ports:
-      - "8000:8000"
+      - "${CHORUS_BACKEND_HOST_PORT:-8000}:8000"
     volumes:
       # Dev drop point for upstream CSV dumps. The container reads
       # CHORUS_HOME/ingest (=/var/lib/chorus/ingest), which this mount
@@ -20,4 +20,4 @@ services:
       - ${INGEST_HOST_DIR:-${HOME}/chorus/ingest}:/var/lib/chorus/ingest:ro
   frontend:
     ports:
-      - "${CHORUS_HOST_PORT:-8501}:8501"
+      - "${CHORUS_FRONTEND_HOST_PORT:-8501}:8501"
