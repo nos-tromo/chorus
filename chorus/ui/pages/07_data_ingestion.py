@@ -9,7 +9,6 @@ it is off. Ingest and resolve run as background jobs that this page polls.
 
 from __future__ import annotations
 
-import os
 import time
 
 import httpx
@@ -30,10 +29,7 @@ def _client() -> ChorusClient:
         both pulled from the environment with development defaults
         (``http://localhost:8000`` and ``"dev"``).
     """
-    return ChorusClient(
-        base_url=os.environ.get("CHORUS_API_URL", "http://localhost:8000"),
-        identity=os.environ.get("CHORUS_UI_IDENTITY", "dev"),
-    )
+    return ChorusClient.from_env()
 
 
 def _detail(exc: Exception) -> str:

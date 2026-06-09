@@ -399,6 +399,21 @@ class IngestionUIConfig:
 
 
 @dataclass(frozen=True)
+class UIConfig:
+    """Streamlit UI client configuration.
+
+    Attributes:
+        api_url: Base URL of the FastAPI service the UI talks to.
+        identity: Development identity sent as the trusted principal header.
+        timeout_s: Default per-request HTTP timeout for UI-originated calls.
+    """
+
+    api_url: str
+    identity: str
+    timeout_s: float
+
+
+@dataclass(frozen=True)
 class PathConfig:
     """Filesystem paths used by the running app.
 
@@ -638,6 +653,23 @@ def load_ingestion_ui_env() -> IngestionUIConfig:
         A populated :class:`IngestionUIConfig`.
     """
     return IngestionUIConfig(enabled=_env_bool("INGESTION_UI_ENABLED", False))
+
+
+def load_ui_env() -> UIConfig:
+    """Load Streamlit UI client settings from the environment.
+
+    ``CHORUS_API_URL`` selects the FastAPI base URL,
+    ``CHORUS_UI_IDENTITY`` sets the trusted-header dev identity, and
+    ``CHORUS_UI_TIMEOUT_S`` overrides the default per-request timeout.
+
+    Returns:
+        A populated :class:`UIConfig`.
+    """
+    return UIConfig(
+        api_url=_env("CHORUS_API_URL", "http://localhost:8000") or "http://localhost:8000",
+        identity=_env("CHORUS_UI_IDENTITY", "dev") or "dev",
+        timeout_s=_env_float("CHORUS_UI_TIMEOUT_S", 30.0),
+    )
 
 
 def load_path_env() -> PathConfig:
