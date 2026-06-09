@@ -15,7 +15,7 @@ links — fetched only on user click, never automatically.
 **Graph rendering needs no `graphviz` binary and makes no network call**
 (verified 2026-06-05, Streamlit 1.58.0, for the `network_around` page). The
 render path is `chorus/ui/network_dot.py:to_dot` → `st.graphviz_chart(<dot string>)`
-in `chorus/ui/pages/06_network_around.py`. chorus builds the DOT string by hand
+in `chorus/ui/pages/07_network_around.py`. chorus builds the DOT string by hand
 rather than passing a `graphviz.Digraph` object, which keeps the whole path off
 the Python `graphviz` package: it is **not** a dependency, and there is no system
 `dot` binary in the image. Streamlit's `graphviz_chart` marshals a `str` input

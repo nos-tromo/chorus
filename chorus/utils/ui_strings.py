@@ -119,7 +119,7 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
         "social.empty": "no network — the author matched nothing",
         "social.counts": "{n} author(s); {edges} tie(s): {follows} follows, {friends} friends",
         "social.capped": "Capped view — raise the limits to see more of the network.",
-        # data ingestion (07_data_ingestion.py)
+        # data ingestion (01_data_ingestion.py)
         "ingest.title": "Data ingestion",
         "ingest.caption": (
             "Upload table exports and run the pipeline end-to-end: migrate, ingest, resolve. "
@@ -266,7 +266,7 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
         "social.empty": "kein Netzwerk — der Autor ergab keine Treffer",
         "social.counts": "{n} Autor(en); {edges} Verbindung(en): {follows} Follows, {friends} Freundschaften",
         "social.capped": "Begrenzte Ansicht — erhöhe die Limits, um mehr des Netzwerks zu sehen.",
-        # data ingestion (07_data_ingestion.py)
+        # data ingestion (01_data_ingestion.py)
         "ingest.title": "Datenimport",
         "ingest.caption": (
             "Tabellen-Exporte hochladen und die Pipeline durchgängig ausführen: migrieren, "

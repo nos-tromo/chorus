@@ -38,7 +38,7 @@ unchanged for bulk/server-side loads.
    (`dependencies=[resolve_principal, require_ingestion_ui_enabled]` → 401 then
    403) for every action/data route, and an **ungated** `status_router` holding
    only `GET /ingestion/feature`, so the UI can distinguish "disabled" from
-   "unreachable". The Streamlit page (`pages/07_data_ingestion.py`) queries
+   "unreachable". The Streamlit page (`pages/01_data_ingestion.py`) queries
    `/feature` on load and self-renders a disabled notice when off.
 
 2. **Upload → per-request staging → existing pipeline.** `POST /ingestion/ingest`
