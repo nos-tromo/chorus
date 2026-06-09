@@ -29,9 +29,49 @@ import csv
 from collections.abc import Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from loguru import logger
+
+#: The five upstream tables chorus ingests, in stage order. Single source of
+#: truth for table names; reused by :func:`table_for_filename` and the
+#: frontend ingestion endpoint's upload validation (ADR 0014).
+TABLES: Final[tuple[str, ...]] = ("postings", "comments", "messages", "profiles", "connections")
+
+_CSV_SUFFIX: Final = ".csv"
+
+
+def table_for_filename(filename: str) -> str | None:
+    """Return the upstream table a filename belongs to, or ``None``.
+
+    Mirrors the recognition rule in
+    :meth:`FileUpstreamAdapter._table_paths`: a file belongs to table ``t``
+    when its basename is exactly ``"<t>.csv"`` (legacy single-file export) or
+    ends with ``"_<t>.csv"`` (segmented export, e.g.
+    ``"2026-05_connections.csv"``). Matching is case-sensitive, matching the
+    adapter's ``glob`` on case-sensitive filesystems (the production image is
+    Linux). Filenames carrying a path separator or ``".."`` are rejected.
+
+    Keep this in lockstep with ``_table_paths`` — the two are independent
+    implementations of one rule (string match here, directory glob there); the
+    coupling is recorded in ADR 0014.
+
+    Args:
+        filename: The uploaded file's basename (or any candidate name).
+
+    Returns:
+        The matching table name from :data:`TABLES`, or ``None`` when the
+        name is one the adapter would not pick up.
+    """
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return None
+    if not filename.endswith(_CSV_SUFFIX):
+        return None
+    stem = filename[: -len(_CSV_SUFFIX)]
+    for table in TABLES:
+        if stem == table or stem.endswith(f"_{table}"):
+            return table
+    return None
 
 
 class FileUpstreamAdapter:

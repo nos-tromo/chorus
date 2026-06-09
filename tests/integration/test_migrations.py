@@ -17,6 +17,30 @@ def test_apply_is_idempotent(migrated_driver: Driver) -> None:
     assert second == []
 
 
+def test_pending_versions_lists_all_discovered_on_fresh_db(driver: Driver) -> None:
+    """On a fresh database every discovered migration is pending, in order.
+
+    Args:
+        driver: Driver against a clean, un-migrated database.
+    """
+    from chorus.migrations.runner import _discover, pending_versions
+
+    expected = [version for version, _ in _discover()]
+    assert expected, "expected at least one migration file to be discovered"
+    assert pending_versions(driver) == expected
+
+
+def test_pending_versions_empty_after_apply(migrated_driver: Driver) -> None:
+    """Once every migration is applied, nothing is pending.
+
+    Args:
+        migrated_driver: Driver against an already-migrated database.
+    """
+    from chorus.migrations.runner import pending_versions
+
+    assert pending_versions(migrated_driver) == []
+
+
 def test_constraints_present(migrated_driver: Driver) -> None:
     """Every uniqueness constraint the data model relies on exists.
 

@@ -34,6 +34,8 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
         "landing.backend_health": "backend health",
         "landing.registered_tools": "registered tools",
         "landing.pick_tool": "Pick a tool from the sidebar (left) to explore the graph.",
+        "landing.ingestion_on": "Data ingestion is enabled — see the Data ingestion page in the sidebar.",
+        "landing.ingestion_off": "Data ingestion is disabled.",
         # agent (00_agent.py)
         "agent.title": "chorus agent",
         "agent.caption": (
@@ -101,6 +103,44 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
         "network.empty": "no network — the entity matched nothing",
         "network.counts": "{n} node(s): {authors} author(s), {topics} topic(s); {edges} edge(s)",
         "network.capped": "Capped view — raise the author/topic limits to see more of the network.",
+        # data ingestion (07_data_ingestion.py)
+        "ingest.title": "Data ingestion",
+        "ingest.caption": (
+            "Upload table exports and run the pipeline end-to-end: migrate, ingest, resolve. "
+            "Large bulk loads still belong on the server via `make ingest`."
+        ),
+        "ingest.disabled": (
+            "Data ingestion via the UI is disabled. Set INGESTION_UI_ENABLED=true on the backend to enable it."
+        ),
+        "ingest.migrations.header": "Schema migrations",
+        "ingest.migrations.pending": "Pending migrations: {versions}",
+        "ingest.migrations.apply": "Apply migrations",
+        "ingest.migrations.applying": "Applying migrations…",
+        "ingest.migrations.applied": "Applied: {versions}",
+        "ingest.migrations.uptodate": "Schema is up to date.",
+        "ingest.upload.header": "Upload & ingest",
+        "ingest.upload.help": (
+            "Filenames must match a known table: postings.csv, comments.csv, messages.csv, "
+            "profiles.csv, connections.csv (or segmented like 2026-05_postings.csv)."
+        ),
+        "ingest.upload.label": "CSV table exports",
+        "ingest.upload.since": "Only rows newer than (ISO timestamp, optional)",
+        "ingest.upload.then_resolve": "Run resolution after ingestion",
+        "ingest.upload.start": "Start ingestion",
+        "ingest.job.running": "Ingestion running… this page refreshes automatically.",
+        "ingest.job.done": "Ingestion complete.",
+        "ingest.job.failed": "Ingestion failed: {error}",
+        "ingest.counts.header": "Rows ingested",
+        "ingest.counts.dropped": "Dropped malformed rows: {detail}",
+        "ingest.counts.filtered": "Filtered rows (no in-batch parent / no edge signal): {detail}",
+        "ingest.counts.skipped": "Skipped stages: {detail}",
+        "ingest.resolve.header": "Entity resolution",
+        "ingest.resolve.start": "Run resolution",
+        "ingest.resolve.running": "Resolution running… this page refreshes automatically.",
+        "ingest.resolve.done": "Resolution complete.",
+        "ingest.resolve.failed": "Resolution failed: {error}",
+        "ingest.resolve.summary": "Resolution summary",
+        "ingest.error.request": "Request rejected: {detail}",
     },
     "de": {
         # common (shared across pages)
@@ -121,6 +161,8 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
         "landing.backend_health": "Backend-Status",
         "landing.registered_tools": "Registrierte Werkzeuge",
         "landing.pick_tool": "Wähle links in der Seitenleiste ein Werkzeug, um den Graphen zu erkunden.",
+        "landing.ingestion_on": "Datenimport ist aktiviert — siehe die Seite „Datenimport“ in der Seitenleiste.",
+        "landing.ingestion_off": "Datenimport ist deaktiviert.",
         # agent (00_agent.py)
         "agent.title": "chorus Agent",
         "agent.caption": (
@@ -191,6 +233,47 @@ UI_STRINGS: Final[dict[str, dict[str, str]]] = {
         "network.empty": "kein Netzwerk — die Entität ergab keine Treffer",
         "network.counts": "{n} Knoten: {authors} Autor(en), {topics} Thema/Themen; {edges} Kante(n)",
         "network.capped": "Begrenzte Ansicht — erhöhe die Autoren-/Themen-Limits, um mehr des Netzwerks zu sehen.",
+        # data ingestion (07_data_ingestion.py)
+        "ingest.title": "Datenimport",
+        "ingest.caption": (
+            "Tabellen-Exporte hochladen und die Pipeline durchgängig ausführen: migrieren, "
+            "importieren, auflösen. Große Massenimporte gehören weiterhin per `make ingest` auf den Server."
+        ),
+        "ingest.disabled": (
+            "Datenimport über die Oberfläche ist deaktiviert. "
+            "Setze INGESTION_UI_ENABLED=true im Backend, um ihn zu aktivieren."
+        ),
+        "ingest.migrations.header": "Schema-Migrationen",
+        "ingest.migrations.pending": "Ausstehende Migrationen: {versions}",
+        "ingest.migrations.apply": "Migrationen anwenden",
+        "ingest.migrations.applying": "Migrationen werden angewendet…",
+        "ingest.migrations.applied": "Angewendet: {versions}",
+        "ingest.migrations.uptodate": "Schema ist aktuell.",
+        "ingest.upload.header": "Hochladen & importieren",
+        "ingest.upload.help": (
+            "Dateinamen müssen einer bekannten Tabelle entsprechen: postings.csv, comments.csv, "
+            "messages.csv, profiles.csv, connections.csv (oder segmentiert wie 2026-05_postings.csv)."
+        ),
+        "ingest.upload.label": "CSV-Tabellen-Exporte",
+        "ingest.upload.since": "Nur Zeilen neuer als (ISO-Zeitstempel, optional)",
+        "ingest.upload.then_resolve": "Auflösung nach dem Import ausführen",
+        "ingest.upload.start": "Import starten",
+        "ingest.job.running": "Import läuft… diese Seite aktualisiert sich automatisch.",
+        "ingest.job.done": "Import abgeschlossen.",
+        "ingest.job.failed": "Import fehlgeschlagen: {error}",
+        "ingest.counts.header": "Importierte Zeilen",
+        "ingest.counts.dropped": "Verworfene fehlerhafte Zeilen: {detail}",
+        "ingest.counts.filtered": (
+            "Gefilterte Zeilen (kein übergeordneter Beitrag im Batch / kein Kantensignal): {detail}"
+        ),
+        "ingest.counts.skipped": "Übersprungene Stufen: {detail}",
+        "ingest.resolve.header": "Entitätsauflösung",
+        "ingest.resolve.start": "Auflösung ausführen",
+        "ingest.resolve.running": "Auflösung läuft… diese Seite aktualisiert sich automatisch.",
+        "ingest.resolve.done": "Auflösung abgeschlossen.",
+        "ingest.resolve.failed": "Auflösung fehlgeschlagen: {error}",
+        "ingest.resolve.summary": "Zusammenfassung der Auflösung",
+        "ingest.error.request": "Anfrage abgelehnt: {detail}",
     },
 }
 

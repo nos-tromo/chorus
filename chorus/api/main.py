@@ -21,6 +21,7 @@ from loguru import logger
 
 from chorus.audit.logger import AuditLogger
 from chorus.db.neo4j import close_driver, get_driver
+from chorus.ingestion.jobs import JobRegistry
 from chorus.migrations.runner import apply_all
 from chorus.utils.env_cfg import load_audit_env
 from chorus.utils.logger_cfg import init_logger
@@ -57,11 +58,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.driver = driver
     app.state.audit = audit
+    app.state.jobs = JobRegistry()
     logger.info("chorus ready")
     try:
         yield
     finally:
         logger.info("chorus shutting down")
+        app.state.jobs.shutdown()
         close_driver()
 
 
@@ -70,8 +73,11 @@ app = FastAPI(title="chorus", lifespan=lifespan)
 # Routers — imported here so the app object owns route registration order.
 from chorus.api.routers import agent as _agent_router  # noqa: E402
 from chorus.api.routers import health as _health_router  # noqa: E402
+from chorus.api.routers import ingestion as _ingestion_router  # noqa: E402
 from chorus.api.routers import tools as _tools_router  # noqa: E402
 
 app.include_router(_agent_router.router)
 app.include_router(_health_router.router)
+app.include_router(_ingestion_router.status_router)
+app.include_router(_ingestion_router.router)
 app.include_router(_tools_router.router)

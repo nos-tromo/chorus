@@ -30,3 +30,15 @@ never fetched.
 Reproduce: render any `network_around` result through `st.graphviz_chart` with a
 headless Streamlit server and confirm the browser issues zero non-localhost
 requests while the SVG draws.
+
+## python-multipart
+
+**Pure-Python form parser, no network, no telemetry** (`python-multipart`
+0.0.29, added 2026-06-07 for ADR 0014). FastAPI requires it to parse
+`multipart/form-data`, which the frontend ingestion endpoint
+(`POST /ingestion/ingest`, `chorus/api/routers/ingestion.py`) uses to receive
+uploaded CSV files. It is a parsing library only — it opens no sockets, calls no
+home, ships no data files, and has no system dependencies, so it is offline-ready
+the moment it is installed into the image's virtualenv by `uv sync --locked`.
+The uploaded bytes are streamed to a staging directory under `CHORUS_HOME` and
+fed to the existing file adapter; nothing leaves the host.

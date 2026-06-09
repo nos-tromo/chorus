@@ -138,6 +138,21 @@ def applied_versions(driver: Driver) -> set[str]:
         return {row["v"] for row in result}
 
 
+def pending_versions(driver: Driver) -> list[str]:
+    """Return discovered migrations not yet applied, in apply order.
+
+    Args:
+        driver: Open Neo4j driver to query for applied versions.
+
+    Returns:
+        Versions present on disk (``NNN_*.cypher``) but absent from the
+        ``:_Migration`` nodes, in the same lexicographic order
+        :func:`apply_all` would apply them. Empty when up to date.
+    """
+    applied = applied_versions(driver)
+    return [version for version, _ in _discover() if version not in applied]
+
+
 def apply_all(driver: Driver, *, only: Iterable[str] | None = None) -> list[str]:
     """Apply pending migrations and record them on ``:_Migration`` nodes.
 
