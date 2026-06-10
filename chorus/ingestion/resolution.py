@@ -618,11 +618,7 @@ def resolve_all(
             norm_keys = [normalize_surface(sf, cfg) for sf, _ in page]
 
             # Batch cross-run lookup for keys not already in run_cache (one session).
-            unknown = list({
-                (nk, lbl)
-                for nk, (_, lbl) in zip(norm_keys, page)
-                if (nk, lbl) not in run_cache
-            })
+            unknown = list({(nk, lbl) for nk, (_, lbl) in zip(norm_keys, page) if (nk, lbl) not in run_cache})
             cross_run = _batch_lookup_norm_keys(driver, unknown)
 
             # Collect run-cache and cross-run writes; flush in one UNWIND session.
@@ -635,8 +631,12 @@ def resolve_all(
                     entity_id = run_cache[cache_key]
                     deferred.append(
                         dict(
-                            surface=surface, entity_id=entity_id, method="run_cache",
-                            score=None, embed_model=embed_model, norm_key=norm_key,
+                            surface=surface,
+                            entity_id=entity_id,
+                            method="run_cache",
+                            score=None,
+                            embed_model=embed_model,
+                            norm_key=norm_key,
                         )
                     )
                     counts["attached_cache"] += 1
@@ -646,8 +646,12 @@ def resolve_all(
                     run_cache[cache_key] = entity_id
                     deferred.append(
                         dict(
-                            surface=surface, entity_id=entity_id, method="cross_run",
-                            score=None, embed_model=embed_model, norm_key=norm_key,
+                            surface=surface,
+                            entity_id=entity_id,
+                            method="cross_run",
+                            score=None,
+                            embed_model=embed_model,
+                            norm_key=norm_key,
                         )
                     )
                     counts["attached_cross_run"] += 1
@@ -656,29 +660,44 @@ def resolve_all(
                     # Full vector resolution — norm_key confirmed absent above,
                     # so lookup_resolved_norm_key is skipped for this path.
                     candidates = cluster_candidates(
-                        driver, vec, cfg.embed_cluster_threshold,
-                        k=cfg.vector_k, entity_type=label,
+                        driver,
+                        vec,
+                        cfg.embed_cluster_threshold,
+                        k=cfg.vector_k,
+                        entity_type=label,
                     )
                     if not candidates:
                         entity_id = mint_entity(
-                            driver, surface, vec,
-                            entity_type=label, embed_model=embed_model, norm_key=norm_key,
+                            driver,
+                            surface,
+                            vec,
+                            entity_type=label,
+                            embed_model=embed_model,
+                            norm_key=norm_key,
                         )
                         method: str = "minted"
                     elif len(candidates) == 1:
                         entity_id = candidates[0]["id"]
                         method = "vector_single"
                         _write_resolved_to(
-                            driver, surface, entity_id,
-                            method=method, score=candidates[0]["score"],
-                            embed_model=embed_model, norm_key=norm_key,
+                            driver,
+                            surface,
+                            entity_id,
+                            method=method,
+                            score=candidates[0]["score"],
+                            embed_model=embed_model,
+                            norm_key=norm_key,
                         )
                     elif cfg.llm_tiebreak_enabled:
                         chosen = llm_tiebreaker(surface, candidates)
                         if chosen is None:
                             entity_id = mint_entity(
-                                driver, surface, vec,
-                                entity_type=label, embed_model=embed_model, norm_key=norm_key,
+                                driver,
+                                surface,
+                                vec,
+                                entity_type=label,
+                                embed_model=embed_model,
+                                norm_key=norm_key,
                             )
                             method = "minted"
                         else:
@@ -686,17 +705,25 @@ def resolve_all(
                             method = "vector_llm"
                             score = next((c["score"] for c in candidates if c["id"] == chosen), None)
                             _write_resolved_to(
-                                driver, surface, entity_id,
-                                method=method, score=score,
-                                embed_model=embed_model, norm_key=norm_key,
+                                driver,
+                                surface,
+                                entity_id,
+                                method=method,
+                                score=score,
+                                embed_model=embed_model,
+                                norm_key=norm_key,
                             )
                     else:
                         entity_id = candidates[0]["id"]
                         method = "vector_topk"
                         _write_resolved_to(
-                            driver, surface, entity_id,
-                            method=method, score=candidates[0]["score"],
-                            embed_model=embed_model, norm_key=norm_key,
+                            driver,
+                            surface,
+                            entity_id,
+                            method=method,
+                            score=candidates[0]["score"],
+                            embed_model=embed_model,
+                            norm_key=norm_key,
                         )
                     run_cache[cache_key] = entity_id
                     counts[_METHOD_FIELD[method]] += 1
