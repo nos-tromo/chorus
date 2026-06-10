@@ -556,7 +556,7 @@ def resolve_all(
     materialising the full alias set and its embedding vectors in memory at
     once. Within each page, cross-run norm-key lookups are batched into one
     session and run-cache / cross-run writes are UNWIND-batched into one
-    session, reducing per-alias round-trips from 2–3 down to O(1) amortised.
+    session, reducing per-alias round-trips from 2-3 down to O(1) amortised.
 
     The whole run is recorded as one §76 audit row (``tool_name="resolve_all"``)
     via ``audit``; an empty run writes no row.
@@ -618,13 +618,15 @@ def resolve_all(
             norm_keys = [normalize_surface(sf, cfg) for sf, _ in page]
 
             # Batch cross-run lookup for keys not already in run_cache (one session).
-            unknown = list({(nk, lbl) for nk, (_, lbl) in zip(norm_keys, page) if (nk, lbl) not in run_cache})
+            unknown = list(
+                {(nk, lbl) for nk, (_, lbl) in zip(norm_keys, page, strict=True) if (nk, lbl) not in run_cache}
+            )
             cross_run = _batch_lookup_norm_keys(driver, unknown)
 
             # Collect run-cache and cross-run writes; flush in one UNWIND session.
             deferred: list[dict[str, Any]] = []
 
-            for (surface, label), vec, norm_key in zip(page, vectors, norm_keys):
+            for (surface, label), vec, norm_key in zip(page, vectors, norm_keys, strict=True):
                 cache_key = (norm_key, label)
 
                 if cache_key in run_cache:
