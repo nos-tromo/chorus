@@ -271,6 +271,72 @@ def test_semicolon_delimited_csv_is_parsed_correctly(tmp_path: Path) -> None:
     assert rows[0]["Timestamp"] == "2026-05-01T10:00:00+00:00"
 
 
+def test_quoted_field_with_doubled_quotes_and_newline_is_not_split(tmp_path: Path) -> None:
+    r"""A quoted field that escapes a literal quote as ``""`` stays one row.
+
+    The upstream delivers semicolon-delimited, fully-quoted CSV that escapes a
+    literal ``"`` inside a field by doubling it (``""`` — standard RFC 4180 /
+    Excel), and posts routinely span multiple lines, so ``Text Content`` holds
+    newlines *inside* its quotes. ``csv.Sniffer`` infers ``doublequote`` from
+    only the file's head sample; when the leading rows carry no ``""`` it
+    guesses ``doublequote=False``. A later field that *does* double a quote is
+    then mis-parsed — the first quote of the pair is read as closing the field,
+    the embedded newline becomes a record terminator, and the record shatters
+    into a phantom short row whose missing trailing columns (including the
+    required ``Network``) default to ``None``. The adapter must pin the quoting
+    policy instead of trusting the sniffer's inference.
+
+    This regression reproduces the real shape: enough clean leading rows that
+    the offending row falls *outside* the 8 KiB sniff sample, exactly as on a
+    multi-MB export.
+    """
+    path = tmp_path / "postings.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["UUID", "Text Content", "Timestamp", "Crawled at", "Author ID", "Network"]
+    clean = [
+        {
+            "UUID": f"p-{i}",
+            "Text Content": "a clean single-line post with no embedded quotes at all",
+            "Timestamp": "2026-05-01T10:00:00+00:00",
+            "Crawled at": "2026-05-02T10:00:00+00:00",
+            "Author ID": "a-1",
+            "Network": "instagram",
+        }
+        for i in range(200)
+    ]
+    tricky = {
+        "UUID": "p-tricky",
+        "Text Content": 'He said "hi" to the crowd\nand then quietly left',
+        "Timestamp": "2026-05-01T10:00:00+00:00",
+        "Crawled at": "2026-05-02T10:00:00+00:00",
+        "Author ID": "a-1",
+        "Network": "signal",
+    }
+    # Write the file exactly as the vendor would: ``;`` delimiter, every field
+    # quoted, literal quotes doubled. ``csv.writer`` handles the ``""`` escaping
+    # and keeps the embedded newline inside the quotes.
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";", quotechar='"', quoting=csv.QUOTE_ALL)
+        writer.writerow(fieldnames)
+        for row in [*clean, tricky]:
+            writer.writerow([row[name] for name in fieldnames])
+
+    from chorus.ingestion.upstream import FileUpstreamAdapter
+
+    rows = list(FileUpstreamAdapter(tmp_path).fetch_postings(None))
+
+    # No record was shattered: every row kept its trailing columns, and the
+    # row count matches what we wrote (no phantom fragments inflate it).
+    assert all(r.get("Network") is not None for r in rows)
+    assert len(rows) == len(clean) + 1
+    # The tricky post round-trips intact: the doubled quote collapses back to a
+    # single ``"``, the embedded newline survives, and nothing leaked into UUID.
+    hit = [r for r in rows if r["UUID"] == "p-tricky"]
+    assert len(hit) == 1
+    assert hit[0]["Text Content"] == 'He said "hi" to the crowd\nand then quietly left'
+    assert hit[0]["Network"] == "signal"
+
+
 def test_overflow_columns_are_dropped_not_yielded_under_none_key(
     tmp_path: Path,
 ) -> None:

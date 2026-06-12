@@ -235,11 +235,23 @@ class FileUpstreamAdapter:
             # comma-separated.
             sample = f.read(8192)
             f.seek(0)
+            # Sniff the DELIMITER ONLY, then pin the quoting policy. Quote
+            # handling must not be sniffed: csv.Sniffer infers ``doublequote``
+            # from this head sample, and when the leading rows happen to carry
+            # no doubled-quote escape it guesses ``doublequote=False``. A later
+            # field that *does* escape a literal quote as ``""`` (RFC 4180 /
+            # Excel, which is what the upstream emits) is then mis-parsed: the
+            # first quote of the pair is read as closing the field, an embedded
+            # newline becomes a record terminator, and the multi-line post
+            # shatters into a phantom short row whose missing trailing columns
+            # (e.g. the required ``Network``) default to ``None``. The upstream
+            # is a single, known source that always quotes with ``"`` and
+            # escapes by doubling, so we fix that policy rather than guess it.
             try:
-                dialect: type[csv.Dialect] | csv.Dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+                delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
             except csv.Error:
-                dialect = csv.excel
-            reader = csv.DictReader(f, dialect=dialect)
+                delimiter = ","
+            reader = csv.DictReader(f, delimiter=delimiter, quotechar='"', doublequote=True)
             for row in reader:
                 # csv.DictReader puts fields past the header width under
                 # a None key (default restkey). That trips json.dumps(
