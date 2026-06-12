@@ -90,6 +90,13 @@ def test_extract_entities_maps_gliner_response(
 
     _install_mock_transport(monkeypatch, httpx.MockTransport(_handler))
     monkeypatch.setenv("NER_API_BASE", "http://gliner-ner:8000")
+    # Pin the ner-only (no-auth) shape *explicitly* rather than relying on
+    # NER_API_KEY being unset. env_cfg runs load_dotenv() on its per-test
+    # reload, which refills an absent NER_API_KEY from a developer's real .env
+    # (e.g. NER_API_KEY=$OPENAI_API_KEY). An explicit empty value is present, so
+    # load_dotenv(override=False) leaves it alone and the loader reads it as
+    # no-auth — keeping the test hermetic regardless of the local .env.
+    monkeypatch.setenv("NER_API_KEY", "")
 
     from chorus.inference import ner_client
 
@@ -110,7 +117,7 @@ def test_extract_entities_maps_gliner_response(
         "labels": ["person", "org"],
         "threshold": 0.3,
     }
-    # No NER_API_KEY -> no Bearer header (ner-only deployment shape).
+    # Empty NER_API_KEY -> no Bearer header (ner-only deployment shape).
     assert captured["auth"] is None
 
 
