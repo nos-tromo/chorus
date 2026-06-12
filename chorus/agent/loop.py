@@ -254,7 +254,12 @@ def _tool_message(
 ) -> dict[str, Any]:
     """Build an OpenAI ``tool`` result message linked to a tool-call id."""
     compact = _compact_tool_content(content, result_count=result_count, max_items=max_items, max_chars=max_chars)
-    return {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(compact)}
+    # ``ensure_ascii=False`` keeps non-ASCII (e.g. Arabic entity names) as real
+    # UTF-8 in the tool message rather than ``\uXXXX`` escapes. Otherwise a
+    # weaker chat model copies the escape text verbatim into its answer, which
+    # the UI then renders as literal ``\uXXXX`` instead of the script. The
+    # message is transported as UTF-8 JSON over HTTP, so this is wire-safe.
+    return {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(compact, ensure_ascii=False)}
 
 
 def _compact_tool_content(
