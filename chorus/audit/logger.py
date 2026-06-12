@@ -146,8 +146,11 @@ class AuditLogger:
                     datetime.now(UTC).isoformat(timespec="milliseconds"),
                     r.user,
                     r.tool_name,
-                    json.dumps(r.params, default=str, sort_keys=True),
-                    json.dumps(r.entities_touched),
+                    # ``ensure_ascii=False`` keeps non-ASCII (e.g. Arabic entity
+                    # names) readable in the audit log rather than ``\uXXXX``
+                    # escapes; SQLite stores UTF-8 and ``json.loads`` round-trips.
+                    json.dumps(r.params, default=str, sort_keys=True, ensure_ascii=False),
+                    json.dumps(r.entities_touched, ensure_ascii=False),
                     r.result_count,
                     r.duration_ms,
                     r.status,

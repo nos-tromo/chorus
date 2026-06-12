@@ -88,7 +88,13 @@ class RawStore:
             Number of rows written.
         """
         now = datetime.now(UTC).isoformat(timespec="milliseconds")
-        params = [(kind, row.get("UUID"), json.dumps(row, default=str, sort_keys=True), now) for row in rows]
+        # ``ensure_ascii=False`` stores non-ASCII (e.g. Arabic post text) as
+        # readable UTF-8 in the payload rather than ``\uXXXX`` escapes; SQLite
+        # stores UTF-8 and ``json.loads`` round-trips either way.
+        params = [
+            (kind, row.get("UUID"), json.dumps(row, default=str, sort_keys=True, ensure_ascii=False), now)
+            for row in rows
+        ]
         if not params:
             return 0
         with self._connect() as conn:

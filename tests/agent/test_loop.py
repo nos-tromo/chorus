@@ -312,6 +312,31 @@ def test_compaction_preserves_tool_supplied_meta() -> None:
     assert meta["result_count"] == 3
 
 
+def test_tool_message_keeps_non_ascii_unescaped() -> None:
+    r"""Non-ASCII tool content reaches the model as real UTF-8, not ``\uXXXX``.
+
+    ``json.dumps`` defaults to ``ensure_ascii=True``, which turns an Arabic
+    entity name such as ``محمد`` into ``\uXXXX`` escape text in the message.
+    A weaker chat model copies those escapes verbatim into its prose, so the agent's
+    answer renders literal ``\uXXXX`` instead of Arabic. The serialized tool
+    message must carry the real characters so the model reproduces them, while
+    still round-tripping to the same structure.
+    """
+    from chorus.agent.loop import _tool_message
+
+    name = "محمد"
+    text = "مرحبا بالعالم"
+    tc = _FakeToolCall("c1", "posts_mentioning", '{"entity": "محمد"}')
+    content = {"hits": [{"matched_name": name, "text": text}]}
+
+    message = _tool_message(tc, content)
+
+    assert name in message["content"]
+    assert text in message["content"]
+    assert "\\u" not in message["content"]
+    assert json.loads(message["content"])["hits"][0]["matched_name"] == name
+
+
 def test_context_window_error_is_raised(
     migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
