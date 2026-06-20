@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import '@infra/ui/theme.css';
 @source '../../node_modules/@infra/ui/dist';
+@plugin "@tailwindcss/typography";
 
 :root {
   color-scheme: dark;

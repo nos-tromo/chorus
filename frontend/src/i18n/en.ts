@@ -7,6 +7,8 @@ export const en = {
   'common.from_ts': 'From (ISO timestamp, optional)',
   'common.to_ts': 'To (ISO timestamp, optional)',
   'common.search': 'Search',
+  'common.copy': 'Copy',
+  'common.copied': 'Copied',
   'common.resolution_note':
     'Topics cluster by canonical entity after a resolution pass; on ' +
     'un-resolved data they show as alias surface forms.',

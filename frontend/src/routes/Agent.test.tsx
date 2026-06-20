@@ -69,6 +69,12 @@ const TRUNCATED_RESPONSE: AgentResponse = {
   truncated: true,
 }
 
+const MARKDOWN_RESPONSE: AgentResponse = {
+  answer: '**Berlin** results\n\n| Author | Posts |\n| --- | --- |\n| Alice | 2 |',
+  trace: [],
+  truncated: false,
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe('Agent', () => {
@@ -193,6 +199,65 @@ describe('Agent', () => {
 
     const banner = await screen.findByRole('alert')
     expect(banner.textContent).toMatch(/connection refused/i)
+  })
+
+  it('assistant markdown: bold and GFM table render as HTML elements', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce(MARKDOWN_RESPONSE)
+
+    const { container } = render(<Agent />, { wrapper: makeWrapper() })
+    await screen.findByText('chorus agent')
+
+    const input = screen.getByTestId('agent-input')
+    fireEvent.change(input, { target: { value: 'Who posted about Berlin?' } })
+    fireEvent.submit(input.closest('form')!)
+
+    // Wait for the assistant bubble to appear
+    await screen.findByTestId('assistant-bubble')
+
+    // Bold text rendered as <strong>
+    await waitFor(() => {
+      expect(container.querySelector('strong')).toBeTruthy()
+    })
+    // GFM table rendered as <table>
+    expect(container.querySelector('table')).toBeTruthy()
+  })
+
+  it('user turns are NOT rendered as markdown (plain text)', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce(SIMPLE_RESPONSE)
+
+    render(<Agent />, { wrapper: makeWrapper() })
+    await screen.findByText('chorus agent')
+
+    const input = screen.getByTestId('agent-input')
+    fireEvent.change(input, { target: { value: 'How active is Alice?' } })
+    fireEvent.submit(input.closest('form')!)
+
+    // User bubble appears and is a plain <p>
+    const userBubble = await screen.findByTestId('user-bubble')
+    expect(userBubble.querySelector('p')).toBeTruthy()
+    // No markdown parsing in user bubble
+    expect(userBubble.querySelector('strong')).toBeNull()
+  })
+
+  it('copy button appears on assistant bubble (not on user bubble)', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce(SIMPLE_RESPONSE)
+
+    render(<Agent />, { wrapper: makeWrapper() })
+    await screen.findByText('chorus agent')
+
+    const input = screen.getByTestId('agent-input')
+    fireEvent.change(input, { target: { value: 'How active is Alice?' } })
+    fireEvent.submit(input.closest('form')!)
+
+    await screen.findByTestId('assistant-bubble')
+
+    // Copy button exists inside assistant bubble
+    const assistantBubble = screen.getByTestId('assistant-bubble')
+    expect(assistantBubble.querySelector('button[title="Copy"]')).toBeTruthy()
+
+    // User bubble has no copy button
+    const userBubble = screen.getByTestId('user-bubble')
+    expect(userBubble.querySelector('button')).toBeNull()
   })
 
   it('send button is disabled while pending', async () => {

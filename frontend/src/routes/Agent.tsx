@@ -1,8 +1,11 @@
 import { useState, useRef, type FormEvent, type KeyboardEvent } from 'react'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Banner, Button, Input, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { useAgentQuery } from '../hooks/useAgentQuery'
 import { ToolTrace } from '../components/ToolTrace'
+import { CopyButton } from '../components/CopyButton'
 import type { AgentMessage, AgentTraceEntry } from '../api/types'
 
 // ── Local message type (adds optional trace for assistant turns) ──────────────
@@ -116,11 +119,25 @@ export function Agent() {
                 className={
                   turn.role === 'user'
                     ? 'max-w-prose rounded-lg bg-accent text-accent-foreground px-4 py-2 text-sm'
-                    : 'max-w-prose rounded-lg border border-border bg-card px-4 py-2 text-sm space-y-2'
+                    : 'relative group max-w-prose rounded-lg border border-border bg-card px-4 py-2 text-sm space-y-2'
                 }
                 data-testid={turn.role === 'user' ? 'user-bubble' : 'assistant-bubble'}
               >
-                <p className="whitespace-pre-wrap">{turn.content}</p>
+                {turn.role === 'user' ? (
+                  <p className="whitespace-pre-wrap">{turn.content}</p>
+                ) : (
+                  <>
+                    <div className="prose prose-invert prose-sm max-w-none overflow-x-auto prose-pre:bg-muted prose-code:before:content-none prose-code:after:content-none">
+                      <Markdown remarkPlugins={[remarkGfm]}>{turn.content}</Markdown>
+                    </div>
+                    <CopyButton
+                      text={turn.content}
+                      label={t('common.copy')}
+                      copiedLabel={t('common.copied')}
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                    />
+                  </>
+                )}
 
                 {turn.role === 'assistant' && turn.trace && turn.trace.length > 0 && (
                   <ToolTrace trace={turn.trace} />

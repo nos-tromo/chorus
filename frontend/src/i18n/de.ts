@@ -9,6 +9,8 @@ export const de: Strings = {
   'common.from_ts': 'Von (ISO-Zeitstempel, optional)',
   'common.to_ts': 'Bis (ISO-Zeitstempel, optional)',
   'common.search': 'Suchen',
+  'common.copy': 'Kopieren',
+  'common.copied': 'Kopiert',
   'common.resolution_note':
     'Themen werden nach einem Auflösungslauf nach kanonischer Entität ' +
     'gruppiert; auf nicht aufgelösten Daten erscheinen sie als ' +
