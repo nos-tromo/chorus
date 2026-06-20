@@ -34,6 +34,7 @@ export const de: Strings = {
   'agent.thinking': 'Denkt nach…',
   'agent.tool_calls': 'Werkzeugaufrufe ({n})',
   'agent.trace_error': '**{tool}** — Fehler: {error}',
+  'agent.trace_error_label': '— Fehler:',
   'agent.trace_results': ' — {count} Ergebnis(se)',
   'agent.call_failed': 'Agentenaufruf fehlgeschlagen: {error}',
   'agent.no_answer': '(keine Antwort)',
