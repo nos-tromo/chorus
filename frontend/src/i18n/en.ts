@@ -28,7 +28,6 @@ export const en = {
   'agent.chat_input': 'Ask a question about the network…',
   'agent.thinking': 'Thinking…',
   'agent.tool_calls': 'Tool calls ({n})',
-  'agent.trace_error': '**{tool}** — error: {error}',
   'agent.trace_error_label': '— error:',
   'agent.trace_results': ' — {count} result(s)',
   'agent.call_failed': 'agent call failed: {error}',
@@ -37,7 +36,6 @@ export const en = {
     'Stopped at the tool-call limit before reaching a final answer.',
   // posts_mentioning (01)
   'posts.title': 'posts mentioning an entity',
-  'posts.hits': '{n} hit(s)',
   'posts.no_hits': 'no hits',
   // author_activity_summary (02)
   'author_activity.title': 'author activity summary',
@@ -49,8 +47,6 @@ export const en = {
   // topic_co_occurrence (03)
   'topic_cooc.title': 'topic co-occurrence',
   'topic_cooc.seed_input': 'Seed topic (entity or alias)',
-  'topic_cooc.find': 'Find co-occurring topics',
-  'topic_cooc.count': "{n} co-occurring topic(s) with '{seed}'",
   'topic_cooc.none': 'no co-occurring topics',
   // authors_connected_by_topic (04)
   'authors_connected.title': 'authors connected by topic',
@@ -69,7 +65,6 @@ export const en = {
   'authors_mentioning.title': 'authors mentioning an entity',
   'authors_mentioning.caption':
     'Authors ranked by how many of their posts mention the entity.',
-  'authors_mentioning.count': '{n} author(s)',
   'authors_mentioning.none': 'no authors',
   // network_around (06)
   'network.title': 'network around an entity',
@@ -88,6 +83,8 @@ export const en = {
     '{n} node(s): {authors} author(s), {topics} topic(s); {edges} edge(s)',
   'network.capped':
     'Capped view — raise the author/topic limits to see more of the network.',
+  // graph canvas
+  'graph.fit': 'Fit',
   // social_network_around (08)
   'social.title': 'social network around an author',
   'social.caption':

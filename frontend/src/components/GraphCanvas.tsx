@@ -13,6 +13,7 @@
 import { useEffect, useRef } from 'react'
 import cytoscape from 'cytoscape'
 import type { ElementDefinition, LayoutOptions, StylesheetStyle, StylesheetCSS } from 'cytoscape'
+import { useT } from '../config/ConfigContext'
 
 type StylesheetBlock = StylesheetStyle | StylesheetCSS
 
@@ -23,6 +24,7 @@ export interface GraphCanvasProps {
 }
 
 export function GraphCanvas({ elements, stylesheet, layout }: GraphCanvasProps) {
+  const t = useT()
   const containerRef = useRef<HTMLDivElement>(null)
   // Hold the cy instance so the fit button and cleanup can reference it
   const cyRef = useRef<cytoscape.Core | null>(null)
@@ -88,7 +90,7 @@ export function GraphCanvas({ elements, stylesheet, layout }: GraphCanvasProps) 
           onClick={handleFit}
           className="rounded bg-surface px-2 py-1 text-xs font-medium text-foreground shadow hover:bg-muted"
         >
-          Fit
+          {t('graph.fit')}
         </button>
       </div>
     </div>

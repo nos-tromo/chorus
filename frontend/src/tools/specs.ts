@@ -12,10 +12,6 @@ export interface EntityFieldSpec {
   required: true
   /** i18n key for the label; defaults to 'common.entity_input' */
   labelKey?: keyof Strings
-  /** i18n key for the placeholder */
-  placeholderKey?: keyof Strings
-  /** Payload key used when building the POST body */
-  payloadKey?: string
 }
 
 /**
@@ -26,7 +22,6 @@ export interface TextFieldSpec {
   kind: 'text'
   required: true
   labelKey: keyof Strings
-  placeholderKey?: keyof Strings
   /** Payload key used when building the POST body */
   payloadKey: string
 }

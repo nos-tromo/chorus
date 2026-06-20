@@ -33,7 +33,6 @@ export const de: Strings = {
   'agent.chat_input': 'Stelle eine Frage zum Netzwerk…',
   'agent.thinking': 'Denkt nach…',
   'agent.tool_calls': 'Werkzeugaufrufe ({n})',
-  'agent.trace_error': '**{tool}** — Fehler: {error}',
   'agent.trace_error_label': '— Fehler:',
   'agent.trace_results': ' — {count} Ergebnis(se)',
   'agent.call_failed': 'Agentenaufruf fehlgeschlagen: {error}',
@@ -42,7 +41,6 @@ export const de: Strings = {
     'Beim Werkzeugaufruf-Limit gestoppt, bevor eine endgültige Antwort erreicht wurde.',
   // posts_mentioning (01)
   'posts.title': 'Beiträge, die eine Entität erwähnen',
-  'posts.hits': '{n} Treffer',
   'posts.no_hits': 'keine Treffer',
   // author_activity_summary (02)
   'author_activity.title': 'Zusammenfassung der Autorenaktivität',
@@ -54,8 +52,6 @@ export const de: Strings = {
   // topic_co_occurrence (03)
   'topic_cooc.title': 'Themen-Kookkurrenz',
   'topic_cooc.seed_input': 'Ausgangsthema (Entität oder Alias)',
-  'topic_cooc.find': 'Kookkurrierende Themen finden',
-  'topic_cooc.count': '{n} kookkurrierende(s) Thema/Themen mit „{seed}"',
   'topic_cooc.none': 'keine kookkurrierenden Themen',
   // authors_connected_by_topic (04)
   'authors_connected.title': 'Über Themen verbundene Autoren',
@@ -76,7 +72,6 @@ export const de: Strings = {
   'authors_mentioning.title': 'Autoren, die eine Entität erwähnen',
   'authors_mentioning.caption':
     'Autoren, gereiht nach der Anzahl ihrer Beiträge, die die Entität erwähnen.',
-  'authors_mentioning.count': '{n} Autor(en)',
   'authors_mentioning.none': 'keine Autoren',
   // network_around (06)
   'network.title': 'Netzwerk rund um eine Entität',
@@ -96,6 +91,8 @@ export const de: Strings = {
     '{n} Knoten: {authors} Autor(en), {topics} Thema/Themen; {edges} Kante(n)',
   'network.capped':
     'Begrenzte Ansicht — erhöhe die Autoren-/Themen-Limits, um mehr des Netzwerks zu sehen.',
+  // graph canvas
+  'graph.fit': 'Einpassen',
   // social_network_around (08)
   'social.title': 'Soziales Netzwerk rund um einen Autor',
   'social.caption':

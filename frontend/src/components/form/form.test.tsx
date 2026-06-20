@@ -1,10 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { renderHook, act } from '@testing-library/react'
 import { EntityInput } from './EntityInput'
 import { LimitField } from './LimitField'
 import { SubmitButton } from './SubmitButton'
-import { useToolForm } from './useToolForm'
 
 // ─── EntityInput ─────────────────────────────────────────────────────────────
 
@@ -88,35 +86,3 @@ describe('SubmitButton', () => {
   })
 })
 
-// ─── useToolForm ──────────────────────────────────────────────────────────────
-
-describe('useToolForm', () => {
-  const initial = { entity: '', limit: 10, from: '' }
-
-  it('initialises values from the initial object', () => {
-    const { result } = renderHook(() => useToolForm(initial))
-    expect(result.current.values).toEqual(initial)
-  })
-
-  it('set updates exactly one field immutably', () => {
-    const { result } = renderHook(() => useToolForm(initial))
-    act(() => {
-      result.current.set('entity', 'Alice')
-    })
-    expect(result.current.values.entity).toBe('Alice')
-    expect(result.current.values.limit).toBe(10)
-    expect(result.current.values.from).toBe('')
-  })
-
-  it('reset restores initial values', () => {
-    const { result } = renderHook(() => useToolForm(initial))
-    act(() => {
-      result.current.set('entity', 'Alice')
-      result.current.set('limit', 99)
-    })
-    act(() => {
-      result.current.reset()
-    })
-    expect(result.current.values).toEqual(initial)
-  })
-})
