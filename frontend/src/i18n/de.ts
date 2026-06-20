@@ -152,4 +152,9 @@ export const de: Strings = {
   'ingest.resolve.failed': 'Auflösung fehlgeschlagen: {error}',
   'ingest.resolve.summary': 'Zusammenfassung der Auflösung',
   'ingest.error.request': 'Anfrage abgelehnt: {detail}',
+  // sidebar nav group headings
+  'nav.group.entities': 'Entitäten',
+  'nav.group.authors': 'Autoren',
+  'nav.group.topics': 'Themen',
+  'nav.group.networks': 'Netzwerke',
 }

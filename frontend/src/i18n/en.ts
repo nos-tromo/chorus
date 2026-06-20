@@ -141,4 +141,9 @@ export const en = {
   'ingest.resolve.failed': 'Resolution failed: {error}',
   'ingest.resolve.summary': 'Resolution summary',
   'ingest.error.request': 'Request rejected: {detail}',
+  // sidebar nav group headings
+  'nav.group.entities': 'Entities',
+  'nav.group.authors': 'Authors',
+  'nav.group.topics': 'Topics',
+  'nav.group.networks': 'Networks',
 } as const
