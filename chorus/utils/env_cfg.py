@@ -386,13 +386,13 @@ class IngestionUIConfig:
     """Toggle for the frontend-triggered ingestion path (ADR 0014).
 
     Gates the ``/ingestion/*`` upload-and-run endpoints and the matching
-    Streamlit page. Default off so the data-mutating upload surface is
-    never exposed by accident; an operator enables it explicitly. The
-    CLI/bind-mount ingestion path (``make ingest``) is unaffected by this
-    flag.
+    React SPA ingestion screen. Default off so the data-mutating upload
+    surface is never exposed by accident; an operator enables it explicitly.
+    The CLI/bind-mount ingestion path (``make ingest``) is unaffected by
+    this flag.
 
     Attributes:
-        enabled: Whether the UI ingestion endpoints and page are active.
+        enabled: Whether the UI ingestion endpoints and screen are active.
     """
 
     enabled: bool
@@ -631,8 +631,8 @@ def load_ingestion_ui_env() -> IngestionUIConfig:
     """Load the frontend-ingestion toggle from the environment.
 
     ``INGESTION_UI_ENABLED`` (default ``false``) gates the
-    ``/ingestion/*`` upload-and-run endpoints and the Streamlit page. See
-    ADR 0014.
+    ``/ingestion/*`` upload-and-run endpoints and the React SPA ingestion
+    screen. See ADR 0014.
 
     Returns:
         A populated :class:`IngestionUIConfig`.

@@ -271,5 +271,3 @@ def test_load_ingestion_ui_env_falsey(monkeypatch: pytest.MonkeyPatch, value: st
     from chorus.utils.env_cfg import load_ingestion_ui_env
 
     assert load_ingestion_ui_env().enabled is False
-
-
