@@ -35,6 +35,14 @@ export type JobKind = 'ingest' | 'resolve'
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'error'
 
+/** Response from job-start endpoints (POST /ingestion/ingest, POST /ingestion/resolve). */
+export interface JobAccepted {
+  job_id: string
+  status: JobStatus
+  kind: JobKind
+}
+
+/** Response from the job-poll endpoint (GET /ingestion/jobs/{id}). */
 export interface JobSnapshot {
   id: string
   kind: JobKind
