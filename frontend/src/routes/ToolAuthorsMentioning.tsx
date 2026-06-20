@@ -1,3 +1,6 @@
+import { ToolScreen } from '../components/ToolScreen'
+import { AUTHORS_MENTIONING } from '../tools/specs'
+
 export function ToolAuthorsMentioning() {
-  return <h1>ToolAuthorsMentioning</h1>
+  return <ToolScreen spec={AUTHORS_MENTIONING} />
 }

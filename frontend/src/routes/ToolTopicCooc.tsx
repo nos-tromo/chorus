@@ -1,3 +1,6 @@
+import { ToolScreen } from '../components/ToolScreen'
+import { TOPIC_COOCCURRENCE } from '../tools/specs'
+
 export function ToolTopicCooc() {
-  return <h1>ToolTopicCooc</h1>
+  return <ToolScreen spec={TOPIC_COOCCURRENCE} />
 }

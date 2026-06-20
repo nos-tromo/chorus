@@ -1,3 +1,6 @@
+import { ToolScreen } from '../components/ToolScreen'
+import { POSTS_MENTIONING } from '../tools/specs'
+
 export function ToolPosts() {
-  return <h1>ToolPosts</h1>
+  return <ToolScreen spec={POSTS_MENTIONING} />
 }
