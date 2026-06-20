@@ -1,0 +1,73 @@
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    server_tokens off;
+
+    # Defer upstream DNS resolution to request time via Docker's embedded
+    # resolver. Without this, nginx resolves "backend" at config-load time
+    # and crashes if the backend container is not yet up (or its IP later
+    # changes after a restart).
+    resolver 127.0.0.11 valid=30s ipv6=off;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/javascript application/javascript application/json image/svg+xml application/xml font/woff2;
+
+    # ---- Backend API: ingestion (CSV uploads, large body) ----
+    # Listed before the general API regex so it is matched first and gets
+    # its own body-size limit and upload-friendly proxy settings.
+    location ~ ^/ingestion(/|$) {
+        set $backend_upstream "backend:8000";
+        proxy_pass http://$backend_upstream$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # X-Auth-User injected by the outer OIDC proxy — pass through unchanged.
+        proxy_set_header X-Auth-User $http_x_auth_user;
+        # Filled by envsubst at container start (Task 22 Dockerfile sets the env var).
+        client_max_body_size ${CHORUS_CLIENT_MAX_BODY_SIZE};
+        proxy_http_version 1.1;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+        gzip off;
+        include /etc/nginx/security-headers.conf;
+    }
+
+    # ---- Backend API: general JSON endpoints ----
+    # Covers /health, /config, /tools, /agent (and any sub-paths).
+    location ~ ^/(health|config|tools|agent)(/|$) {
+        set $backend_upstream "backend:8000";
+        proxy_pass http://$backend_upstream$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # X-Auth-User injected by the outer OIDC proxy — pass through unchanged.
+        proxy_set_header X-Auth-User $http_x_auth_user;
+        include /etc/nginx/security-headers.conf;
+    }
+
+    # ---- Hashed assets: immutable long-lived cache ----
+    location /assets/ {
+        access_log off;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        include /etc/nginx/security-headers.conf;
+        try_files $uri =404;
+    }
+
+    # ---- SPA shell: never cache, fall back to index.html for client routes ----
+    location / {
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        include /etc/nginx/security-headers.conf;
+        try_files $uri $uri/ /index.html;
+    }
+}
