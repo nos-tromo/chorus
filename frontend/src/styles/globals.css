@@ -1,0 +1,45 @@
+@import 'tailwindcss';
+@import '@infra/ui/theme.css';
+@source '../../node_modules/@infra/ui/dist';
+
+:root {
+  color-scheme: dark;
+  --app-accent: hsl(262 83% 58%);
+  --app-font: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--app-font);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+  font-family: var(--font-sans);
+}
+
+input,
+button,
+select,
+textarea,
+optgroup,
+option {
+  font-family: inherit;
+}
+
+option {
+  background-color: rgb(9 9 11);
+  color: rgb(244 244 245);
+}
+
+* {
+  @apply border-border;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track { @apply bg-zinc-900; }
+::-webkit-scrollbar-thumb { @apply bg-zinc-700 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-zinc-600; }
