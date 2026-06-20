@@ -581,15 +581,19 @@ registry):
 4. `tests/conftest.py` — add the module to `_CHORUS_ENV_MODULES`; easy
    to miss, and without it the tool silently drops out of the registry
    after the per-test module reload
-5. **React SPA screen** — two cases:
+5. **React SPA screen** — three cases:
    - *Standard table tool* (returns a flat list): add a `ToolSpec` entry
      to `frontend/src/tools/specs.ts` and a route entry in
      `frontend/src/routes/Router.tsx` + the matching Sidebar nav item in
      `frontend/src/layout/Sidebar.tsx`. The generic `<ToolScreen>` renders
      the form and `<DataTable>` for you.
-   - *Bespoke / graph tool* (custom result shape): write a dedicated route
-     component (e.g. `frontend/src/routes/ToolNetwork.tsx`), add it to the
-     router and sidebar, and add element mappers in `frontend/src/lib/`.
+   - *Bespoke graph tool* (`network_around`, `social_network_around`): write
+     a dedicated route component (e.g. `frontend/src/routes/ToolNetwork.tsx`),
+     add it to the router and sidebar, and add Cytoscape element mappers in
+     `frontend/src/lib/` (e.g. `networkElements.ts`).
+   - *Bespoke tabular tool* (custom result shape, non-graph): write a
+     dedicated route component (e.g. `frontend/src/routes/ToolAuthorActivity.tsx`),
+     add it to the router and sidebar. No element mappers needed.
 6. `tests/integration/test_<tool>.py` — per-tool tests live in
    `tests/integration/` (`tests/tools/` holds only the registry test)
 
@@ -694,8 +698,9 @@ chorus/                      # top-level repo
       layout/                # Shell.tsx, Sidebar.tsx
       routes/                # Router.tsx + one screen per route (Agent, Ingestion, tool screens)
       components/            # DataTable, GraphCanvas (Cytoscape), ToolTrace, ToolScreen, ...
-      hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, useConfig, ingestion hooks
-      lib/                   # cn, networkElements.ts, socialElements.ts, graphStyles.ts
+      hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, ingestion hooks
+      lib/                   # networkElements.ts, socialElements.ts, graphStyles.ts (Cytoscape element mappers)
+      config/                # ConfigProvider, useConfig(), useT() i18n hook
       tools/                 # specs.ts — ToolSpec declarations for the generic table-tool screens
   tests/                     # unit dirs mirror chorus/; per-tool tests in tests/integration/
   docker/
