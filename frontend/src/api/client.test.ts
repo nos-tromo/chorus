@@ -11,8 +11,10 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock)
     const out = await apiGet<{ ok: number }>('/health')
     expect(out).toEqual({ ok: 1 })
-    const headers = (fetchMock.mock.calls[0]?.[1]?.headers ?? {}) as Record<string, string>
-    expect(Object.keys(headers).map((k) => k.toLowerCase())).not.toContain('x-auth-user')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const init = fetchMock.mock.calls[0][1] ?? {}
+    const headers = new Headers(init.headers as HeadersInit | undefined)
+    expect(headers.has('x-auth-user')).toBe(false)
   })
 
   it('throws ApiError with detail on non-2xx', async () => {
