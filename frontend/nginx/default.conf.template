@@ -53,6 +53,8 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         # X-Auth-User injected by the outer OIDC proxy — pass through unchanged.
         proxy_set_header X-Auth-User $http_x_auth_user;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         include /etc/nginx/security-headers.conf;
     }
 
