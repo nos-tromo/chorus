@@ -38,8 +38,8 @@ describe('AppRoutes', () => {
     expect(await screen.findByRole('heading', { name: /agent/i })).toBeTruthy()
   })
 
-  it('redirects unknown path to / and renders Landing stub', async () => {
+  it('redirects unknown path to / and renders the Landing page', async () => {
     render(<Wrapper initialEntries={['/nope']} />)
-    expect(await screen.findByRole('heading', { name: /landing/i })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: /chorus/i, level: 1 })).toBeTruthy()
   })
 })
