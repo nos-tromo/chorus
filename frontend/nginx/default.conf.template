@@ -43,8 +43,8 @@ server {
     }
 
     # ---- Backend API: general JSON endpoints ----
-    # Covers /health, /config, /tools, /agent (and any sub-paths).
-    location ~ ^/(health|config|tools|agent)(/|$) {
+    # Covers /health, /config, /tools, /agent, /stats (and any sub-paths).
+    location ~ ^/(health|config|tools|agent|stats)(/|$) {
         set $backend_upstream "backend:8000";
         proxy_pass http://$backend_upstream$request_uri;
         proxy_set_header Host $host;
