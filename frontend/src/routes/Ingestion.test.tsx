@@ -115,6 +115,22 @@ describe('Ingestion', () => {
     expect(await screen.findByRole('button', { name: /apply migrations/i })).toBeTruthy()
   })
 
+  it('(a4b) apply-migrations non-409 error surfaces a danger Banner', async () => {
+    mockGetIngestion({ migrations: MIGRATIONS_PENDING })
+    renderIngestion()
+
+    await screen.findByRole('button', { name: /apply migrations/i })
+
+    // Mock the POST to reject with a 500 ApiError (non-409)
+    vi.mocked(apiPost).mockRejectedValueOnce(new ApiError(500, 'boom'))
+
+    fireEvent.click(screen.getByRole('button', { name: /apply migrations/i }))
+
+    // Expect a danger alert with the error text
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/boom/)
+  })
+
   it('(a4) apply-migrations 409 shows a "busy" Banner', async () => {
     mockGetIngestion({ migrations: MIGRATIONS_PENDING })
     renderIngestion()

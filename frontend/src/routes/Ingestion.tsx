@@ -32,10 +32,12 @@ function MigrationsSection({ busy }: { busy: boolean }) {
   const migrations = useMigrations()
   const applyMut = useApplyMigrations()
   const [busyBanner, setBusyBanner] = useState(false)
+  const [applyError, setApplyError] = useState<string | null>(null)
   const [appliedVersions, setAppliedVersions] = useState<string[] | null>(null)
 
   async function handleApply() {
     setBusyBanner(false)
+    setApplyError(null)
     setAppliedVersions(null)
     try {
       const result = await applyMut.mutateAsync()
@@ -44,6 +46,9 @@ function MigrationsSection({ busy }: { busy: boolean }) {
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setBusyBanner(true)
+      } else {
+        const msg = err instanceof ApiError ? String(err.detail ?? err.message) : String(err)
+        setApplyError(msg)
       }
     }
   }
@@ -66,6 +71,12 @@ function MigrationsSection({ busy }: { busy: boolean }) {
       {busyBanner && (
         <Banner variant="info" role="alert">
           {t('common.tool_call_failed', { error: '409 — another job is running' })}
+        </Banner>
+      )}
+
+      {applyError !== null && (
+        <Banner variant="danger" role="alert">
+          {t('common.tool_call_failed', { error: applyError })}
         </Banner>
       )}
 
