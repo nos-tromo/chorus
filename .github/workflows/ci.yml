@@ -23,3 +23,7 @@ jobs:
       python-versions: '["3.11","3.12","3.13"]'
       uv-sync-args: '--frozen'
       docker-build: true
+      frontend-build: true
+      frontend-dir: 'frontend'
+      node-version: '20'
+      pnpm-version: '9.12.0'
