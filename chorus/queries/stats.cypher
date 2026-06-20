@@ -53,12 +53,14 @@ CALL {
     OPTIONAL MATCH (p:Post)-[:MENTIONS]->(al:Alias)
     OPTIONAL MATCH (al)-[:RESOLVED_TO]->(e:Entity)
     WITH coalesce(e.canonical_name, al.surface_form) AS name, count(p) AS c
+    WHERE name IS NOT NULL
     ORDER BY c DESC
     RETURN collect({name: name, count: c})[..5] AS top_entities
 }
 CALL {
     OPTIONAL MATCH (a:Author)-[:AUTHORED]->(p:Post)
     WITH a, count(p) AS c
+    WHERE a IS NOT NULL
     ORDER BY c DESC
     LIMIT 5
     RETURN collect({

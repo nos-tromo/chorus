@@ -212,3 +212,72 @@ def test_stats_empty_graph(migrated_driver: Driver, in_memory_audit: Any) -> Non
     resolution = body["resolution"]
     assert resolution["total_aliases"] == 0
     assert resolution["resolved_aliases"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Null-guard regression: posts exist but NO MENTIONS / NO AUTHORED edges
+# ---------------------------------------------------------------------------
+
+
+def _seed_posts_no_mentions(driver: Driver) -> None:
+    """Seed Post + Author + Platform nodes with AUTHORED and ON_PLATFORM edges but NO :MENTIONS edges.
+
+    This exercises the null-guard added to the top_entities CALL{} subquery:
+    without it, the OPTIONAL MATCH yields a null alias row that previously
+    escaped as {name: null, count: 0} through collect().
+
+    Author nodes DO have AUTHORED edges here so top_authors is non-empty —
+    the top_entities null guard is the primary target.
+    """
+    with driver.session() as s:
+        s.run(
+            """
+            MERGE (a1:Author {id: 'nm-author-1'})
+              ON CREATE SET a1.handle = 'nomention', a1.display_name = 'No Mention User'
+            MERGE (pl:Platform {name: 'TestNet'})
+            MERGE (p1:Post:Posting {uuid: 'nm-post-1'})
+              ON CREATE SET p1.text = 'no mentions here',
+                            p1.ingested_at = datetime('2026-06-19T09:00:00+00:00')
+            MERGE (p2:Post:Posting {uuid: 'nm-post-2'})
+              ON CREATE SET p2.text = 'also no mentions',
+                            p2.ingested_at = datetime('2026-06-19T10:00:00+00:00')
+            MERGE (a1)-[:AUTHORED]->(p1)
+            MERGE (a1)-[:AUTHORED]->(p2)
+            MERGE (p1)-[:ON_PLATFORM]->(pl)
+            MERGE (p2)-[:ON_PLATFORM]->(pl)
+            """
+        )
+
+
+def test_stats_posts_with_no_mentions(migrated_driver: Driver, in_memory_audit: Any) -> None:
+    """Posts exist with AUTHORED edges but no MENTIONS edges.
+
+    Regression: the top_entities CALL{} subquery previously produced a
+    spurious {name: null, count: 0} entry when posts existed but carried
+    no :MENTIONS edges.  After the Cypher null guard (WHERE name IS NOT NULL),
+    top_entities must be [] while counts.posts > 0.
+
+    top_authors should be non-empty because AUTHORED edges exist.
+
+    Args:
+        migrated_driver: Driver against a freshly-migrated database.
+        in_memory_audit: Fresh audit logger over a temp SQLite file.
+    """
+    _seed_posts_no_mentions(migrated_driver)
+    client = TestClient(_build_app(migrated_driver, in_memory_audit))
+    resp = client.get("/stats", headers=_AUTH)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    # Posts exist — the row count is non-zero so we know the graph is not empty.
+    assert body["counts"]["posts"] == 2, "expected 2 seeded posts"
+
+    # top_entities must be empty: no :MENTIONS edges → no non-null alias rows.
+    assert body["top_entities"] == [], (
+        f"expected top_entities==[], got {body['top_entities']}"
+    )
+
+    # top_authors must be non-empty: AUTHORED edges exist.
+    assert len(body["top_authors"]) >= 1
+    assert body["top_authors"][0]["author_id"] == "nm-author-1"
+    assert body["top_authors"][0]["count"] == 2
