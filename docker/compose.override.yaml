@@ -10,6 +10,10 @@ services:
   backend:
     ports:
       - "${CHORUS_BACKEND_HOST_PORT:-8000}:8000"
+    environment:
+      # No OIDC proxy in dev → the SPA sends no identity header, so set a
+      # fallback identity here. Production leaves this unset (fail-closed).
+      CHORUS_DEFAULT_IDENTITY: ${CHORUS_DEFAULT_IDENTITY:-dev}
     volumes:
       # Dev drop point for upstream CSV dumps. The container reads
       # CHORUS_HOME/ingest (=/var/lib/chorus/ingest), which this mount
@@ -20,4 +24,4 @@ services:
       - ${INGEST_HOST_DIR:-${HOME}/chorus/ingest}:/var/lib/chorus/ingest:ro
   frontend:
     ports:
-      - "${CHORUS_FRONTEND_HOST_PORT:-8501}:8501"
+      - "${CHORUS_FRONTEND_HOST_PORT:-8501}:80"

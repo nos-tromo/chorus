@@ -69,11 +69,8 @@ services:
       dockerfile: docker/Dockerfile.frontend
     logging: *default-logging
     environment:
-      CHORUS_API_URL: http://backend:8000
-      CHORUS_UI_IDENTITY: dev
-      # Must match the backend; the frontend has no env_file, so it is set
-      # here explicitly. Drives the German UI captions (see ADR 0013).
-      RESPONSE_LANGUAGE: ${RESPONSE_LANGUAGE:-en}
+      # nginx envsubst fills the upload body-size limit in the template.
+      CHORUS_CLIENT_MAX_BODY_SIZE: ${CHORUS_CLIENT_MAX_BODY_SIZE:-512m}
     depends_on:
       backend:
         condition: service_healthy
@@ -82,7 +79,7 @@ services:
         aliases:
           - frontend
     expose:
-      - "8501"
+      - "80"
     restart: unless-stopped
 
 networks:
