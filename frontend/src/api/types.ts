@@ -47,3 +47,51 @@ export interface MigrationsStatus {
   applied: string[]
   pending: string[]
 }
+
+// --- network_around ---
+
+export interface NetworkNode {
+  id: string
+  kind: 'author' | 'topic'
+  label: string
+  entity_id: string | null
+  is_seed: boolean
+}
+
+export interface NetworkEdge {
+  source: string
+  target: string
+  weight: number
+}
+
+export interface NetworkAroundOut {
+  seed: string
+  seed_node_id: string | null
+  nodes: NetworkNode[]
+  edges: NetworkEdge[]
+  truncated: boolean
+}
+
+// --- social_network_around ---
+
+export interface SocialNode {
+  id: string
+  label: string
+  ring: number
+  is_seed: boolean
+}
+
+export interface SocialEdge {
+  source: string
+  target: string
+  kind: 'follows' | 'friends'
+  directed: boolean
+}
+
+export interface SocialNetworkAroundOut {
+  seed: string
+  seed_node_id: string | null
+  nodes: SocialNode[]
+  edges: SocialEdge[]
+  truncated: boolean
+}
