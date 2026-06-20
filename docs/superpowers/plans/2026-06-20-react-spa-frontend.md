@@ -748,7 +748,10 @@ def test_frontend_base_images_are_digest_pinned():
     assert froms, "expected node + nginx base images"
     for line in df.splitlines():
         if ("node:" in line or "nginx:" in line) and ("FROM" in line or "ARG" in line):
-            assert "@sha256:" in line, f"base image not digest-pinned: {line}"
+            # full 64-hex digest required — `@sha256:<PLACEHOLDER>` must not pass
+            assert re.search(r"@sha256:[0-9a-f]{64}\b", line), (
+                f"base image not digest-pinned with a full sha256: {line}"
+            )
 
 
 def test_frontend_templated_upload_limit():
