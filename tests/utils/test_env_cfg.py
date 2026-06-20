@@ -273,29 +273,3 @@ def test_load_ingestion_ui_env_falsey(monkeypatch: pytest.MonkeyPatch, value: st
     assert load_ingestion_ui_env().enabled is False
 
 
-def test_load_ui_env_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    """With no CHORUS_UI_* overrides, UI client defaults stay stable."""
-    monkeypatch.delenv("CHORUS_API_URL", raising=False)
-    monkeypatch.delenv("CHORUS_UI_IDENTITY", raising=False)
-    monkeypatch.delenv("CHORUS_UI_TIMEOUT_S", raising=False)
-
-    from chorus.utils.env_cfg import load_ui_env
-
-    cfg = load_ui_env()
-    assert cfg.api_url == "http://localhost:8000"
-    assert cfg.identity == "dev"
-    assert cfg.timeout_s == 30.0
-
-
-def test_load_ui_env_honors_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Each CHORUS_UI_* setting maps to the UI client config."""
-    monkeypatch.setenv("CHORUS_API_URL", "http://api:8000")
-    monkeypatch.setenv("CHORUS_UI_IDENTITY", "analyst")
-    monkeypatch.setenv("CHORUS_UI_TIMEOUT_S", "90")
-
-    from chorus.utils.env_cfg import load_ui_env
-
-    cfg = load_ui_env()
-    assert cfg.api_url == "http://api:8000"
-    assert cfg.identity == "analyst"
-    assert cfg.timeout_s == 90.0

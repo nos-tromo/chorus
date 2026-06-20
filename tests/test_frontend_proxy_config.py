@@ -43,3 +43,19 @@ def test_frontend_spa_fallback_and_api_proxy() -> None:
     assert "try_files $uri /index.html" in conf
     for prefix in ("/config", "/tools", "/agent", "/ingestion", "/health"):
         assert prefix in conf
+
+
+def test_frontend_image_has_no_python_packages() -> None:
+    """The React SPA frontend image must not COPY any chorus/ Python package.
+
+    The frontend is served by nginx and requires no Python chorus.* packages
+    at runtime. Any COPY of chorus/ into the frontend image would be dead
+    weight and would signal confusion with the old Streamlit image.
+    """
+    text = (REPO / "docker" / "Dockerfile.frontend").read_text(encoding="utf-8")
+    copied = re.findall(r"COPY\s+chorus/(\w+)", text)
+    assert not copied, (
+        f"docker/Dockerfile.frontend unexpectedly COPYs chorus Python packages "
+        f"{sorted(copied)} — the frontend is a pure nginx image and needs no Python source. "
+        f"Remove those COPY lines (or update this test if the architecture changed)."
+    )

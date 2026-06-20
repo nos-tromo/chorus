@@ -17,6 +17,7 @@ def _build_app() -> FastAPI:
 
 
 def test_config_reports_language_and_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GET /config returns language=de and ingestion_enabled=true when both env vars are set."""
     monkeypatch.setenv("RESPONSE_LANGUAGE", "de")
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     client = TestClient(_build_app())
@@ -29,6 +30,7 @@ def test_config_reports_language_and_flags(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_config_defaults_are_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GET /config returns safe defaults (en, ingestion off) when env vars are absent."""
     monkeypatch.delenv("RESPONSE_LANGUAGE", raising=False)
     monkeypatch.delenv("INGESTION_UI_ENABLED", raising=False)
     client = TestClient(_build_app())

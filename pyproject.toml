@@ -37,24 +37,8 @@ dev = [
     "ruff==0.15.14",
     "testcontainers[neo4j]>=4.14.2",
 ]
-# Frontend-only runtime deps, kept out of [project.dependencies] so the UI
-# image and the API image stay disjoint. The UI image installs *only* this
-# group (`uv sync --only-group frontend`) and none of the backend libraries
-# (neo4j, openai, fastapi, …). `httpx` and `python-dotenv` are also base
-# dependencies; they are restated here because `--only-group` omits base
-# dependencies while the copied UI/utils modules still import them.
-frontend = [
-    "streamlit>=1.58.0",
-    "httpx>=0.28.1",
-    "python-dotenv>=1.2.2",
-]
-
 [tool.uv]
-# `frontend` is a default group so a plain `uv sync` (local dev) and
-# `uv export` keep Streamlit available. The UI Docker image overrides this
-# with `--only-group frontend`; a future slim API image can drop both groups
-# with `--no-default-groups`.
-default-groups = ["dev", "frontend"]
+default-groups = ["dev"]
 
 [tool.ruff]
 # Mirrors nos-tromo/.github/configs/python-strict/ruff.toml. target-version
