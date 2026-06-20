@@ -20,15 +20,18 @@ end-to-end with audit logging, and exposes a natural-language agent
 (`POST /agent/query`, ADR 0009) that selects and calls those tools via
 OpenAI tool-calling. The two `*_around` tools return `{nodes, edges}`
 payloads rendered as interactive Cytoscape graphs in the React SPA (ADR 0015).
-The `Alias → Entity` resolution stage is implemented (vector clustering +
-same-type filter + LLM tie-break, run via
-`python -m chorus.ingestion.cli resolve`), so the tools cluster by canonical
-entity once a resolve pass has run. A frontend ingestion path (ADR 0014) lets
-an authenticated user upload CSV exports and run migrate/ingest/resolve as
-background jobs from the React SPA ingestion screen (`POST /ingestion/*`,
-polled via `GET /ingestion/jobs/{id}`), gated by `INGESTION_UI_ENABLED`
-(default off); `make ingest` remains for bulk/server-side loads. See
-*Repository conventions* below for the live layout.
+The SPA's Landing page is a graph-diagnostics dashboard backed by an
+authenticated, §76-audited `GET /stats` endpoint that reports node/edge
+counts, top entities and authors, alias-resolution coverage, latest
+ingestion timestamp, and a posts-per-platform breakdown. The `Alias → Entity`
+resolution stage is implemented (vector clustering + same-type filter + LLM
+tie-break, run via `python -m chorus.ingestion.cli resolve`), so the tools
+cluster by canonical entity once a resolve pass has run. A frontend ingestion
+path (ADR 0014) lets an authenticated user upload CSV exports and run
+migrate/ingest/resolve as background jobs from the React SPA ingestion screen
+(`POST /ingestion/*`, polled via `GET /ingestion/jobs/{id}`), gated by
+`INGESTION_UI_ENABLED` (default off); `make ingest` remains for
+bulk/server-side loads. See *Repository conventions* below for the live layout.
 
 `RESPONSE_LANGUAGE=de` flips the whole app to German — agent answers,
 entity-query article stripping, and React SPA UI captions (ADR 0013; ADR 0015).

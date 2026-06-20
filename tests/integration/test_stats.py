@@ -129,15 +129,15 @@ def test_stats_seeded_graph(migrated_driver: Driver, in_memory_audit: Any) -> No
 
     # ----- edge counts -----
     edges = body["edges"]
-    assert edges["mentions"] >= 3       # 3 MENTIONS edges total
-    assert edges["authored"] >= 3       # 3 AUTHORED edges
-    assert edges["resolved"] >= 1       # 1 RESOLVED_TO edge
+    assert edges["mentions"] >= 3  # 3 MENTIONS edges total
+    assert edges["authored"] >= 3  # 3 AUTHORED edges
+    assert edges["resolved"] >= 1  # 1 RESOLVED_TO edge
 
     # ----- top_authors: auth-1 has 2 posts, auth-2 has 1 -----
     top_authors = body["top_authors"]
     assert len(top_authors) >= 1
     busiest = top_authors[0]
-    assert busiest["count"] == 2        # auth-1 authored 2 posts
+    assert busiest["count"] == 2  # auth-1 authored 2 posts
     assert busiest["author_id"] == "auth-1"
 
     # ----- posts_by_platform sums to 3 -----
@@ -273,9 +273,7 @@ def test_stats_posts_with_no_mentions(migrated_driver: Driver, in_memory_audit: 
     assert body["counts"]["posts"] == 2, "expected 2 seeded posts"
 
     # top_entities must be empty: no :MENTIONS edges → no non-null alias rows.
-    assert body["top_entities"] == [], (
-        f"expected top_entities==[], got {body['top_entities']}"
-    )
+    assert body["top_entities"] == [], f"expected top_entities==[], got {body['top_entities']}"
 
     # top_authors must be non-empty: AUTHORED edges exist.
     assert len(body["top_authors"]) >= 1

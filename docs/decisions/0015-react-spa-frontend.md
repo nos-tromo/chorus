@@ -173,6 +173,13 @@ Airgap invariant: the static bundle is fully materialized at build time. The
 nginx runtime fetches nothing; Cytoscape and the `@fontsource/inter` font are
 bundled by Vite. No runtime package-manager call occurs on the airgapped side.
 
+## Follow-on (2026-06-20)
+
+The Landing page was subsequently enriched into a graph-diagnostics dashboard
+via a new `GET /stats` endpoint that reports graph-wide statistics (node/edge
+counts, top entities and authors, resolution coverage, latest ingestion time,
+posts per platform). See `docs/superpowers/specs/2026-06-20-landing-dashboard-design.md`.
+
 ## Consequences
 
 - **Full UI parity in one migration.** Every current Streamlit screen is ported:
