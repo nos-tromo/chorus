@@ -1,11 +1,10 @@
 import { useState, useRef, type FormEvent, type KeyboardEvent } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Banner, Button, Input, Spinner } from '@infra/ui'
+import { Banner, Button, CopyButton, Input, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { useAgentQuery } from '../hooks/useAgentQuery'
 import { ToolTrace } from '../components/ToolTrace'
-import { CopyButton } from '../components/CopyButton'
 import type { AgentMessage, AgentTraceEntry } from '../api/types'
 
 // ── Local message type (adds optional trace for assistant turns) ──────────────
