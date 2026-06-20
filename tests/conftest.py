@@ -29,6 +29,7 @@ _CHORUS_ENV_MODULES = (
     "chorus.api.routers.tools",
     "chorus.api.routers.agent",
     "chorus.api.routers.ingestion",
+    "chorus.api.routers.config",
     "chorus.tools._template_loader",
     "chorus.tools._audit",
     "chorus.tools.posts_mentioning",

@@ -72,11 +72,13 @@ app = FastAPI(title="chorus", lifespan=lifespan)
 
 # Routers — imported here so the app object owns route registration order.
 from chorus.api.routers import agent as _agent_router  # noqa: E402
+from chorus.api.routers import config as _config_router  # noqa: E402
 from chorus.api.routers import health as _health_router  # noqa: E402
 from chorus.api.routers import ingestion as _ingestion_router  # noqa: E402
 from chorus.api.routers import tools as _tools_router  # noqa: E402
 
 app.include_router(_agent_router.router)
+app.include_router(_config_router.router)
 app.include_router(_health_router.router)
 app.include_router(_ingestion_router.status_router)
 app.include_router(_ingestion_router.router)
