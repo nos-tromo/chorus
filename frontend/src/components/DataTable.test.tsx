@@ -79,7 +79,6 @@ describe('DataTable – explicit columns', () => {
         render: (row: { score: number }) => <span data-testid="badge">{row.score}%</span>,
       },
     ]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     render(<DataTable rows={rows as any} columns={columns as any} empty="no results" />)
 
     expect(screen.getByTestId('badge').textContent).toBe('95%')
