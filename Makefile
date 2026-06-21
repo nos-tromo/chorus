@@ -17,10 +17,10 @@ VOLUMES  := chorus-state
 UP_FLAGS := -d
 include make/common.mk
 
-.PHONY: help migrate ingest resolve bootstrap
+.PHONY: help migrate ingest resolve bootstrap frontend-lint frontend-test
 
 help:
-	@echo "chorus — GraphRAG app (FastAPI backend + Streamlit frontend)."
+	@echo "chorus — GraphRAG app (FastAPI backend + React SPA frontend)."
 	@echo
 	@echo "  make network    create the shared inference-net + data-net"
 	@echo "  make volumes    create the external chorus-state Docker volume"
@@ -53,3 +53,11 @@ resolve:
 bootstrap: network volumes
 	@./scripts/check_dataplane_health.sh
 	$(MAKE) up
+
+# Lint the React SPA (requires pnpm).
+frontend-lint:
+	cd frontend && pnpm install --frozen-lockfile && pnpm lint
+
+# Run the React SPA unit tests (requires pnpm).
+frontend-test:
+	cd frontend && pnpm install --frozen-lockfile && pnpm test

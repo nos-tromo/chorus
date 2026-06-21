@@ -34,10 +34,11 @@ The FastAPI app boots, applies Neo4j migrations on startup, and exposes
   `:RESOLVED_TO` provenance. It is idempotent, and because the tools
   read through `:RESOLVED_TO`, a resolve pass upgrades them with no tool
   change ("Berlin" and "berlin" collapse to one entity).
-- **A Streamlit UI** with one page per tool, an agent page, and a
-  data-ingestion page — upload CSV exports and run migrate/ingest/resolve
-  as background jobs, gated by `INGESTION_UI_ENABLED` (default off; ADR
-  0014).
+- **A React SPA** (Vite + TypeScript + Tailwind v4, `@infra/ui`) served by
+  nginx, with one screen per tool, an agent screen, and a data-ingestion
+  screen — upload CSV exports and run migrate/ingest/resolve as background
+  jobs, gated by `INGESTION_UI_ENABLED` (default off; ADR 0014). The two
+  `*_around` tools render interactive Cytoscape.js network graphs.
 - **Migrations** (constraints, indexes, vector indexes) applied in order
   and idempotently, with a CLI (`apply` / `status`).
 - **App compose project + Makefile** for building and running the api
@@ -98,12 +99,10 @@ trusted-header principal seam. Leave it unset in production — without
 it, requests without an `X-Auth-User` header fail with 401.
 
 chorus defaults to English. Set `RESPONSE_LANGUAGE=de` in `.env` to switch
-the whole app to German: the agent answers in German and strips leading
-articles when building entity queries (`die AfD` → `AfD`), and the Streamlit
-UI renders its captions in German. This is the same variable docint reads, so
-one setting flips both apps; it must live in this repo-root `.env` because
-`docker compose` interpolates it into both the backend and frontend services.
-Unknown values fall back to English. See ADR 0013.
+the whole app to German: the agent answers in German, strips leading articles
+when building entity queries (`die AfD` → `AfD`), and the React SPA renders
+its captions in German (the SPA reads the language from `GET /config` at boot).
+Unknown values fall back to English. See ADR 0013 and ADR 0015.
 
 ### 3. Apply migrations
 
@@ -126,14 +125,35 @@ The lifespan opens the Neo4j driver, applies any remaining
 migrations, and initialises the audit log SQLite file under
 `./var/`.
 
-### 5. (Optional) Start the Streamlit UI
+### 5. (Optional) Start the frontend dev server
 
-In a separate shell:
+The React SPA can be developed locally with Vite's dev server, which proxies
+API calls to the backend running in step 4. In a separate shell:
 
 ```bash
-CHORUS_API_URL=http://localhost:8000 \
-  uv run streamlit run chorus/ui/streamlit_app.py
+cd frontend
+pnpm install          # first time only; uses the frozen lockfile
+pnpm dev              # Vite dev server at http://localhost:5173
 ```
+
+Vite proxies `/health`, `/config`, `/tools`, `/agent`, and `/ingestion` to
+`http://localhost:8000`. Auth is handled by the `CHORUS_DEFAULT_IDENTITY=dev`
+set in your `.env` — the dev server sends no identity header, and the backend
+falls back to that value when `X-Auth-User` is absent.
+
+To run the full compose stack (nginx-served SPA + backend):
+
+```bash
+make network    # create shared Docker networks (idempotent)
+make volumes    # create the external chorus-state volume (idempotent)
+make build      # build backend + frontend (nginx) images
+make up-dev     # start backend (port 8000) + frontend (port ${CHORUS_FRONTEND_HOST_PORT:-8501})
+```
+
+The frontend is served by nginx at port 80 inside the container; `make up-dev`
+publishes it on `${CHORUS_FRONTEND_HOST_PORT:-8501}` on the host. Set
+`INGESTION_UI_ENABLED=true` on the backend service to expose the ingestion
+screen (the nav item and route are hidden by default).
 
 ## First test iterations
 
@@ -287,8 +307,8 @@ in `CLAUDE.md`), then:
 make network    # create the shared inference-net + data-net (idempotent)
 make volumes    # create the external chorus-state volume (idempotent)
 make build      # build backend + frontend images
-make up         # start backend + frontend (production shape, no host ports)
-make up-dev     # like 'up', but publishes backend + frontend ports on the host
+make up         # start backend + frontend nginx (production shape, no host ports)
+make up-dev     # like 'up', but publishes backend:8000 + frontend:${CHORUS_FRONTEND_HOST_PORT:-8501}
 make migrate    # apply Neo4j migrations from inside the api container
 make ingest     # run one ingestion pass from INGESTION_SOURCE_DIR
 make resolve    # resolve aliases to canonical entities

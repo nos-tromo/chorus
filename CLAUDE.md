@@ -18,21 +18,26 @@ Foundation is up. The app boots, applies Neo4j migrations, serves
 `authors_connected_by_topic`, `network_around`, `social_network_around`)
 end-to-end with audit logging, and exposes a natural-language agent
 (`POST /agent/query`, ADR 0009) that selects and calls those tools via
-OpenAI tool-calling. The two `*_around` tools feed Graphviz/DOT network
-visualizations in the UI (`ui/network_dot.py`, `ui/social_network_dot.py`). The `Alias → Entity` resolution
-stage is implemented (vector clustering + same-type filter + LLM tie-break,
-run via `python -m chorus.ingestion.cli resolve`), so the tools cluster by
-canonical entity once a resolve pass has run. A frontend ingestion path
-(ADR 0014) lets an authenticated user upload CSV exports and run
-migrate/ingest/resolve as background jobs from the Streamlit UI
+OpenAI tool-calling. The two `*_around` tools return `{nodes, edges}`
+payloads rendered as interactive Cytoscape graphs in the React SPA (ADR 0015).
+The SPA's Landing page is a graph-diagnostics dashboard backed by an
+authenticated, §76-audited `GET /stats` endpoint that reports node/edge
+counts, top entities and authors, alias-resolution coverage, latest
+ingestion timestamp, and a posts-per-platform breakdown. The `Alias → Entity`
+resolution stage is implemented (vector clustering + same-type filter + LLM
+tie-break, run via `python -m chorus.ingestion.cli resolve`), so the tools
+cluster by canonical entity once a resolve pass has run. A frontend ingestion
+path (ADR 0014) lets an authenticated user upload CSV exports and run
+migrate/ingest/resolve as background jobs from the React SPA ingestion screen
 (`POST /ingestion/*`, polled via `GET /ingestion/jobs/{id}`), gated by
 `INGESTION_UI_ENABLED` (default off); `make ingest` remains for
 bulk/server-side loads. See *Repository conventions* below for the live layout.
 
 `RESPONSE_LANGUAGE=de` flips the whole app to German — agent answers,
-entity-query article stripping, Streamlit captions (ADR 0013). Default
-is English; the variable lives in the repo-root `.env` so compose
-interpolates it into both services.
+entity-query article stripping, and React SPA UI captions (ADR 0013; ADR 0015).
+Default is English; the variable lives in the repo-root `.env` so compose
+interpolates it into the backend service, which surfaces it to the SPA via
+`GET /config`.
 
 Python: `pyproject.toml` accepts `>=3.11,<3.14`; `.python-version`
 pins dev to `3.12`. CI runs 3.11/3.12/3.13. The ruff/mypy config
@@ -112,7 +117,7 @@ redesign of the ingestion pipeline, not an incremental feature add.
 ## Tech stack
 
 - **Backend**: Python 3.11+ (3.12 in dev), FastAPI, Uvicorn
-- **Frontend**: Streamlit (matches docint conventions)
+- **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.1.1`), served by nginx which reverse-proxies the API same-origin (no CORS)
 - **Graph DB**: Neo4j Community Edition (5.11+ for native vector indexes)
 - **Metadata + audit**: SQLite
 - **Entity extraction**: GLiNER, reached through the inference provider
@@ -121,7 +126,8 @@ redesign of the ingestion pipeline, not an incremental feature add.
   OpenAI-compatible HTTP, provider swappable via env vars
 - **Orchestration**: three Docker Compose projects (chorus app, data-plane,
   vllm-service inference). See Orchestration topology below.
-- **Reverse proxy**: existing Nginx (new vhost for chorus UI)
+- **Graph visualization**: Cytoscape.js (pure JS, bundled; no WASM) for the two `*_around` network screens
+- **Reverse proxy**: existing Nginx (new vhost for chorus UI); the chorus `frontend` service is itself nginx, reverse-proxying API prefixes to the backend (same-origin, no CORS)
 
 ### Invariants
 
@@ -165,7 +171,7 @@ chorus/                   # this repo — app only
   docker/compose.yaml
     services:
       backend:            # joins inference-net + data-net; bolt://neo4j:7687
-      frontend:           # internal chorus-net only; talks to backend:8000
+      frontend:           # nginx SPA; internal chorus-net only; reverse-proxies API prefixes → backend:8000
     volumes:
       chorus-state:       # external — audit log, raw store, op logs ($CHORUS_HOME)
 ```
@@ -578,8 +584,19 @@ registry):
 4. `tests/conftest.py` — add the module to `_CHORUS_ENV_MODULES`; easy
    to miss, and without it the tool silently drops out of the registry
    after the per-test module reload
-5. `chorus/ui/pages/NN_<tool>.py` — thin Streamlit form over
-   `ChorusClient.call_tool` (next free `NN`)
+5. **React SPA screen** — three cases:
+   - *Standard table tool* (returns a flat list): add a `ToolSpec` entry
+     to `frontend/src/tools/specs.ts` and a route entry in
+     `frontend/src/routes/Router.tsx` + the matching Sidebar nav item in
+     `frontend/src/layout/Sidebar.tsx`. The generic `<ToolScreen>` renders
+     the form and `<DataTable>` for you.
+   - *Bespoke graph tool* (`network_around`, `social_network_around`): write
+     a dedicated route component (e.g. `frontend/src/routes/ToolNetwork.tsx`),
+     add it to the router and sidebar, and add Cytoscape element mappers in
+     `frontend/src/lib/` (e.g. `networkElements.ts`).
+   - *Bespoke tabular tool* (custom result shape, non-graph): write a
+     dedicated route component (e.g. `frontend/src/routes/ToolAuthorActivity.tsx`),
+     add it to the router and sidebar. No element mappers needed.
 6. `tests/integration/test_<tool>.py` — per-tool tests live in
    `tests/integration/` (`tests/tools/` holds only the registry test)
 
@@ -633,7 +650,7 @@ chorus/                      # top-level repo
     api/
       main.py                # FastAPI entrypoint (lifespan: logger → driver → migrations → audit)
       auth/principal.py      # trusted-header principal seam (OIDC swap-in)
-      routers/               # health.py, tools.py, agent.py, ingestion.py
+      routers/               # health.py, config.py, tools.py, agent.py, ingestion.py
     audit/
       logger.py              # §76 BDSG audit log (SQLite, append-only, trigger-enforced)
       schema.sql
@@ -666,28 +683,41 @@ chorus/                      # top-level repo
       _audit.py              # @audited + register_tool + TOOLS registry
       posts_mentioning.py
       ...
-    ui/
-      streamlit_app.py
-      client.py              # thin httpx wrapper over the FastAPI surface
-      network_dot.py / social_network_dot.py    # DOT builders for the *_around pages
-      pages/                 # one numbered file per UI screen
     utils/
       env_cfg.py             # every env var loader as a frozen dataclass
       logger_cfg.py          # loguru sinks (stderr + rotating file)
-      ui_strings.py          # localized UI captions (ADR 0013)
+  frontend/                  # React SPA (ADR 0015) — Vite + TypeScript + Tailwind v4
+    index.html
+    package.json + pnpm-lock.yaml
+    vite.config.ts           # dev proxy of API prefixes → :8000
+    tsconfig.json / vitest.config.ts
+    nginx/
+      default.conf.template  # env-templated upload limit (CHORUS_CLIENT_MAX_BODY_SIZE)
+      security-headers.conf  # hardened CSP
+    src/
+      api/                   # client.ts (no identity header — proxy sets X-Auth-User), queryClient.ts, types.ts, per-domain modules
+      config/                # ConfigProvider — boots GET /config (language + ingestion_enabled)
+      i18n/                  # typed en/de catalog (~160 keys) + useT() hook; parity test
+      layout/                # Shell.tsx, Sidebar.tsx
+      routes/                # Router.tsx + one screen per route (Agent, Ingestion, tool screens)
+      components/            # DataTable, GraphCanvas (Cytoscape), ToolTrace, ToolScreen, ...
+      hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, ingestion hooks
+      lib/                   # networkElements.ts, socialElements.ts, graphStyles.ts (Cytoscape element mappers)
+      config/                # ConfigProvider, useConfig(), useT() i18n hook
+      tools/                 # specs.ts — ToolSpec declarations for the generic table-tool screens
   tests/                     # unit dirs mirror chorus/; per-tool tests in tests/integration/
   docker/
-    Dockerfile.backend / Dockerfile.frontend
+    Dockerfile.backend / Dockerfile.frontend   # both base images pinned by @sha256: digest
     compose.yaml             # app services only — the lone volume (chorus-state) is external
-    compose.override.yaml    # dev overlay: publishes backend/frontend host ports
+    compose.override.yaml    # dev overlay: publishes backend + frontend (nginx:80) host ports
   docs/
     architecture.md / retention.md / compliance.md / airgap.md
     decisions/               # ADRs, one file per significant decision
   scripts/                   # bundle_images.sh, check_dataplane_health.sh
-  Makefile                   # network / volumes / build / up / bundle / migrate / ingest / resolve / bootstrap
+  Makefile                   # network / volumes / build / up / bundle / migrate / ingest / resolve / bootstrap / frontend-lint / frontend-test
   pyproject.toml + uv.lock + pytest.ini
   .pre-commit-config.yaml
-  .github/workflows/ci.yml   # delegates to the shared nos-tromo python-app-ci workflow
+  .github/workflows/ci.yml   # delegates to the shared nos-tromo python-app-ci workflow; frontend job: lint + typecheck + test
 ```
 
 ### Rules of thumb
