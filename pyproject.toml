@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "Apache-2.0"
 dependencies = [
-    "fastapi>=0.137.1",
+    "fastapi>=0.138.0",
     "httpx>=0.28.1",
     "loguru>=0.7.3",
     "neo4j>=6.2.0",
@@ -32,7 +32,7 @@ packages = ["chorus"]
 dev = [
     "mypy==1.19.0",
     "pre-commit>=4.6.0",
-    "pytest>=9.1.0",
+    "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff==0.15.14",
     "testcontainers[neo4j]>=4.14.2",
