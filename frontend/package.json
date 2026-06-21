@@ -15,13 +15,14 @@
   },
   "dependencies": {
     "@fontsource/inter": "^5.1.0",
-    "@infra/ui": "github:nos-tromo/infra-ui#v0.1.1",
+    "@infra/ui": "github:nos-tromo/infra-ui#v0.2.0",
     "@tanstack/react-query": "^5.100.14",
     "cytoscape": "^3.30.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.17.0",
+    "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {

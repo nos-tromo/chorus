@@ -75,6 +75,7 @@ from chorus.api.routers import agent as _agent_router  # noqa: E402
 from chorus.api.routers import config as _config_router  # noqa: E402
 from chorus.api.routers import health as _health_router  # noqa: E402
 from chorus.api.routers import ingestion as _ingestion_router  # noqa: E402
+from chorus.api.routers import stats as _stats_router  # noqa: E402
 from chorus.api.routers import tools as _tools_router  # noqa: E402
 
 app.include_router(_agent_router.router)
@@ -82,4 +83,5 @@ app.include_router(_config_router.router)
 app.include_router(_health_router.router)
 app.include_router(_ingestion_router.status_router)
 app.include_router(_ingestion_router.router)
+app.include_router(_stats_router.router)
 app.include_router(_tools_router.router)

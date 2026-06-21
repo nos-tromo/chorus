@@ -56,6 +56,35 @@ export interface MigrationsStatus {
   pending: string[]
 }
 
+// --- stats ---
+
+export interface GraphStats {
+  counts: {
+    posts: number
+    authors: number
+    entities: number
+    hashtags: number
+    groups: number
+    platforms: number
+    aliases: number
+  }
+  edges: {
+    mentions: number
+    authored: number
+    follows: number
+    friends: number
+    resolved: number
+  }
+  top_entities: { name: string; count: number }[]
+  top_authors: { author_id: string; label: string; count: number }[]
+  posts_by_platform: { platform: string; count: number }[]
+  latest_ingested_at: string | null
+  resolution: {
+    resolved_aliases: number
+    total_aliases: number
+  }
+}
+
 // --- network_around ---
 
 export interface NetworkNode {
