@@ -17,7 +17,7 @@ def test_chat_message_forwards_tools_and_returns_message(
 
     class _Msg:
         content = "hi"
-        tool_calls = None
+        tool_calls: list[Any] | None = None
 
     class _Choice:
         message = _Msg()
