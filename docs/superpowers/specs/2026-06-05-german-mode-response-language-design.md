@@ -322,7 +322,7 @@ forms ("Autor:innen") is a pure wording change in the catalog.
 
 | key | en | de |
 |-----|----|----|
-| `topic_cooc.title` | `topic co-occurrence` | `Themen-Kookkurrenz` |
+| `topic_cooc.title` | `topic co-occurrence` | `Themen-Konkurrenz` |
 | `topic_cooc.seed_input` | `Seed topic (entity or alias)` | `Ausgangsthema (Entität oder Alias)` |
 | `topic_cooc.find` | `Find co-occurring topics` | `Kookkurrierende Themen finden` |
 | `topic_cooc.count` | `{n} co-occurring topic(s) with '{seed}'` | `{n} kookkurrierende(s) Thema/Themen mit „{seed}"` |

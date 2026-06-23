@@ -52,7 +52,7 @@ export const de: Strings = {
   'author_activity.no_topics': 'keine Themen im Zeitraum erwähnt',
   'author_activity.no_author': 'kein passender Autor',
   // topic_co_occurrence (03)
-  'topic_cooc.title': 'Themen-Kookkurrenz',
+  'topic_cooc.title': 'Themen-Konkurrenz',
   'topic_cooc.seed_input': 'Ausgangsthema (Entität oder Alias)',
   'topic_cooc.none': 'keine kookkurrierenden Themen',
   // authors_connected_by_topic (04)
