@@ -30,8 +30,8 @@ packages = ["chorus"]
 
 [dependency-groups]
 dev = [
-    "mypy==1.19.0",
     "pre-commit>=4.6.0",
+    "pyrefly==1.1.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff==0.15.14",
@@ -61,8 +61,7 @@ ignore = ["ANN401"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.mypy]
-# Mirrors nos-tromo/.github/configs/python-strict/mypy.ini. Drift fails CI.
-strict = true
-ignore_missing_imports = true
-no_incremental = true
+[tool.pyrefly]
+# Mirrors nos-tromo/.github/configs/python-strict/pyrefly.toml. Drift fails CI.
+preset = "strict"
+ignore-missing-imports = ["*"]

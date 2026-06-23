@@ -84,9 +84,10 @@ def chat(messages: list[dict[str, str]], *, model: str | None = None, **kwargs: 
         The assistant message text, or an empty string when the provider
         returns no content.
     """
-    resp = _client().chat.completions.create(
+    # OpenAI SDK typing rejects plain-dict messages + **kwargs; the call is runtime-correct.
+    resp = _client().chat.completions.create(  # pyrefly: ignore[no-matching-overload]
         model=model or _config().TEXT_MODEL,
-        messages=messages,  # type: ignore[arg-type]
+        messages=messages,
         **kwargs,
     )
     content = resp.choices[0].message.content or ""
@@ -129,9 +130,10 @@ def chat_message(
         extra["tools"] = tools
     if tool_choice is not None:
         extra["tool_choice"] = tool_choice
-    resp = _client().chat.completions.create(
+    # OpenAI SDK typing rejects plain-dict messages + **extra; the call is runtime-correct.
+    resp = _client().chat.completions.create(  # pyrefly: ignore[no-matching-overload]
         model=model or _config().TEXT_MODEL,
-        messages=messages,  # type: ignore[arg-type]
+        messages=messages,
         **extra,
     )
     return resp.choices[0].message

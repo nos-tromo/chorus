@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from neo4j import Driver
+from typing_extensions import override
 
 from tests.ingestion._fakes import FakeAdapter
 
@@ -143,6 +144,7 @@ def test_comment_with_unresolvable_parent_is_skipped(migrated_driver: Driver, mo
     class _OrphanedCommentAdapter(FakeAdapter):
         """FakeAdapter variant whose comment references an unknown posting."""
 
+        @override
         def fetch_comments(self, since: Any) -> Iterable[dict[str, Any]]:
             yield {
                 "UUID": "c-orphan",
@@ -202,6 +204,7 @@ def test_malformed_posting_row_is_skipped_and_does_not_abort(
     class _BadPostingAdapter(FakeAdapter):
         """FakeAdapter variant whose posting omits the required Author ID."""
 
+        @override
         def fetch_postings(self, since: Any) -> Iterable[dict[str, Any]]:
             yield {
                 "UUID": "p-bad",
@@ -254,6 +257,7 @@ def test_posting_with_missing_timestamp_is_kept(migrated_driver: Driver, monkeyp
     class _NoTimestampPostingAdapter(FakeAdapter):
         """FakeAdapter variant whose posting carries no creation timestamp."""
 
+        @override
         def fetch_postings(self, since: Any) -> Iterable[dict[str, Any]]:
             yield {
                 "UUID": "p-1",
@@ -324,6 +328,7 @@ def test_connections_stage_drops_no_signal_rows(migrated_driver: Driver, monkeyp
     class _NoFlagsAdapter(FakeAdapter):
         """FakeAdapter variant whose connection row carries no flag."""
 
+        @override
         def fetch_connections(self, since: Any) -> Iterable[dict[str, Any]]:
             yield {
                 "Network Object ID": "a-1",

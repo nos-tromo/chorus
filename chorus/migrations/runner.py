@@ -54,7 +54,7 @@ def _split_statements(body: str) -> list[str]:
         Cleaned statements in source order, with empty statements
         discarded.
     """
-    stripped_lines = []
+    stripped_lines: list[str] = []
     for line in body.splitlines():
         # remove `//` line comments (Cypher); preserve content before them
         in_str: str | None = None

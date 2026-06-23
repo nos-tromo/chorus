@@ -209,7 +209,7 @@ def _execute_tool_call(
     try:
         loaded = json.loads(tc.function.arguments or "{}")
     except json.JSONDecodeError:
-        loaded = {}
+        loaded = {}  # pyrefly: ignore[implicit-any-empty-container]  # fallback dict when JSON is unparseable
     arguments: dict[str, Any] = cast("dict[str, Any]", loaded) if isinstance(loaded, dict) else {}
 
     spec = TOOLS.get(name)
@@ -237,7 +237,7 @@ def _execute_tool_call(
 
     result = out.model_dump(mode="json")
     count_fn = getattr(out, "audit_result_count", None)
-    result_count = count_fn() if callable(count_fn) else None
+    result_count: int | None = cast("int | None", count_fn()) if callable(count_fn) else None
     return (
         TraceStep(tool=name, arguments=arguments, result_count=result_count),
         _tool_message(tc, result, result_count=result_count, max_items=max_items, max_chars=max_chars),

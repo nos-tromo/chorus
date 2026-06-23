@@ -412,7 +412,7 @@ def test_ingest_error_marks_job_error_and_cleans_staging(
         assert rows[0]["status"] == "error"
 
         uploads = chorus_env / "uploads"
-        leftovers = list(uploads.iterdir()) if uploads.exists() else []
+        leftovers: list[Path] = list(uploads.iterdir()) if uploads.exists() else []
         assert leftovers == [], f"staging not cleaned: {leftovers}"
     finally:
         jobs.shutdown()
