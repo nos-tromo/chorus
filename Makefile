@@ -34,7 +34,7 @@ help:
 	@echo "  make ingest     run one ingestion pass from INGESTION_SOURCE_DIR"
 	@echo "  make resolve    resolve aliases to canonical entities"
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
-	@echo "  make pre-commit run pre-commit hooks (ruff + mypy)"
+	@echo "  make pre-commit run pre-commit hooks (ruff + pyrefly)"
 	@echo "  make test       run pytest"
 
 # Apply pending Neo4j migrations against the configured NEO4J_URI.

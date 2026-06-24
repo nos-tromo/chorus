@@ -40,7 +40,7 @@ interpolates it into the backend service, which surfaces it to the SPA via
 `GET /config`.
 
 Python: `pyproject.toml` accepts `>=3.11,<3.14`; `.python-version`
-pins dev to `3.12`. CI runs 3.11/3.12/3.13. The ruff/mypy config
+pins dev to `3.12`. CI runs 3.11/3.12/3.13. The ruff/pyrefly config
 mirrors `nos-tromo/.github/configs/python-strict/`; drift fails CI.
 
 Not yet landed (tracked in `docs/decisions/` / open tickets):
@@ -59,7 +59,7 @@ uv run pytest tests/path/test_x.py::test_name   # single test
 uv run pytest tests/integration -k <name>       # one integration case
 uv run ruff check .            # lint
 uv run ruff format .           # format
-uv run mypy .                  # type check
+uv run pyrefly check           # type check
 uv run pre-commit run --all-files               # pre-commit hooks
 
 uv run python -m chorus.migrations.cli apply    # apply Neo4j migrations (or: status)
@@ -748,15 +748,15 @@ chorus/                      # top-level repo
   structured output, JSON in production, human-readable in dev.
   Operational logging and the §76 BDSG audit logger are separate
   concerns; do not conflate them in code or in storage.
-- **Type checking**: `mypy`. Pydantic models for all tool I/O and
-  ingestion DTOs so mypy stays useful at module boundaries.
+- **Type checking**: `pyrefly`. Pydantic models for all tool I/O and
+  ingestion DTOs so pyrefly stays useful at module boundaries.
 - **Lint and format**: `ruff` (single tool for both — no separate
   `black`).
-- **Pre-commit**: `pre-commit` runs ruff and mypy on changed files
+- **Pre-commit**: `pre-commit` runs ruff and pyrefly on changed files
   before commit. Full pytest runs in CI, not in the hook.
 - **CI**: GitHub Actions. `.github/workflows/ci.yml` delegates to the
   shared `nos-tromo/.github` python-app-ci workflow (pinned tag):
-  ruff → mypy → pytest across 3.11/3.12/3.13 (`uv sync --frozen`) →
+  ruff → pyrefly → pytest across 3.11/3.12/3.13 (`uv sync --frozen`) →
   Docker build. The airgap delivery bundle is `make bundle` (versioned
   image tarballs via `scripts/bundle_images.sh`). No CI-driven deploy in
   v1; deploys are manual on the airgapped side via the data-plane and
