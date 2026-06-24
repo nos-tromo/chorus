@@ -17,7 +17,6 @@ wheels/
 
 # Directories
 __pypackages__/
-.mypy_cache/
 .ruff_cache/
 .pytest_cache/
 .remember/

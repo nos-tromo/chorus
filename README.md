@@ -288,11 +288,11 @@ takes a minute. Subsequent runs reuse the image.
 ```bash
 uv run ruff check .
 uv run ruff format .
-uv run mypy .
+uv run pyrefly check
 uv run pre-commit run --all-files
 ```
 
-Pre-commit runs ruff and mypy on changed files; the full pytest
+Pre-commit runs ruff and pyrefly on changed files; the full pytest
 suite runs in CI, not in the hook.
 
 ## Bringing up the app via compose (optional)

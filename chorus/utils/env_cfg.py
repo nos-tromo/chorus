@@ -2,7 +2,7 @@
 
 Every config the app reads at runtime is declared here as a frozen dataclass
 with a `load_*_env()` function. Modules import the loader, not `os.environ`.
-This keeps the env surface auditable and gives mypy a typed handle on every
+This keeps the env surface auditable and gives pyrefly a typed handle on every
 knob.
 
 Provider defaults follow the pattern from the sister project docint:
