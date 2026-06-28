@@ -307,8 +307,9 @@ in `CLAUDE.md`), then:
 make network    # create the shared inference-net + data-net (idempotent)
 make volumes    # create the external chorus-state volume (idempotent)
 make build      # build backend + frontend images
-make up         # start backend + frontend nginx (production shape, no host ports)
-make up-dev     # like 'up', but publishes backend:8000 + frontend:${CHORUS_FRONTEND_HOST_PORT:-8501}
+make up         # start backend + frontend nginx (detached, production shape, no host ports, no build)
+make up-dev     # like 'up', but publishes backend:8000 + frontend:${CHORUS_FRONTEND_HOST_PORT:-8501} (no build)
+make dev        # build backend + frontend, then up-dev
 make migrate    # apply Neo4j migrations from inside the api container
 make ingest     # run one ingestion pass from INGESTION_SOURCE_DIR
 make resolve    # resolve aliases to canonical entities
