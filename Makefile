@@ -1,6 +1,6 @@
 ### chorus — top-level make targets.
 ###
-### The compose lifecycle (network/volumes/build/bundle/up/up-dev/stop/down/
+### The compose lifecycle (network/volumes/build/bundle/up/up-dev/dev/stop/down/
 ### logs/pre-commit/test) + the versioned image tag come from make/common.mk,
 ### vendored from nos-tromo/.github. Only chorus-specific config, the help
 ### text, and the app-specific targets (migrate/ingest/resolve/bootstrap)
@@ -14,7 +14,6 @@
 REPO     := chorus
 NETWORKS := inference-net data-net
 VOLUMES  := chorus-state
-UP_FLAGS := -d
 include make/common.mk
 
 .PHONY: help migrate ingest resolve bootstrap frontend-lint frontend-test
@@ -26,8 +25,9 @@ help:
 	@echo "  make volumes    create the external chorus-state Docker volume"
 	@echo "  make build      build backend + frontend images"
 	@echo "  make bundle     ship the built images as a versioned .tar.gz"
-	@echo "  make up         start backend + frontend (production shape, no host ports)"
-	@echo "  make up-dev     like 'up', but publishes backend + frontend ports on the host"
+	@echo "  make up         start backend + frontend (detached, production shape, no host ports, no build)"
+	@echo "  make up-dev     like 'up', but publishes backend + frontend ports on the host (no build)"
+	@echo "  make dev        build backend + frontend, then up-dev"
 	@echo "  make stop       stop containers (keep them)"
 	@echo "  make down       stop + remove containers (never touches data-plane)"
 	@echo "  make migrate    apply pending Neo4j migrations"

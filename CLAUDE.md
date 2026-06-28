@@ -74,7 +74,7 @@ the first run pulls the image. The other test dirs are unit tests that
 stub inference and need no services.
 
 The Makefile wraps the compose workflow: `make network` / `volumes` /
-`build` / `up` / `up-dev` / `down` / `migrate` / `ingest` / `resolve` /
+`build` / `up` / `up-dev` / `dev` (build, then up-dev) / `down` / `migrate` / `ingest` / `resolve` /
 `bootstrap` (wait for data-plane health, then up) / `test` /
 `pre-commit` / `bundle` (airgap image tarball). `README.md` has the
 local quick start (env vars, seeding, first queries).
