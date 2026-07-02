@@ -34,3 +34,15 @@ def get_config() -> ConfigOut:
         ingestion_enabled=load_ingestion_ui_env().enabled,
         version=__version__,
     )
+
+
+class VersionOut(BaseModel):
+    """App release version."""
+
+    version: str
+
+
+@router.get("/version", response_model=VersionOut)
+def get_version() -> VersionOut:
+    """Return the running app version (unauthenticated)."""
+    return VersionOut(version=__version__)

@@ -12,6 +12,8 @@ vi.mock('../api/config', () => ({
     (): Promise<AppConfig> =>
       Promise.resolve({ language: 'en', ingestion_enabled: false, version: '0.1.0' }),
   ),
+  // Shell renders Sidebar, which mounts VersionBadge — stub its fetch too.
+  getVersion: vi.fn((): Promise<{ version: string }> => Promise.resolve({ version: '' })),
 }))
 
 function makeClient() {
