@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 const BACKEND = process.env.CHORUS_BACKEND_ORIGIN ?? 'http://localhost:8000'
 const proxy = Object.fromEntries(
-  ['/health', '/config', '/tools', '/agent', '/ingestion', '/stats'].map((p) => [
+  ['/health', '/config', '/tools', '/agent', '/ingestion', '/stats', '/version'].map((p) => [
     p,
     { target: BACKEND, changeOrigin: true },
   ]),

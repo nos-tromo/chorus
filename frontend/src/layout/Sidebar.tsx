@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useConfig, useT } from '../config/ConfigContext'
+import { VersionBadge } from '../components/VersionBadge'
 import type { Strings } from '../i18n'
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -73,12 +74,16 @@ export function Sidebar() {
 
       {/* Conditional: Ingestion */}
       {config.ingestion_enabled && (
-        <nav className="mt-auto flex flex-col gap-1 border-t border-border pt-4">
+        <nav className="flex flex-col gap-1 border-t border-border pt-4">
           <NavLink to="/ingestion" className={navClass}>
             {t('ingest.title')}
           </NavLink>
         </nav>
       )}
+
+      <div className="mt-auto pt-4">
+        <VersionBadge />
+      </div>
     </aside>
   )
 }

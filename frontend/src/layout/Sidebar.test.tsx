@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import type { AppConfig } from '../api/types'
@@ -23,6 +24,10 @@ vi.mock('../config/ConfigContext', () => ({
   ),
 }))
 
+// Sidebar mounts VersionBadge, which fetches its own version — mock it out too
+// so no Provider / real fetch is needed for that either.
+vi.mock('../api/config', () => ({ getVersion: vi.fn().mockResolvedValue({ version: '' }) }))
+
 import { useConfig, useT } from '../config/ConfigContext'
 
 // Helpers to re-stub both hooks together (keeps mockConfig in sync).
@@ -36,10 +41,13 @@ function setIngestion(enabled: boolean) {
 }
 
 function renderSidebar() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <MemoryRouter>
-      <Sidebar />
-    </MemoryRouter>,
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
 }
 
