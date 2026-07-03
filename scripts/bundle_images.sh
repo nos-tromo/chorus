@@ -4,6 +4,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 . scripts/bundle-lib.sh
 
 COMPOSE=(docker compose --env-file .env -f docker/compose.yaml)
+[[ -n "${BUNDLE_DEV:-}" ]] || bundle_checkout_release chorus
 bundle_version chorus; VER="$BUNDLE_VERSION"
 
 "${COMPOSE[@]}" build
