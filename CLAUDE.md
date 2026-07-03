@@ -76,8 +76,10 @@ stub inference and need no services.
 The Makefile wraps the compose workflow: `make network` / `volumes` /
 `build` / `up` / `up-dev` / `dev` (build, then up-dev) / `down` / `migrate` / `ingest` / `resolve` /
 `bootstrap` (wait for data-plane health, then up) / `test` /
-`pre-commit` / `bundle` (airgap image tarball). `README.md` has the
-local quick start (env vars, seeding, first queries).
+`pre-commit` / `bundle` (airgap image tarball from the latest annotated
+release tag) / `bundle-dev` (airgap tarball of the current working tree, for
+dev/soak). `README.md` has the local quick start (env vars, seeding, first
+queries).
 
 Production images are built on the internet-connected CI side with
 `uv sync --locked` from the hash-locked `uv.lock`, baking the dependency
