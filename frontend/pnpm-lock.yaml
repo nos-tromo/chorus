@@ -12,14 +12,11 @@ importers:
         specifier: ^5.1.0
         version: 5.2.8
       '@infra/ui':
-        specifier: https://codeload.github.com/nos-tromo/infra-ui/tar.gz/4cafeadc32d7ad4b5bd40bbdbb086142f4a19df9
-        version: https://codeload.github.com/nos-tromo/infra-ui/tar.gz/4cafeadc32d7ad4b5bd40bbdbb086142f4a19df9(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: https://codeload.github.com/nos-tromo/infra-ui/tar.gz/v0.4.0
+        version: https://codeload.github.com/nos-tromo/infra-ui/tar.gz/v0.4.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@tanstack/react-query':
         specifier: ^5.100.14
         version: 5.101.0(react@19.2.7)
-      cytoscape:
-        specifier: ^3.30.0
-        version: 3.34.0
       react:
         specifier: ^19.2.0
         version: 19.2.7
@@ -54,9 +51,6 @@ importers:
       '@testing-library/react':
         specifier: ^16.0.1
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@types/cytoscape':
-        specifier: ^3.21.0
-        version: 3.31.0
       '@types/node':
         specifier: ^25.0.0
         version: 25.9.4
@@ -250,9 +244,9 @@ packages:
     resolution: {integrity: sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ==}
     engines: {node: '>=18.18'}
 
-  '@infra/ui@https://codeload.github.com/nos-tromo/infra-ui/tar.gz/4cafeadc32d7ad4b5bd40bbdbb086142f4a19df9':
-    resolution: {tarball: https://codeload.github.com/nos-tromo/infra-ui/tar.gz/4cafeadc32d7ad4b5bd40bbdbb086142f4a19df9}
-    version: 0.1.0
+  '@infra/ui@https://codeload.github.com/nos-tromo/infra-ui/tar.gz/v0.4.0':
+    resolution: {tarball: https://codeload.github.com/nos-tromo/infra-ui/tar.gz/v0.4.0}
+    version: 0.4.0
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
@@ -523,10 +517,6 @@ packages:
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
-
-  '@types/cytoscape@3.31.0':
-    resolution: {integrity: sha512-EXHOHxqQjGxLDEh5cP4te6J0bi7LbCzmZkzsR6f703igUac8UGMdEohMyU3GHAayCTZrLQOMnaE/lqB2Ekh8Ww==}
-    deprecated: This is a stub types definition. cytoscape provides its own type definitions, so you do not need this installed.
 
   '@types/d3-array@3.2.2':
     resolution: {integrity: sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==}
@@ -894,10 +884,6 @@ packages:
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
-
-  cytoscape@3.34.0:
-    resolution: {integrity: sha512-62rNSrioXw93uliKFBwjukeQyeWwH2PqDrTac31r2P6464u3AUvTk0xS4LVvT251g7IgkFunrI48ZEZGjywSOg==}
-    engines: {node: '>=0.10'}
 
   d3-array@3.2.4:
     resolution: {integrity: sha512-tdQAmyA18i4J7wprpYq8ClcxZy3SC31QMeByyCFyRt7BVHdREQZ5lpzoe5mFEYZUWe+oq8HBvk9JjpibyEV4Jg==}
@@ -2553,7 +2539,7 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.3': {}
 
-  '@infra/ui@https://codeload.github.com/nos-tromo/infra-ui/tar.gz/4cafeadc32d7ad4b5bd40bbdbb086142f4a19df9(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@infra/ui@https://codeload.github.com/nos-tromo/infra-ui/tar.gz/v0.4.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
       class-variance-authority: 0.7.1
       clsx: 2.1.1
@@ -2778,10 +2764,6 @@ snapshots:
     dependencies:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
-
-  '@types/cytoscape@3.31.0':
-    dependencies:
-      cytoscape: 3.34.0
 
   '@types/d3-array@3.2.2': {}
 
@@ -3182,8 +3164,6 @@ snapshots:
   cssesc@3.0.0: {}
 
   csstype@3.2.3: {}
-
-  cytoscape@3.34.0: {}
 
   d3-array@3.2.4:
     dependencies:

@@ -1,166 +1,144 @@
 import { describe, it, expect } from 'vitest'
-import { toNetworkElements } from './networkElements'
-import type { NetworkAroundOut } from '../api/types'
+import { NETWORK_NODE_STYLES, toNetworkForceGraph } from './networkElements'
+import type { GraphState } from './graphExplorer'
+import type { NetworkNode, NetworkEdge } from '../api/types'
 
-// Helpers
-function makeOut(overrides: Partial<NetworkAroundOut> = {}): NetworkAroundOut {
-  return {
-    seed: 'TestEntity',
-    seed_node_id: 'topic:testtopic',
-    nodes: [],
-    edges: [],
-    truncated: false,
-    ...overrides,
-  }
+function makeState(
+  nodes: NetworkNode[] = [],
+  edges: NetworkEdge[] = []
+): GraphState<NetworkNode, NetworkEdge> {
+  return { nodes, edges }
 }
 
-describe('toNetworkElements — nodes', () => {
-  it('returns an empty array for an empty network', () => {
-    const elements = toNetworkElements(makeOut())
-    expect(elements).toEqual([])
-  })
-
-  it('seed topic node gets classes containing "seed" and "topic"', () => {
-    const out = makeOut({
-      nodes: [{ id: 'topic:x', kind: 'topic', label: 'X', entity_id: null, is_seed: true }],
+describe('NETWORK_NODE_STYLES', () => {
+  it('defines exactly seed, author, topic with the fixed palette', () => {
+    expect(NETWORK_NODE_STYLES).toEqual({
+      seed: { color: '#fbbf24' },
+      author: { color: '#7c3aed', labelColor: '#a78bfa' },
+      topic: { color: '#4ade80' },
     })
-    const elements = toNetworkElements(out)
-    const node = elements.find((e) => e.data.id === 'topic:x')
-    expect(node).toBeDefined()
-    const classes = (node!.classes as string).split(' ')
-    expect(classes).toContain('seed')
-    expect(classes).toContain('topic')
-  })
-
-  it('non-seed topic node has class "topic" but NOT "seed"', () => {
-    const out = makeOut({
-      nodes: [{ id: 'topic:y', kind: 'topic', label: 'Y', entity_id: 'eid-1', is_seed: false }],
-    })
-    const elements = toNetworkElements(out)
-    const node = elements[0]
-    const classes = (node.classes as string).split(' ')
-    expect(classes).toContain('topic')
-    expect(classes).not.toContain('seed')
-  })
-
-  it('author node has class "author" and carries isSeed=false when not seed', () => {
-    const out = makeOut({
-      nodes: [{ id: 'author:alice', kind: 'author', label: 'alice', entity_id: null, is_seed: false }],
-    })
-    const elements = toNetworkElements(out)
-    const node = elements[0]
-    const classes = (node.classes as string).split(' ')
-    expect(classes).toContain('author')
-    expect(classes).not.toContain('seed')
-    expect(node.data.isSeed).toBe(false)
-  })
-
-  it('is_seed=true on an author node also adds "seed" class', () => {
-    // Unusual but the mapping must honour the flag regardless of kind
-    const out = makeOut({
-      nodes: [{ id: 'author:bob', kind: 'author', label: 'bob', entity_id: null, is_seed: true }],
-    })
-    const elements = toNetworkElements(out)
-    const node = elements[0]
-    const classes = (node.classes as string).split(' ')
-    expect(classes).toContain('seed')
-    expect(classes).toContain('author')
-  })
-
-  it('node data carries id, label, kind, isSeed, entityId', () => {
-    const out = makeOut({
-      nodes: [{ id: 'topic:z', kind: 'topic', label: 'Zeta', entity_id: 'eid-z', is_seed: false }],
-    })
-    const node = toNetworkElements(out)[0]
-    expect(node.data.id).toBe('topic:z')
-    expect(node.data.label).toBe('Zeta')
-    expect(node.data.kind).toBe('topic')
-    expect(node.data.isSeed).toBe(false)
-    expect(node.data.entityId).toBe('eid-z')
   })
 })
 
-describe('toNetworkElements — edges', () => {
-  it('edge id is "${source}__${target}"', () => {
-    const out = makeOut({
-      nodes: [
-        { id: 'author:a', kind: 'author', label: 'A', entity_id: null, is_seed: false },
-        { id: 'topic:t', kind: 'topic', label: 'T', entity_id: null, is_seed: false },
-      ],
-      edges: [{ source: 'author:a', target: 'topic:t', weight: 1 }],
-    })
-    const elements = toNetworkElements(out)
-    const edge = elements.find((e) => !('kind' in (e.data as object)) && e.data.source)
-    expect(edge!.data.id).toBe('author:a__topic:t')
+describe('toNetworkForceGraph — nodes', () => {
+  it('returns empty nodes/edges for an empty state', () => {
+    expect(toNetworkForceGraph(makeState())).toEqual({ nodes: [], edges: [] })
   })
 
-  it('duplicate edges (same source+target) are deduped to one', () => {
-    const out = makeOut({
-      nodes: [
+  it('non-seed node kind passes through the backend kind (author)', () => {
+    const state = makeState([
+      { id: 'author:a', kind: 'author', label: 'A', entity_id: null, is_seed: false },
+    ])
+    const { nodes } = toNetworkForceGraph(state)
+    expect(nodes[0].kind).toBe('author')
+  })
+
+  it('non-seed node kind passes through the backend kind (topic)', () => {
+    const state = makeState([
+      { id: 'topic:t', kind: 'topic', label: 'T', entity_id: 'eid-1', is_seed: false },
+    ])
+    const { nodes } = toNetworkForceGraph(state)
+    expect(nodes[0].kind).toBe('topic')
+  })
+
+  it('is_seed=true overrides kind to "seed" regardless of backend kind', () => {
+    const state = makeState([
+      { id: 'author:seed', kind: 'author', label: 'Seed', entity_id: null, is_seed: true },
+    ])
+    const { nodes } = toNetworkForceGraph(state)
+    expect(nodes[0].kind).toBe('seed')
+  })
+
+  it('node size is 1 + total incident edge weight', () => {
+    const state = makeState(
+      [
+        { id: 'author:a', kind: 'author', label: 'A', entity_id: null, is_seed: false },
+        { id: 'topic:t', kind: 'topic', label: 'T', entity_id: null, is_seed: false },
+        { id: 'topic:u', kind: 'topic', label: 'U', entity_id: null, is_seed: false },
+      ],
+      [
+        { source: 'author:a', target: 'topic:t', weight: 2 },
+        { source: 'author:a', target: 'topic:u', weight: 3 },
+      ]
+    )
+    const { nodes } = toNetworkForceGraph(state)
+    const a = nodes.find((n) => n.id === 'author:a')!
+    expect(a.size).toBe(1 + 2 + 3)
+  })
+
+  it('node with no incident edges has size 1', () => {
+    const state = makeState([
+      { id: 'author:lonely', kind: 'author', label: 'Lonely', entity_id: null, is_seed: false },
+    ])
+    const { nodes } = toNetworkForceGraph(state)
+    expect(nodes[0].size).toBe(1)
+  })
+
+  it('seed node has a floor of 6 even with low incident weight', () => {
+    const state = makeState(
+      [
+        { id: 'author:seed', kind: 'author', label: 'Seed', entity_id: null, is_seed: true },
+        { id: 'topic:t', kind: 'topic', label: 'T', entity_id: null, is_seed: false },
+      ],
+      [{ source: 'author:seed', target: 'topic:t', weight: 1 }]
+    )
+    const { nodes } = toNetworkForceGraph(state)
+    const seed = nodes.find((n) => n.id === 'author:seed')!
+    expect(seed.size).toBe(6)
+  })
+
+  it('seed node size exceeds the floor when incident weight warrants it', () => {
+    const state = makeState(
+      [
+        { id: 'author:seed', kind: 'author', label: 'Seed', entity_id: null, is_seed: true },
+        { id: 'topic:t', kind: 'topic', label: 'T', entity_id: null, is_seed: false },
+      ],
+      [{ source: 'author:seed', target: 'topic:t', weight: 20 }]
+    )
+    const { nodes } = toNetworkForceGraph(state)
+    const seed = nodes.find((n) => n.id === 'author:seed')!
+    expect(seed.size).toBe(21)
+  })
+})
+
+describe('toNetworkForceGraph — edges', () => {
+  it('edge shape is {source, target, kind: "mentions", weight}', () => {
+    const state = makeState(
+      [
         { id: 'author:a', kind: 'author', label: 'A', entity_id: null, is_seed: false },
         { id: 'topic:t', kind: 'topic', label: 'T', entity_id: null, is_seed: false },
       ],
-      edges: [
+      [{ source: 'author:a', target: 'topic:t', weight: 5 }]
+    )
+    const { edges } = toNetworkForceGraph(state)
+    expect(edges).toEqual([{ source: 'author:a', target: 'topic:t', kind: 'mentions', weight: 5 }])
+  })
+
+  it('no dedup — duplicate input edges both pass through', () => {
+    const state = makeState(
+      [
+        { id: 'author:a', kind: 'author', label: 'A', entity_id: null, is_seed: false },
+        { id: 'topic:t', kind: 'topic', label: 'T', entity_id: null, is_seed: false },
+      ],
+      [
         { source: 'author:a', target: 'topic:t', weight: 2 },
         { source: 'author:a', target: 'topic:t', weight: 3 },
-      ],
-    })
-    const elements = toNetworkElements(out)
-    const edgeElements = elements.filter((e) => e.data.source)
-    expect(edgeElements).toHaveLength(1)
+      ]
+    )
+    const { edges } = toNetworkForceGraph(state)
+    expect(edges).toHaveLength(2)
   })
+})
 
-  it('weight 1 → width 1.0 (minimum)', () => {
-    const out = makeOut({
-      nodes: [
-        { id: 'author:a', kind: 'author', label: 'A', entity_id: null, is_seed: false },
+describe('toNetworkForceGraph — determinism', () => {
+  it('same input produces deep-equal output across calls', () => {
+    const state = makeState(
+      [
+        { id: 'author:a', kind: 'author', label: 'A', entity_id: null, is_seed: true },
         { id: 'topic:t', kind: 'topic', label: 'T', entity_id: null, is_seed: false },
       ],
-      edges: [{ source: 'author:a', target: 'topic:t', weight: 1 }],
-    })
-    const elements = toNetworkElements(out)
-    const edge = elements.find((e) => e.data.source)!
-    expect(edge.data.width).toBeCloseTo(1.0)
-  })
-
-  it('weight 3 → width 2.0', () => {
-    const out = makeOut({
-      nodes: [
-        { id: 'author:a', kind: 'author', label: 'A', entity_id: null, is_seed: false },
-        { id: 'topic:t', kind: 'topic', label: 'T', entity_id: null, is_seed: false },
-      ],
-      edges: [{ source: 'author:a', target: 'topic:t', weight: 3 }],
-    })
-    const elements = toNetworkElements(out)
-    const edge = elements.find((e) => e.data.source)!
-    expect(edge.data.width).toBeCloseTo(2.0)
-  })
-
-  it('large weight caps at 6.0', () => {
-    const out = makeOut({
-      nodes: [
-        { id: 'author:a', kind: 'author', label: 'A', entity_id: null, is_seed: false },
-        { id: 'topic:t', kind: 'topic', label: 'T', entity_id: null, is_seed: false },
-      ],
-      edges: [{ source: 'author:a', target: 'topic:t', weight: 999 }],
-    })
-    const elements = toNetworkElements(out)
-    const edge = elements.find((e) => e.data.source)!
-    expect(edge.data.width).toBeCloseTo(6.0)
-  })
-
-  it('weight and source/target are preserved on edge data', () => {
-    const out = makeOut({
-      nodes: [
-        { id: 'author:x', kind: 'author', label: 'X', entity_id: null, is_seed: false },
-        { id: 'topic:y', kind: 'topic', label: 'Y', entity_id: null, is_seed: false },
-      ],
-      edges: [{ source: 'author:x', target: 'topic:y', weight: 5 }],
-    })
-    const elements = toNetworkElements(out)
-    const edge = elements.find((e) => e.data.source)!
-    expect(edge.data.source).toBe('author:x')
-    expect(edge.data.target).toBe('topic:y')
-    expect(edge.data.weight).toBe(5)
+      [{ source: 'author:a', target: 'topic:t', weight: 4 }]
+    )
+    expect(toNetworkForceGraph(state)).toEqual(toNetworkForceGraph(state))
   })
 })

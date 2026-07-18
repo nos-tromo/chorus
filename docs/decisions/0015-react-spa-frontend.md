@@ -65,6 +65,10 @@ test (EN/DE key parity).
 
 ### 2. Cytoscape.js for network-graph screens (over viz.js, Graphviz-WASM, or server-rendered SVG)
 
+> Superseded by ADR 0016 (renderer): Cytoscape.js was later replaced by the
+> shared `@infra/ui` `<ForceGraph>` component. The rest of this section
+> records the reasoning at the time this decision was made.
+
 Two tools (`network_around`, `social_network_around`) return `{nodes, edges}`
 payloads. The old UI sent those through `ui/network_dot.py` and
 `ui/social_network_dot.py` to Graphviz and rendered a static SVG in Streamlit.

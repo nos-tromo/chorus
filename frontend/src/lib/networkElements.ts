@@ -1,79 +1,64 @@
 /**
- * Pure mapper: NetworkAroundOut → Cytoscape ElementDefinition[].
+ * Pure mapper: GraphState<NetworkNode, NetworkEdge> → ForceGraph props.
  *
- * No React, no Cytoscape runtime — just converts the backend's node/edge
- * lists into the element array the Cytoscape component expects.
- *
- * Styling (colors, shapes) is the stylesheet's responsibility (Task 18).
- * This file owns only the semantic class names and computed data fields.
+ * No React, no rendering runtime — just converts the accumulated explorer
+ * graph state into the flat node/edge arrays the `@infra/ui` `ForceGraph`
+ * primitive consumes. Dedup is `mergeGraph`'s job (graphExplorer.ts); the
+ * inputs here are already deduped, so this file does none.
  */
 
-import type { ElementDefinition } from 'cytoscape'
-import type { NetworkAroundOut } from '../api/types'
+import type { ForceGraphEdge, ForceGraphNode, ForceGraphNodeStyle } from '@infra/ui'
+import type { GraphState } from './graphExplorer'
+import type { NetworkEdge, NetworkNode } from '../api/types'
 
-const MAX_WIDTH = 6.0
+const SEED_SIZE_FLOOR = 6
 
 /**
- * Map a backend edge weight to a line width using the same formula as the
- * DOT renderer: 1.0 + 0.5 * max(weight - 1, 0), capped at MAX_WIDTH.
+ * Node color palette, keyed by the `kind` value produced below.
  */
-function penwidth(weight: number): number {
-  return Math.min(1.0 + 0.5 * Math.max(weight - 1, 0), MAX_WIDTH)
+export const NETWORK_NODE_STYLES: Record<string, ForceGraphNodeStyle> = {
+  seed: { color: '#fbbf24' },
+  author: { color: '#7c3aed', labelColor: '#a78bfa' },
+  topic: { color: '#4ade80' },
 }
 
 /**
- * Convert a NetworkAroundOut (from the network_around tool) into a flat
- * array of Cytoscape ElementDefinition objects suitable for passing to
- * cytoscape({ elements }).
+ * Convert accumulated network-explorer graph state into ForceGraph props.
  *
- * Node classes (space-joined string):
- *   - 'author'  when kind === 'author'
- *   - 'topic'   when kind === 'topic'
- *   - 'seed'    additionally when is_seed === true
+ * Node kind: `'seed'` when `is_seed`, else the backend `kind` verbatim
+ * (`'author'` | `'topic'`).
  *
- * Edge data:
- *   - id      = `${source}__${target}`  (stable, dedupe key)
- *   - source, target, weight            (pass-through)
- *   - width                             (computed penwidth)
+ * Node size: `1 + total incident edge weight` (sum of weights of edges
+ * touching the node as source or target); seed nodes are floored at 6.
  *
- * Duplicate edges (same source+target pair) are silently deduplicated —
- * the first occurrence wins.
+ * Edges pass through as `{source, target, kind: 'mentions', weight}` —
+ * no id, no dedup.
  */
-export function toNetworkElements(out: NetworkAroundOut): ElementDefinition[] {
-  const elements: ElementDefinition[] = []
-
-  for (const node of out.nodes) {
-    const classParts: string[] = [node.kind]
-    if (node.is_seed) classParts.push('seed')
-
-    elements.push({
-      data: {
-        id: node.id,
-        label: node.label,
-        kind: node.kind,
-        isSeed: node.is_seed,
-        entityId: node.entity_id,
-      },
-      classes: classParts.join(' '),
-    })
+export function toNetworkForceGraph(
+  g: GraphState<NetworkNode, NetworkEdge>
+): { nodes: ForceGraphNode[]; edges: ForceGraphEdge[] } {
+  const incidentWeight = new Map<string, number>()
+  for (const edge of g.edges) {
+    incidentWeight.set(edge.source, (incidentWeight.get(edge.source) ?? 0) + edge.weight)
+    incidentWeight.set(edge.target, (incidentWeight.get(edge.target) ?? 0) + edge.weight)
   }
 
-  const seenEdgeIds = new Set<string>()
-  for (const edge of out.edges) {
-    const id = `${edge.source}__${edge.target}`
-    if (seenEdgeIds.has(id)) continue
-    seenEdgeIds.add(id)
+  const nodes: ForceGraphNode[] = g.nodes.map((n) => {
+    const size = 1 + (incidentWeight.get(n.id) ?? 0)
+    return {
+      id: n.id,
+      label: n.label,
+      kind: n.is_seed ? 'seed' : n.kind,
+      size: n.is_seed ? Math.max(size, SEED_SIZE_FLOOR) : size,
+    }
+  })
 
-    elements.push({
-      data: {
-        id,
-        source: edge.source,
-        target: edge.target,
-        weight: edge.weight,
-        width: penwidth(edge.weight),
-      },
-    })
-  }
+  const edges: ForceGraphEdge[] = g.edges.map((e) => ({
+    source: e.source,
+    target: e.target,
+    kind: 'mentions',
+    weight: e.weight,
+  }))
 
-  return elements
+  return { nodes, edges }
 }

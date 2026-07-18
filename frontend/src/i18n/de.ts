@@ -93,8 +93,33 @@ export const de: Strings = {
     '{n} Knoten: {authors} Autor(en), {topics} Thema/Themen; {edges} Kante(n)',
   'network.capped':
     'Begrenzte Ansicht — erhöhe die Autoren-/Themen-Limits, um mehr des Netzwerks zu sehen.',
-  // graph canvas
+  // graph explorer (shared)
+  'graph.min_edges': 'Min. Kanten',
+  'graph.edge_length': 'Kantenlänge',
+  'graph.zoom': 'Zoom',
+  'graph.reset': 'Zurücksetzen',
   'graph.fit': 'Einpassen',
+  'graph.expand_node': 'Knoten erweitern',
+  'graph.remove_node': 'Knoten entfernen',
+  'graph.remove_nodes': '{n} Knoten entfernen',
+  'graph.maximize': 'Graph vergrößern',
+  'graph.minimize': 'Graph verkleinern',
+  'graph.expansion_capped':
+    'Erweiterung begrenzt — die {limit} am stärksten vernetzten Nachbarn werden angezeigt.',
+  'graph.expand_failed': 'Erweiterung fehlgeschlagen: {error}',
+  'graph.hint':
+    'Scrollen zum Zoomen, Ziehen zum Verschieben, Klick zum Auswählen, Doppelklick zum Erweitern.',
+  'graph.export_json': 'JSON exportieren',
+  'graph.export_graphml': 'GraphML exportieren',
+  'graph.export_html': 'HTML exportieren',
+  'network.legend_seed': 'Ausgangspunkt',
+  'network.legend_author': 'Autoren',
+  'network.legend_topic': 'Themen',
+  'social.legend_seed': 'Ausgangspunkt',
+  'social.legend_ring1': 'Direkte Verbindungen',
+  'social.legend_ring2': 'Zweiter Ring',
+  'social.legend_ringN': 'Weiter entfernt',
+  'agent.graph_result': 'Graph aus {tool}',
   // social_network_around (08)
   'social.title': 'Soziales Netzwerk rund um einen Autor',
   'social.caption':

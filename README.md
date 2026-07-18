@@ -38,7 +38,9 @@ The FastAPI app boots, applies Neo4j migrations on startup, and exposes
   nginx, with one screen per tool, an agent screen, and a data-ingestion
   screen — upload CSV exports and run migrate/ingest/resolve as background
   jobs, gated by `INGESTION_UI_ENABLED` (default off; ADR 0014). The two
-  `*_around` tools render interactive Cytoscape.js network graphs.
+  `*_around` tools render interactive `ForceGraph` network graphs
+  (`@infra/ui`, ADR 0016), with click-to-expand neighborhoods and inline
+  graphs in agent answers.
 - **Migrations** (constraints, indexes, vector indexes) applied in order
   and idempotently, with a CLI (`apply` / `status`).
 - **App compose project + Makefile** for building and running the api

@@ -59,7 +59,7 @@ describe('ToolTrace', () => {
 
   it('renders the tool call count in the summary', async () => {
     const trace: AgentTraceEntry[] = [
-      { tool: 'posts_mentioning', arguments: { entity: 'Alice' }, error: null, result_count: 3 },
+      { tool: 'posts_mentioning', arguments: { entity: 'Alice' }, error: null, result_count: 3, result: null },
     ]
     render(<ToolTrace trace={trace} />, { wrapper: makeWrapper() })
     expect(await screen.findByText('Tool calls (1)')).toBeTruthy()
@@ -67,7 +67,7 @@ describe('ToolTrace', () => {
 
   it('renders tool name for a successful entry', async () => {
     const trace: AgentTraceEntry[] = [
-      { tool: 'posts_mentioning', arguments: { entity: 'Alice' }, error: null, result_count: 3 },
+      { tool: 'posts_mentioning', arguments: { entity: 'Alice' }, error: null, result_count: 3, result: null },
     ]
     render(<ToolTrace trace={trace} />, { wrapper: makeWrapper() })
     expect(await screen.findByText('posts_mentioning')).toBeTruthy()
@@ -75,7 +75,7 @@ describe('ToolTrace', () => {
 
   it('renders result_count when present', async () => {
     const trace: AgentTraceEntry[] = [
-      { tool: 'posts_mentioning', arguments: { entity: 'Alice' }, error: null, result_count: 7 },
+      { tool: 'posts_mentioning', arguments: { entity: 'Alice' }, error: null, result_count: 7, result: null },
     ]
     render(<ToolTrace trace={trace} />, { wrapper: makeWrapper() })
     // i18n: 'agent.trace_results' = ' — {count} result(s)'
@@ -88,7 +88,7 @@ describe('ToolTrace', () => {
 
   it('does not render result suffix when result_count is null', async () => {
     const trace: AgentTraceEntry[] = [
-      { tool: 'authors_mentioning', arguments: {}, error: null, result_count: null },
+      { tool: 'authors_mentioning', arguments: {}, error: null, result_count: null, result: null },
     ]
     render(<ToolTrace trace={trace} />, { wrapper: makeWrapper() })
     await screen.findByText('authors_mentioning')
@@ -102,6 +102,7 @@ describe('ToolTrace', () => {
         arguments: { entity: 'X', hops: 1 },
         error: 'entity not found',
         result_count: null,
+        result: null,
       },
     ]
     render(<ToolTrace trace={trace} />, { wrapper: makeWrapper() })
@@ -113,7 +114,7 @@ describe('ToolTrace', () => {
 
   it('renders serialised arguments as JSON', async () => {
     const trace: AgentTraceEntry[] = [
-      { tool: 'posts_mentioning', arguments: { entity: 'Alice', limit: 10 }, error: null, result_count: 2 },
+      { tool: 'posts_mentioning', arguments: { entity: 'Alice', limit: 10 }, error: null, result_count: 2, result: null },
     ]
     render(<ToolTrace trace={trace} />, { wrapper: makeWrapper() })
     await screen.findByText('posts_mentioning')
@@ -124,8 +125,8 @@ describe('ToolTrace', () => {
 
   it('renders multiple trace entries', async () => {
     const trace: AgentTraceEntry[] = [
-      { tool: 'posts_mentioning', arguments: {}, error: null, result_count: 5 },
-      { tool: 'authors_mentioning', arguments: {}, error: null, result_count: 2 },
+      { tool: 'posts_mentioning', arguments: {}, error: null, result_count: 5, result: null },
+      { tool: 'authors_mentioning', arguments: {}, error: null, result_count: 2, result: null },
     ]
     render(<ToolTrace trace={trace} />, { wrapper: makeWrapper() })
     expect(await screen.findByText('Tool calls (2)')).toBeTruthy()

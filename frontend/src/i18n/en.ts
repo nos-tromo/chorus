@@ -85,8 +85,33 @@ export const en = {
     '{n} node(s): {authors} author(s), {topics} topic(s); {edges} edge(s)',
   'network.capped':
     'Capped view — raise the author/topic limits to see more of the network.',
-  // graph canvas
+  // graph explorer (shared)
+  'graph.min_edges': 'Min edges',
+  'graph.edge_length': 'Edge length',
+  'graph.zoom': 'Zoom',
+  'graph.reset': 'Reset',
   'graph.fit': 'Fit',
+  'graph.expand_node': 'Expand node',
+  'graph.remove_node': 'Remove node',
+  'graph.remove_nodes': 'Remove {n} nodes',
+  'graph.maximize': 'Expand graph',
+  'graph.minimize': 'Collapse graph',
+  'graph.expansion_capped':
+    'Expansion capped — the most connected {limit} neighbors are shown.',
+  'graph.expand_failed': 'Expansion failed: {error}',
+  'graph.hint':
+    'Scroll to zoom, drag to move, click to select, double-click to expand.',
+  'graph.export_json': 'Export JSON',
+  'graph.export_graphml': 'Export GraphML',
+  'graph.export_html': 'Export HTML',
+  'network.legend_seed': 'Seed',
+  'network.legend_author': 'Authors',
+  'network.legend_topic': 'Topics',
+  'social.legend_seed': 'Seed',
+  'social.legend_ring1': 'Direct ties',
+  'social.legend_ring2': 'Second ring',
+  'social.legend_ringN': 'Further out',
+  'agent.graph_result': 'Graph from {tool}',
   // social_network_around (08)
   'social.title': 'social network around an author',
   'social.caption':
