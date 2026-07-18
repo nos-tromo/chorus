@@ -6,16 +6,16 @@
 
 **Architecture:** A pure merge helper (`graphExplorer.ts`) plus two explorer hooks own the growing `{nodes, edges}` state and the expand mutations; screens and the agent's inline graph card share them. Mappers translate tool payloads to `ForceGraph` elements; per-kind style maps replace the Cytoscape stylesheets. Cytoscape is removed entirely.
 
-**Tech Stack:** React 19, TypeScript, Vite, Tailwind v4, `@infra/ui#v0.2.0` (ForceGraph), @tanstack/react-query, vitest + happy-dom.
+**Tech Stack:** React 19, TypeScript, Vite, Tailwind v4, `@infra/ui#v0.3.0` (ForceGraph), @tanstack/react-query, vitest + happy-dom.
 
-**Repo:** ALL work in `/Users/himarc/dev/nos-tromo/infra/chorus`, branch `feature/reactive-graph` off `main`. **Prerequisites:** infra-ui `v0.2.0` tag exists (plan `2026-07-18-forcegraph-infra-ui.md` merged) AND the backend expand tools are on `main` (plan `2026-07-18-expand-tools-backend.md` merged). Frontend commands run inside `frontend/` with `pnpm`.
+**Repo:** ALL work in `/Users/himarc/dev/nos-tromo/infra/chorus`, branch `feature/reactive-graph` off `main`. **Prerequisites:** infra-ui `v0.3.0` tag exists (plan `2026-07-18-forcegraph-infra-ui.md` merged) AND the backend expand tools are on `main` (plan `2026-07-18-expand-tools-backend.md` merged). Frontend commands run inside `frontend/` with `pnpm`.
 
 ## Global Constraints
 
 - Data confidentiality hard rule: test fixtures use fully synthetic invented names/handles only.
 - Frontends stay thin HTTP clients — no business logic client-side beyond view state (merge/ring assignment is view state).
 - Every user-visible string goes through the i18n catalog (`frontend/src/i18n/en.ts` + `de.ts`); the parity test enforces identical key sets.
-- `@infra/ui` is consumed as a pinned git dependency — bump the pin to the `v0.2.0` tag, never a branch.
+- `@infra/ui` is consumed as a pinned git dependency — bump the pin to the `v0.3.0` tag, never a branch.
 - `make verify` green before push (pre-commit + `pnpm lint` + `pnpm build`); `git add` new files first.
 - After this plan: no `cytoscape` anywhere — dependency, imports, `GraphCanvas.tsx`, `graphStyles.ts` all gone.
 
@@ -24,7 +24,7 @@
 ### Task 1: Dependency bump + API types
 
 **Files:**
-- Modify: `frontend/package.json` (`@infra/ui` pin → `v0.2.0`; delete `cytoscape` + `@types/cytoscape`) + `pnpm-lock.yaml` via `pnpm install`
+- Modify: `frontend/package.json` (`@infra/ui` pin → `v0.3.0`; delete `cytoscape` + `@types/cytoscape`) + `pnpm-lock.yaml` via `pnpm install`
 - Modify: `frontend/src/api/types.ts`
 
 **Interfaces:**
@@ -48,7 +48,7 @@ export interface ExpandSocialNodeOut {
 
 - [ ] **Step 1: Bump the pin, drop cytoscape**
 
-In `frontend/package.json`: change the `@infra/ui` git-tag reference from `#v0.1.1` to `#v0.2.0` (read the current line for the exact URL syntax and keep it); delete the `"cytoscape"` and `"@types/cytoscape"` entries. Then:
+In `frontend/package.json`: change the `@infra/ui` git-tag reference from `#v0.1.1` to `#v0.3.0` (read the current line for the exact URL syntax and keep it); delete the `"cytoscape"` and `"@types/cytoscape"` entries. Then:
 
 Run: `cd frontend && pnpm install`
 Expected: lockfile updates; `pnpm ls @infra/ui` shows 0.2.0.
@@ -67,7 +67,7 @@ Expected: errors mention only `cytoscape`-importing files (`GraphCanvas.tsx`, `g
 ```bash
 git checkout -b feature/reactive-graph
 git add frontend/package.json frontend/pnpm-lock.yaml frontend/src/api/types.ts
-git commit -m "build(frontend): @infra/ui v0.2.0, drop cytoscape; expand-tool types"
+git commit -m "build(frontend): @infra/ui v0.3.0, drop cytoscape; expand-tool types"
 ```
 
 ---
@@ -644,5 +644,5 @@ Expected: green (backend suite unaffected but run it — the conftest list chang
 
 ```bash
 git push -u origin feature/reactive-graph
-gh pr create --title "feat: reactive graph exploration (ForceGraph + expand-on-click + agent inline graphs)" --body "Frontend half of docs/superpowers/specs/2026-07-18-reactive-graph-exploration-design.md. Adopts @infra/ui v0.2.0 ForceGraph, adds explorer state with expand-on-click via the new backend tools, renders agent graph payloads inline, removes Cytoscape. ADR included."
+gh pr create --title "feat: reactive graph exploration (ForceGraph + expand-on-click + agent inline graphs)" --body "Frontend half of docs/superpowers/specs/2026-07-18-reactive-graph-exploration-design.md. Adopts @infra/ui v0.3.0 ForceGraph, adds explorer state with expand-on-click via the new backend tools, renders agent graph payloads inline, removes Cytoscape. ADR included."
 ```

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship a reusable, dependency-free `<ForceGraph>` React primitive in `@infra/ui` (force-simulation SVG graph with zoom/pan/drag/select/expand and incremental merge), released as `v0.2.0`.
+**Goal:** Ship a reusable, dependency-free `<ForceGraph>` React primitive in `@infra/ui` (force-simulation SVG graph with zoom/pan/drag/select/expand and incremental merge), released as `v0.3.0`.
 
 **Architecture:** Port docint's proven `forceGraph.ts` simulation verbatim, add a pure position-merge helper, and generalize docint's `EntityGraph.tsx` into an app-agnostic component whose node/edge styling comes from consumer props. Interior chrome (edges, labels, selection ring) binds to Tailwind token classes so it follows dark/light themes; node fills stay consumer-supplied.
 
@@ -16,7 +16,7 @@
 - No `Math.random()` / `Date.now()` in the simulation or component — determinism is a documented property of the ported engine.
 - `dist/` is committed: after any `src/` change compiles, run `pnpm build` and commit the regenerated `dist/` in the same commit (infra-ui's committed-`dist/` rule).
 - All quality gates must pass before the release commit: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`.
-- Version bumps to `0.2.0` in `package.json`; the release tag is minted by the shared release-tag workflow on merge (do not hand-cut a tag).
+- Version bumps to `0.3.0` in `package.json`; the release tag is minted by the shared release-tag workflow on merge (do not hand-cut a tag).
 - Node fill colors are consumer props; everything else (edge stroke, label fill, selection ring, control chrome) uses Tailwind token classes (`stroke-border`, `fill-muted-foreground`, `text-muted-foreground`, `border-border`, …) so the component is theme-aware.
 
 ---
@@ -727,7 +727,7 @@ git commit -m "feat: ForceGraph primitive — themed SVG force graph with select
 
 **Files:**
 - Modify: `src/index.ts` (append exports)
-- Modify: `package.json` (version `0.1.0` → `0.2.0`; check the actual current version first and bump minor from it)
+- Modify: `package.json` (version `0.1.0` → `0.3.0`; check the actual current version first and bump minor from it)
 - Modify: `README.md` (add a ForceGraph section)
 - Modify: `dist/` (regenerated, committed)
 
@@ -757,7 +757,7 @@ Expected: all clean; `dist/` regenerated (confirm `git status` shows `dist/` cha
 
 - [ ] **Step 3: README + version bump**
 
-In `package.json`, bump `"version"` to `0.2.0`. In `README.md`, add a short `### ForceGraph` subsection to the primitives list: one paragraph (interactive SVG force graph — zoom/pan/drag/select/expand, incremental merge, token-themed interior) and a minimal usage snippet:
+In `package.json`, bump `"version"` to `0.3.0`. In `README.md`, add a short `### ForceGraph` subsection to the primitives list: one paragraph (interactive SVG force graph — zoom/pan/drag/select/expand, incremental merge, token-themed interior) and a minimal usage snippet:
 
 ```tsx
 <ForceGraph
@@ -774,14 +774,14 @@ Note in the section that new nodes merged into `nodes` keep the existing layout 
 
 ```bash
 git add src/index.ts package.json README.md dist/
-git commit -m "feat: export ForceGraph; bump to 0.2.0"
+git commit -m "feat: export ForceGraph; bump to 0.3.0"
 ```
 
 - [ ] **Step 5: Open the PR**
 
 ```bash
 git push -u origin feature/forcegraph
-gh pr create --title "feat: ForceGraph primitive (force-sim SVG graph)" --body "Adds the shared ForceGraph primitive (ported from docint's entity-graph engine, generalized + themed + incremental merge). Consumed by chorus's reactive graph refactor. docint migration deferred. Release: v0.2.0 minted on merge by the release-tag workflow."
+gh pr create --title "feat: ForceGraph primitive (force-sim SVG graph)" --body "Adds the shared ForceGraph primitive (ported from docint's entity-graph engine, generalized + themed + incremental merge). Consumed by chorus's reactive graph refactor. docint migration deferred. Release: v0.3.0 minted on merge by the release-tag workflow."
 ```
 
-On merge, the shared release-tag workflow mints `v0.2.0` from the declared version — verify the tag exists (`git fetch --tags && git tag -l v0.2.0`) before starting the chorus frontend plan.
+On merge, the shared release-tag workflow mints `v0.3.0` from the declared version — verify the tag exists (`git fetch --tags && git tag -l v0.3.0`) before starting the chorus frontend plan.
