@@ -23,6 +23,7 @@ export interface AgentTraceEntry {
   arguments: Record<string, unknown>
   error: string | null
   result_count: number | null
+  result: Record<string, unknown> | null
 }
 
 export interface AgentResponse {
@@ -129,6 +130,27 @@ export interface SocialNetworkAroundOut {
   seed: string
   seed_node_id: string | null
   nodes: SocialNode[]
+  edges: SocialEdge[]
+  truncated: boolean
+}
+
+// --- expand_network ---
+
+export interface ExpandNetworkNodeOut {
+  nodes: NetworkNode[]
+  edges: NetworkEdge[]
+  truncated: boolean
+}
+
+// --- expand_social ---
+
+export interface SocialNeighbor {
+  id: string
+  label: string
+}
+
+export interface ExpandSocialNodeOut {
+  nodes: SocialNeighbor[]
   edges: SocialEdge[]
   truncated: boolean
 }
