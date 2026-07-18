@@ -16,7 +16,7 @@
 - No `Math.random()` / `Date.now()` in the simulation or component — determinism is a documented property of the ported engine.
 - `dist/` is committed: after any `src/` change compiles, run `pnpm build` and commit the regenerated `dist/` in the same commit (infra-ui's committed-`dist/` rule).
 - All quality gates must pass before the release commit: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`.
-- Version bumps to `0.3.0` in `package.json`; the release tag is minted by the shared release-tag workflow on merge (do not hand-cut a tag).
+- Version bumps to `0.3.0` in `package.json`. NOTE (discovered during execution): infra-ui has NO release-tag workflow — tags are hand-cut. After merge, hand-cut an annotated `v0.3.0` tag on the merge commit and push it.
 - Node fill colors are consumer props; everything else (edge stroke, label fill, selection ring, control chrome) uses Tailwind token classes (`stroke-border`, `fill-muted-foreground`, `text-muted-foreground`, `border-border`, …) so the component is theme-aware.
 
 ---

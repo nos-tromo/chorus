@@ -51,7 +51,7 @@ export interface ExpandSocialNodeOut {
 In `frontend/package.json`: change the `@infra/ui` git-tag reference from `#v0.1.1` to `#v0.3.0` (read the current line for the exact URL syntax and keep it); delete the `"cytoscape"` and `"@types/cytoscape"` entries. Then:
 
 Run: `cd frontend && pnpm install`
-Expected: lockfile updates; `pnpm ls @infra/ui` shows 0.2.0.
+Expected: lockfile updates; `pnpm ls @infra/ui` shows 0.3.0.
 
 - [ ] **Step 2: Add the types**
 
