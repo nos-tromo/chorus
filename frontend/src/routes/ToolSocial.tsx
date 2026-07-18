@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState, type FormEvent } from 'react'
-import { Banner, ForceGraph, Spinner } from '@infra/ui'
+import { Banner, Button, ForceGraph, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { useToolCall } from '../hooks/useToolCall'
 import { useSocialExplorer } from '../hooks/useGraphExplorer'
@@ -15,6 +15,7 @@ import { EntityInput } from '../components/form/EntityInput'
 import { LimitField } from '../components/form/LimitField'
 import { SubmitButton } from '../components/form/SubmitButton'
 import { SOCIAL_NODE_STYLES, SOCIAL_EDGE_STYLES, toSocialForceGraph } from '../lib/socialElements'
+import { downloadText, toGraphJson, toGraphML } from '../lib/graphExport'
 import type { SocialNetworkAroundOut } from '../api/types'
 
 const EXPAND_LIMIT = 50
@@ -116,14 +117,42 @@ export function ToolSocial() {
           <p className="text-sm text-muted-foreground">{t('social.empty')}</p>
         ) : (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              {t('social.counts', {
-                n: explorer.graph.nodes.length,
-                edges: explorer.graph.edges.length,
-                follows: followsCount,
-                friends: friendsCount,
-              })}
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                {t('social.counts', {
+                  n: explorer.graph.nodes.length,
+                  edges: explorer.graph.edges.length,
+                  follows: followsCount,
+                  friends: friendsCount,
+                })}
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() =>
+                  downloadText(
+                    'chorus-social.json',
+                    toGraphJson(fg.nodes, fg.edges),
+                    'application/json',
+                  )
+                }
+              >
+                {t('graph.export_json')}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() =>
+                  downloadText(
+                    'chorus-social.graphml',
+                    toGraphML(fg.nodes, fg.edges),
+                    'application/xml',
+                  )
+                }
+              >
+                {t('graph.export_graphml')}
+              </Button>
+            </div>
             {mutation.data?.truncated && <Banner variant="info">{t('social.capped')}</Banner>}
             {explorer.expansionTruncated && (
               <Banner variant="info">

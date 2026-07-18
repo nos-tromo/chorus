@@ -98,6 +98,8 @@ export const en = {
   'graph.expand_failed': 'Expansion failed: {error}',
   'graph.hint':
     'Scroll to zoom, drag to move, click to select, double-click to expand.',
+  'graph.export_json': 'Export JSON',
+  'graph.export_graphml': 'Export GraphML',
   'network.legend_seed': 'Seed',
   'network.legend_author': 'Authors',
   'network.legend_topic': 'Topics',

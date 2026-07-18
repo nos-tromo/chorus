@@ -106,6 +106,8 @@ export const de: Strings = {
   'graph.expand_failed': 'Erweiterung fehlgeschlagen: {error}',
   'graph.hint':
     'Scrollen zum Zoomen, Ziehen zum Verschieben, Klick zum Auswählen, Doppelklick zum Erweitern.',
+  'graph.export_json': 'JSON exportieren',
+  'graph.export_graphml': 'GraphML exportieren',
   'network.legend_seed': 'Ausgangspunkt',
   'network.legend_author': 'Autoren',
   'network.legend_topic': 'Themen',
