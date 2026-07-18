@@ -100,6 +100,38 @@ const EXPAND_NETWORK_RESULT = {
   truncated: false,
 }
 
+const EXPAND_NETWORK_NODE_ENTRY: AgentTraceEntry = {
+  tool: 'expand_network_node',
+  arguments: { node_id: 'author:auth-1', limit: 50 },
+  error: null,
+  result_count: 1,
+  result: {
+    nodes: [{ id: 'topic:ent-2', kind: 'topic', label: 'Gadgets', entity_id: 'ent-2', is_seed: false }],
+    edges: [{ source: 'author:auth-1', target: 'topic:ent-2', weight: 1 }],
+    truncated: false,
+  },
+}
+
+const EXPAND_SOCIAL_NODE_ENTRY: AgentTraceEntry = {
+  tool: 'expand_social_node',
+  arguments: { author_id: 'auth-a', limit: 50 },
+  error: null,
+  result_count: 1,
+  result: {
+    nodes: [{ id: 'author:auth-b', label: 'Boo' }],
+    edges: [{ source: 'author:auth-a', target: 'author:auth-b', kind: 'follows', directed: true }],
+    truncated: false,
+  },
+}
+
+const MALFORMED_ENTRY: AgentTraceEntry = {
+  tool: 'network_around',
+  arguments: {},
+  error: null,
+  result_count: null,
+  result: {},
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe('AgentGraphCard', () => {
@@ -153,5 +185,29 @@ describe('AgentGraphCard', () => {
   it('shows the caption with the tool name', async () => {
     render(<AgentGraphCard entry={NETWORK_ENTRY} />, { wrapper: makeWrapper() })
     expect(await screen.findByText('Graph from network_around')).toBeTruthy()
+  })
+
+  it('seeds an expand_network_node payload with the clicked anchor so edges render', async () => {
+    const { container } = render(<AgentGraphCard entry={EXPAND_NETWORK_NODE_ENTRY} />, {
+      wrapper: makeWrapper(),
+    })
+    await waitFor(() => expect(container.querySelectorAll('g[role="button"]')).toHaveLength(2))
+    expect(container.querySelectorAll('line')).toHaveLength(1)
+  })
+
+  it('seeds an expand_social_node payload with the clicked anchor', async () => {
+    const { container } = render(<AgentGraphCard entry={EXPAND_SOCIAL_NODE_ENTRY} />, {
+      wrapper: makeWrapper(),
+    })
+    await waitFor(() => expect(container.querySelectorAll('g[role="button"]')).toHaveLength(2))
+    expect(container.querySelectorAll('line')).toHaveLength(1)
+  })
+
+  it('renders null for a malformed result payload', async () => {
+    const { container } = render(<AgentGraphCard entry={MALFORMED_ENTRY} />, {
+      wrapper: makeWrapper(),
+    })
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    expect(container.firstChild).toBeNull()
   })
 })

@@ -18,7 +18,9 @@ import type {
   ExpandNetworkNodeOut,
   ExpandSocialNodeOut,
   NetworkAroundOut,
+  NetworkNode,
   SocialNetworkAroundOut,
+  SocialNode,
 } from '../api/types'
 
 const EXPAND_LIMIT = 50
@@ -40,35 +42,74 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
 
   useEffect(() => {
     if (!entry.result) return
+    if (
+      !Array.isArray((entry.result as { nodes?: unknown }).nodes) ||
+      !Array.isArray((entry.result as { edges?: unknown }).edges)
+    ) {
+      return
+    }
 
     if (isNetwork) {
-      const out: NetworkAroundOut =
-        entry.tool === 'expand_network_node'
-          ? {
-              seed: '',
-              seed_node_id: null,
-              nodes: (entry.result as unknown as ExpandNetworkNodeOut).nodes,
-              edges: (entry.result as unknown as ExpandNetworkNodeOut).edges,
-              truncated: (entry.result as unknown as ExpandNetworkNodeOut).truncated,
-            }
-          : (entry.result as unknown as NetworkAroundOut)
+      let out: NetworkAroundOut
+      if (entry.tool === 'expand_network_node') {
+        const expandResult = entry.result as unknown as ExpandNetworkNodeOut
+        const nodeId = entry.arguments.node_id
+        const nodes: NetworkNode[] = [...expandResult.nodes]
+        let seedNodeId: string | null = null
+        if (typeof nodeId === 'string') {
+          const anchor: NetworkNode = {
+            id: nodeId,
+            kind: nodeId.startsWith('topic:') ? 'topic' : 'author',
+            label: nodeId.split(':').slice(1).join(':'),
+            entity_id: null,
+            is_seed: true,
+          }
+          nodes.unshift(anchor)
+          seedNodeId = nodeId
+        }
+        out = {
+          seed: '',
+          seed_node_id: seedNodeId,
+          nodes,
+          edges: expandResult.edges,
+          truncated: expandResult.truncated,
+        }
+      } else {
+        out = entry.result as unknown as NetworkAroundOut
+      }
       networkExplorer.seedFrom(out)
     } else if (isSocial) {
-      const out: SocialNetworkAroundOut =
-        entry.tool === 'expand_social_node'
-          ? {
-              seed: '',
-              seed_node_id: null,
-              nodes: (entry.result as unknown as ExpandSocialNodeOut).nodes.map((n) => ({
-                id: n.id,
-                label: n.label,
-                ring: 1,
-                is_seed: false,
-              })),
-              edges: (entry.result as unknown as ExpandSocialNodeOut).edges,
-              truncated: (entry.result as unknown as ExpandSocialNodeOut).truncated,
-            }
-          : (entry.result as unknown as SocialNetworkAroundOut)
+      let out: SocialNetworkAroundOut
+      if (entry.tool === 'expand_social_node') {
+        const expandResult = entry.result as unknown as ExpandSocialNodeOut
+        const authorId = entry.arguments.author_id
+        const neighbours: SocialNode[] = expandResult.nodes.map((n) => ({
+          id: n.id,
+          label: n.label,
+          ring: 1,
+          is_seed: false,
+        }))
+        let seedNodeId: string | null = null
+        if (typeof authorId === 'string') {
+          const anchor: SocialNode = {
+            id: `author:${authorId}`,
+            label: authorId,
+            ring: 0,
+            is_seed: true,
+          }
+          neighbours.unshift(anchor)
+          seedNodeId = anchor.id
+        }
+        out = {
+          seed: '',
+          seed_node_id: seedNodeId,
+          nodes: neighbours,
+          edges: expandResult.edges,
+          truncated: expandResult.truncated,
+        }
+      } else {
+        out = entry.result as unknown as SocialNetworkAroundOut
+      }
       socialExplorer.seedFrom(out)
     }
     // Seed only when the trace entry identity changes — seedFrom identities
@@ -85,7 +126,11 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
     [socialExplorer.graph],
   )
 
-  if (!entry.result || (!isNetwork && !isSocial)) return null
+  const hasGraphShape =
+    !!entry.result &&
+    Array.isArray((entry.result as { nodes?: unknown }).nodes) &&
+    Array.isArray((entry.result as { edges?: unknown }).edges)
+  if (!hasGraphShape || (!isNetwork && !isSocial)) return null
 
   const explorer = isNetwork ? networkExplorer : socialExplorer
   const fg = isNetwork ? networkFg : socialFg
