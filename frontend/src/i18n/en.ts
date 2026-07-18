@@ -98,7 +98,6 @@ export const en = {
   'graph.expand_failed': 'Expansion failed: {error}',
   'graph.hint':
     'Scroll to zoom, drag to move, click to select, double-click to expand.',
-  'graph.fit': 'Fit',
   'network.legend_seed': 'Seed',
   'network.legend_author': 'Authors',
   'network.legend_topic': 'Topics',

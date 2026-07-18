@@ -28,6 +28,12 @@ const EXPAND_LIMIT = 50
 const NETWORK_TOOLS = new Set(['network_around', 'expand_network_node'])
 const SOCIAL_TOOLS = new Set(['social_network_around', 'expand_social_node'])
 
+// Union of graph-shaped tools this card knows how to render. Exported so callers
+// (e.g. Agent.tsx) can filter trace entries down to graph tools before mounting
+// a card, instead of mounting one per non-null result and relying on this
+// component's own no-op return for everything else.
+export const GRAPH_TRACE_TOOLS = new Set([...NETWORK_TOOLS, ...SOCIAL_TOOLS])
+
 interface AgentGraphCardProps {
   entry: AgentTraceEntry
 }
@@ -130,7 +136,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
     !!entry.result &&
     Array.isArray((entry.result as { nodes?: unknown }).nodes) &&
     Array.isArray((entry.result as { edges?: unknown }).edges)
-  if (!hasGraphShape || (!isNetwork && !isSocial)) return null
+  if (!hasGraphShape || !GRAPH_TRACE_TOOLS.has(entry.tool)) return null
 
   const explorer = isNetwork ? networkExplorer : socialExplorer
   const fg = isNetwork ? networkFg : socialFg

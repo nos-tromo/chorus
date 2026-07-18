@@ -106,6 +106,19 @@ describe('useNetworkExplorer', () => {
     act(() => result.current.expand('author:auth-1'))
     await waitFor(() => expect(result.current.expansionTruncated).toBe(false))
   })
+
+  it('expand is a no-op while another expansion is in flight', async () => {
+    vi.mocked(callTool).mockReturnValueOnce(new Promise(() => {}))
+
+    const { result } = renderHook(() => useNetworkExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(networkSeed))
+
+    act(() => result.current.expand('author:auth-1'))
+    await waitFor(() => expect(callTool).toHaveBeenCalledTimes(1))
+    act(() => result.current.expand('topic:ent-1'))
+
+    expect(callTool).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('useSocialExplorer', () => {
@@ -187,5 +200,18 @@ describe('useSocialExplorer', () => {
     // auth-d should be ring 1 (auth-a's ring 0 + 1), not 3
     const authD = result.current.graph?.nodes.find((n) => n.id === 'author:auth-d')
     expect(authD?.ring).toBe(1)
+  })
+
+  it('expand is a no-op while another expansion is in flight', async () => {
+    vi.mocked(callTool).mockReturnValueOnce(new Promise(() => {}))
+
+    const { result } = renderHook(() => useSocialExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(socialSeed))
+
+    act(() => result.current.expand('author:auth-a'))
+    await waitFor(() => expect(callTool).toHaveBeenCalledTimes(1))
+    act(() => result.current.expand('author:auth-b'))
+
+    expect(callTool).toHaveBeenCalledTimes(1)
   })
 })

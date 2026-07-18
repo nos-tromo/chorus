@@ -5,7 +5,7 @@ import { Banner, Button, CopyButton, Input, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { useAgentQuery } from '../hooks/useAgentQuery'
 import { ToolTrace } from '../components/ToolTrace'
-import { AgentGraphCard } from '../components/AgentGraphCard'
+import { AgentGraphCard, GRAPH_TRACE_TOOLS } from '../components/AgentGraphCard'
 import type { AgentMessage, AgentTraceEntry } from '../api/types'
 
 // ── Local message type (adds optional trace for assistant turns) ──────────────
@@ -145,7 +145,7 @@ export function Agent() {
 
                 {turn.role === 'assistant' &&
                   turn.trace
-                    ?.filter((s) => s.result != null)
+                    ?.filter((s) => s.result != null && GRAPH_TRACE_TOOLS.has(s.tool))
                     .map((s, i) => <AgentGraphCard key={`${s.tool}:${i}`} entry={s} />)}
 
                 {turn.truncated && (

@@ -31,6 +31,9 @@ export function useNetworkExplorer() {
   // UI disables expansion triggers while expandingId is set (concurrent expansions share this flag).
   const [expandingId, setExpandingId] = useState<string | null>(null)
   const [expansionTruncated, setExpansionTruncated] = useState(false)
+  // Mirrors expandingId for the guard in `expand`, which reads it synchronously from a
+  // useCallback closure — state alone can lag a double-click fired before React re-renders.
+  const expandingRef = useRef<string | null>(null)
 
   const mutation = useMutation({
     mutationFn: (nodeId: string) =>
@@ -45,13 +48,18 @@ export function useNetworkExplorer() {
 
   const expand = useCallback(
     (nodeId: string) => {
+      if (expandingRef.current !== null) return
+      expandingRef.current = nodeId
       setExpandingId(nodeId)
       mutation.mutate(nodeId, {
         onSuccess: (out) => {
           setGraph((g) => (g ? mergeGraph(g, out, (e) => `${e.source}__${e.target}`) : g))
           setExpansionTruncated(out.truncated)
         },
-        onSettled: () => setExpandingId(null)
+        onSettled: () => {
+          expandingRef.current = null
+          setExpandingId(null)
+        }
       })
     },
     [mutation]
@@ -75,6 +83,9 @@ export function useSocialExplorer() {
   // UI disables expansion triggers while expandingId is set (concurrent expansions share this flag).
   const [expandingId, setExpandingId] = useState<string | null>(null)
   const [expansionTruncated, setExpansionTruncated] = useState(false)
+  // Mirrors expandingId for the guard in `expand`, which reads it synchronously from a
+  // useCallback closure — state alone can lag a double-click fired before React re-renders.
+  const expandingRef = useRef<string | null>(null)
   // Ring lookup for ring+1 assignment on expansion; refreshed on every graph set.
   const ringsRef = useRef<Map<string, number>>(new Map())
 
@@ -103,6 +114,8 @@ export function useSocialExplorer() {
 
   const expand = useCallback(
     (nodeId: string) => {
+      if (expandingRef.current !== null) return
+      expandingRef.current = nodeId
       setExpandingId(nodeId)
       mutation.mutate(nodeId, {
         onSuccess: (out) => {
@@ -115,7 +128,10 @@ export function useSocialExplorer() {
           setGraph((g) => (g ? mergeGraph(g, added, (e) => `${e.source}__${e.target}__${e.kind}`) : g))
           setExpansionTruncated(out.truncated)
         },
-        onSettled: () => setExpandingId(null)
+        onSettled: () => {
+          expandingRef.current = null
+          setExpandingId(null)
+        }
       })
     },
     [mutation]

@@ -106,7 +106,6 @@ export const de: Strings = {
   'graph.expand_failed': 'Erweiterung fehlgeschlagen: {error}',
   'graph.hint':
     'Scrollen zum Zoomen, Ziehen zum Verschieben, Klick zum Auswählen, Doppelklick zum Erweitern.',
-  'graph.fit': 'Einpassen',
   'network.legend_seed': 'Ausgangspunkt',
   'network.legend_author': 'Autoren',
   'network.legend_topic': 'Themen',
