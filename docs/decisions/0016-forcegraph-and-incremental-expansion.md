@@ -92,6 +92,30 @@ code path and can drift from what the agent actually saw.
   `<ForceGraph>` (as opposed to chorus adopting the port of docint's engine)
   is explicitly deferred — no docint-side change lands as part of this work.
 
+## Addendum: Graph export (2026-07-18)
+
+Analysts can download the current explorer graph — the merged nodes/edges
+state, including any expansions the user has clicked in — from both
+`ToolNetwork` and `ToolSocial` as JSON or GraphML (for Gephi/yEd). The
+export button feeds the same `{nodes, edges}` arrays already produced by
+`toNetworkForceGraph`/`toSocialForceGraph` for rendering straight into two
+pure functions in `frontend/src/lib/graphExport.ts`
+(`toGraphJson`, `toGraphML`), then triggers a client-side Blob download
+(`downloadText`) — no request leaves the browser.
+
+This is deliberately client-side only, with **no export endpoint and no
+export-specific §76 audit row**. §76 audit coverage ends at the audited tool
+calls (`network_around`/`social_network_around`, the two expand tools) that
+delivered the data to the client in the first place — those calls are
+already logged with user, parameters, entities, and result counts.
+Serializing state the client already holds, on the client, adds no new
+information exposure and is not a further audited access. This is a
+recorded product-owner decision (2026-07-18), not an oversight.
+
+Deferred: image export (PNG/SVG snapshot of the rendered layout) and
+exporting an inline agent-answer graph card — both are additive, not
+blocked by this shape.
+
 ## Future: unified explorer
 
 Merging the two graph screens (`ToolNetwork`, `ToolSocial`) into one combined
