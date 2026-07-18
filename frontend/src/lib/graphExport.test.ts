@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { toGraphJson, toGraphML, downloadText } from './graphExport'
+import { toGraphJson, toGraphML, toGraphHtml, downloadText } from './graphExport'
 import type { ForceGraphEdge, ForceGraphNode } from '@infra/ui'
 
 // ── fixture data (fully synthetic) ─────────────────────────────────────────
@@ -127,6 +127,122 @@ describe('toGraphML', () => {
     expect(xml).toContain('<graph edgedefault="undirected">')
     expect(xml).not.toContain('<node')
     expect(xml).not.toContain('<edge')
+  })
+})
+
+describe('toGraphHtml', () => {
+  const HTML_NODES: ForceGraphNode[] = [
+    { id: 'entity:e1', label: 'Synthetic Topic', kind: 'seed', size: 6 },
+    { id: 'author:u1', label: 'Synthetic Author', kind: 'author', size: 2 },
+    { id: 'author:u2', label: 'Floating Author', kind: 'author', size: 1 },
+  ]
+
+  const HTML_EDGES: ForceGraphEdge[] = [
+    { source: 'author:u1', target: 'entity:e1', kind: 'mentions', weight: 3 },
+    { source: 'author:u1', target: 'author:u2', kind: 'follows', directed: true },
+  ]
+
+  const HTML_POSITIONS: Record<string, { x: number; y: number }> = {
+    'entity:e1': { x: 0, y: 0 },
+    'author:u1': { x: 100, y: 40 },
+    // 'author:u2' deliberately omitted — missing-position edge case
+  }
+
+  const HTML_NODE_STYLES: Record<string, { color: string }> = {
+    seed: { color: '#fbbf24' },
+    author: { color: '#7c3aed' },
+  }
+
+  const HTML_EDGE_STYLES: Record<string, { dashed?: boolean; opacity?: number }> = {
+    mentions: { opacity: 0.6 },
+    follows: { dashed: true, opacity: 0.9 },
+  }
+
+  const baseOpts = {
+    title: 'Synthetic Network — Climate',
+    nodes: HTML_NODES,
+    edges: HTML_EDGES,
+    positions: HTML_POSITIONS,
+    nodeStyles: HTML_NODE_STYLES,
+    edgeStyles: HTML_EDGE_STYLES,
+    legend: [
+      { kind: 'seed', label: 'Seed' },
+      { kind: 'author', label: 'Authors' },
+    ],
+  }
+
+  it('returns one self-contained HTML document with a doctype and inline svg', () => {
+    const html = toGraphHtml(baseOpts)
+    expect(html.trim().toLowerCase().startsWith('<!doctype html>')).toBe(true)
+    expect(html).toContain('<svg')
+    expect(html).toContain(baseOpts.title)
+    expect(html).toContain(`${HTML_NODES.length}`)
+    expect(html).toContain(`${HTML_EDGES.length}`)
+  })
+
+  it('renders a legend chip per legend entry using the nodeStyles color', () => {
+    const html = toGraphHtml(baseOpts)
+    expect(html).toContain('Seed')
+    expect(html).toContain('Authors')
+    expect(html).toContain('#fbbf24')
+    expect(html).toContain('#7c3aed')
+  })
+
+  it('places a circle at each baked position for nodes present in positions', () => {
+    const html = toGraphHtml(baseOpts)
+    // entity:e1 at (0,0) and author:u1 at (100,40) should each produce a circle
+    // with matching cx/cy attributes.
+    expect(html).toMatch(/<circle[^>]*cx="0"[^>]*cy="0"/)
+    expect(html).toMatch(/<circle[^>]*cx="100"[^>]*cy="40"/)
+  })
+
+  it('still renders a node missing from positions (spiral fallback, not dropped)', () => {
+    const html = toGraphHtml(baseOpts)
+    // author:u2 has no baked position — it must still appear as a circle with
+    // its label, just not at (0,0)/(100,40).
+    expect(html).toContain('Floating Author')
+    const circleCount = (html.match(/<circle/g) ?? []).length
+    expect(circleCount).toBe(HTML_NODES.length)
+  })
+
+  it('HTML-escapes node labels containing </script> and &', () => {
+    const nastyNodes: ForceGraphNode[] = [
+      { id: 'n1', label: 'A & B </script><script>alert(1)</script>', kind: 'seed', size: 1 },
+    ]
+    const html = toGraphHtml({
+      ...baseOpts,
+      nodes: nastyNodes,
+      edges: [],
+      positions: { n1: { x: 10, y: 10 } },
+    })
+    expect(html).not.toContain('<script>alert(1)</script>')
+    expect(html).toContain('&amp;')
+    expect(html).toContain('&lt;/script&gt;')
+  })
+
+  it('has no external references (no http(s) URL, no src=, no href=)', () => {
+    const html = toGraphHtml(baseOpts)
+    expect(html).not.toMatch(/https?:\/\//i)
+    expect(html).not.toMatch(/\bsrc=/i)
+    expect(html).not.toMatch(/\bhref=/i)
+  })
+
+  it('emits stroke-dasharray for dashed edge kinds and a directed-edge arrow marker', () => {
+    const html = toGraphHtml(baseOpts)
+    expect(html).toMatch(/stroke-dasharray/)
+    expect(html).toContain('marker-end')
+    expect(html).toContain('<marker')
+  })
+
+  it('contains exactly one inline <script> block with no fetch/physics/expand logic', () => {
+    const html = toGraphHtml(baseOpts)
+    const scriptMatches = html.match(/<script(?![^>]*type="application\/json")[^>]*>/g) ?? []
+    expect(scriptMatches.length).toBe(1)
+    expect(html).not.toContain('fetch(')
+  })
+
+  it('is deterministic for the same input', () => {
+    expect(toGraphHtml(baseOpts)).toBe(toGraphHtml(baseOpts))
   })
 })
 

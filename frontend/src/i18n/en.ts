@@ -101,6 +101,7 @@ export const en = {
     'Scroll to zoom, drag to move, click to select, double-click to expand.',
   'graph.export_json': 'Export JSON',
   'graph.export_graphml': 'Export GraphML',
+  'graph.export_html': 'Export HTML',
   'network.legend_seed': 'Seed',
   'network.legend_author': 'Authors',
   'network.legend_topic': 'Topics',

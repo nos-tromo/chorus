@@ -6,8 +6,8 @@
  * page (07_network_around.py).
  */
 
-import { useMemo, useState, type FormEvent } from 'react'
-import { Banner, Button, ForceGraph, Spinner } from '@infra/ui'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
+import { Banner, Button, ForceGraph, Spinner, type ForceGraphHandle } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { useToolCall } from '../hooks/useToolCall'
 import { useNetworkExplorer } from '../hooks/useGraphExplorer'
@@ -15,7 +15,7 @@ import { EntityInput } from '../components/form/EntityInput'
 import { LimitField } from '../components/form/LimitField'
 import { SubmitButton } from '../components/form/SubmitButton'
 import { NETWORK_NODE_STYLES, toNetworkForceGraph } from '../lib/networkElements'
-import { downloadText, toGraphJson, toGraphML } from '../lib/graphExport'
+import { downloadText, toGraphHtml, toGraphJson, toGraphML } from '../lib/graphExport'
 import type { NetworkAroundOut } from '../api/types'
 
 const EXPAND_LIMIT = 50
@@ -24,6 +24,7 @@ export function ToolNetwork() {
   const t = useT()
   const mutation = useToolCall<NetworkAroundOut>('network_around')
   const explorer = useNetworkExplorer()
+  const apiRef = useRef<ForceGraphHandle | null>(null)
 
   const [entity, setEntity] = useState('')
   const [depth, setDepth] = useState(2)
@@ -152,6 +153,30 @@ export function ToolNetwork() {
               >
                 {t('graph.export_graphml')}
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() =>
+                  downloadText(
+                    'chorus-network.html',
+                    toGraphHtml({
+                      title: `${t('network.title')} — ${entity}`,
+                      nodes: fg.nodes,
+                      edges: fg.edges,
+                      positions: apiRef.current?.getPositions() ?? {},
+                      nodeStyles: NETWORK_NODE_STYLES,
+                      legend: [
+                        { kind: 'seed', label: t('network.legend_seed') },
+                        { kind: 'author', label: t('network.legend_author') },
+                        { kind: 'topic', label: t('network.legend_topic') },
+                      ],
+                    }),
+                    'text/html',
+                  )
+                }
+              >
+                {t('graph.export_html')}
+              </Button>
             </div>
             {mutation.data?.truncated && <Banner variant="info">{t('network.capped')}</Banner>}
             {explorer.expansionTruncated && (
@@ -165,6 +190,7 @@ export function ToolNetwork() {
               </Banner>
             )}
             <ForceGraph
+              apiRef={apiRef}
               nodes={fg.nodes}
               edges={fg.edges}
               nodeStyles={NETWORK_NODE_STYLES}

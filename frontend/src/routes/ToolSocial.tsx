@@ -6,8 +6,8 @@
  * 08_social_network_around.py.
  */
 
-import { useMemo, useState, type FormEvent } from 'react'
-import { Banner, Button, ForceGraph, Spinner } from '@infra/ui'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
+import { Banner, Button, ForceGraph, Spinner, type ForceGraphHandle } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { useToolCall } from '../hooks/useToolCall'
 import { useSocialExplorer } from '../hooks/useGraphExplorer'
@@ -15,7 +15,7 @@ import { EntityInput } from '../components/form/EntityInput'
 import { LimitField } from '../components/form/LimitField'
 import { SubmitButton } from '../components/form/SubmitButton'
 import { SOCIAL_NODE_STYLES, SOCIAL_EDGE_STYLES, toSocialForceGraph } from '../lib/socialElements'
-import { downloadText, toGraphJson, toGraphML } from '../lib/graphExport'
+import { downloadText, toGraphHtml, toGraphJson, toGraphML } from '../lib/graphExport'
 import type { SocialNetworkAroundOut } from '../api/types'
 
 const EXPAND_LIMIT = 50
@@ -24,6 +24,7 @@ export function ToolSocial() {
   const t = useT()
   const mutation = useToolCall<SocialNetworkAroundOut>('social_network_around')
   const explorer = useSocialExplorer()
+  const apiRef = useRef<ForceGraphHandle | null>(null)
 
   const [author, setAuthor] = useState('')
   const [depth, setDepth] = useState(2)
@@ -152,6 +153,32 @@ export function ToolSocial() {
               >
                 {t('graph.export_graphml')}
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() =>
+                  downloadText(
+                    'chorus-social.html',
+                    toGraphHtml({
+                      title: `${t('social.title')} — ${author}`,
+                      nodes: fg.nodes,
+                      edges: fg.edges,
+                      positions: apiRef.current?.getPositions() ?? {},
+                      nodeStyles: SOCIAL_NODE_STYLES,
+                      edgeStyles: SOCIAL_EDGE_STYLES,
+                      legend: [
+                        { kind: 'seed', label: t('social.legend_seed') },
+                        { kind: 'ring1', label: t('social.legend_ring1') },
+                        { kind: 'ring2', label: t('social.legend_ring2') },
+                        { kind: 'ringN', label: t('social.legend_ringN') },
+                      ],
+                    }),
+                    'text/html',
+                  )
+                }
+              >
+                {t('graph.export_html')}
+              </Button>
             </div>
             {mutation.data?.truncated && <Banner variant="info">{t('social.capped')}</Banner>}
             {explorer.expansionTruncated && (
@@ -165,6 +192,7 @@ export function ToolSocial() {
               </Banner>
             )}
             <ForceGraph
+              apiRef={apiRef}
               nodes={fg.nodes}
               edges={fg.edges}
               nodeStyles={SOCIAL_NODE_STYLES}

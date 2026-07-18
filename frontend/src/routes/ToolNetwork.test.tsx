@@ -193,6 +193,36 @@ describe('ToolNetwork', () => {
     vi.restoreAllMocks()
   })
 
+  it('clicking Export HTML downloads a Blob without any backend call', async () => {
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:mock-url')
+    const revokeObjectURL = vi.fn()
+    ;(globalThis as any).URL.createObjectURL = createObjectURL
+    ;(globalThis as any).URL.revokeObjectURL = revokeObjectURL
+    const clickSpy = vi.fn()
+    const originalCreateElement = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = originalCreateElement(tag)
+      if (tag === 'a') (el as HTMLAnchorElement).click = clickSpy as () => void
+      return el
+    })
+
+    vi.mocked(apiPost).mockResolvedValueOnce(SEED_RESULT)
+    render(<ToolNetwork />, { wrapper: makeWrapper() })
+    await submit()
+
+    const callsBefore = vi.mocked(apiPost).mock.calls.length
+    fireEvent.click(await screen.findByRole('button', { name: 'Export HTML' }))
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    const blobArg = createObjectURL.mock.calls[0][0] as Blob
+    expect(blobArg).toBeInstanceOf(Blob)
+    expect(blobArg.type).toBe('text/html')
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(apiPost).mock.calls.length).toBe(callsBefore)
+
+    vi.restoreAllMocks()
+  })
+
   it('shows empty-state text and no svg for an empty seed result', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce({
       seed: 'ghost',

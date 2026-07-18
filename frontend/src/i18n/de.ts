@@ -109,6 +109,7 @@ export const de: Strings = {
     'Scrollen zum Zoomen, Ziehen zum Verschieben, Klick zum Auswählen, Doppelklick zum Erweitern.',
   'graph.export_json': 'JSON exportieren',
   'graph.export_graphml': 'GraphML exportieren',
+  'graph.export_html': 'HTML exportieren',
   'network.legend_seed': 'Ausgangspunkt',
   'network.legend_author': 'Autoren',
   'network.legend_topic': 'Themen',
