@@ -90,6 +90,7 @@ export const en = {
   'graph.edge_length': 'Edge length',
   'graph.zoom': 'Zoom',
   'graph.reset': 'Reset',
+  'graph.fit': 'Fit',
   'graph.expand_node': 'Expand node',
   'graph.maximize': 'Expand graph',
   'graph.minimize': 'Collapse graph',

@@ -185,6 +185,7 @@ export function ToolSocial() {
                 edgeLength: t('graph.edge_length'),
                 zoom: t('graph.zoom'),
                 reset: t('graph.reset'),
+                fit: t('graph.fit'),
                 expandSelected: t('graph.expand_node'),
                 maximize: t('graph.maximize'),
                 minimize: t('graph.minimize'),

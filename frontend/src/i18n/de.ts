@@ -98,6 +98,7 @@ export const de: Strings = {
   'graph.edge_length': 'Kantenlänge',
   'graph.zoom': 'Zoom',
   'graph.reset': 'Zurücksetzen',
+  'graph.fit': 'Einpassen',
   'graph.expand_node': 'Knoten erweitern',
   'graph.maximize': 'Graph vergrößern',
   'graph.minimize': 'Graph verkleinern',
