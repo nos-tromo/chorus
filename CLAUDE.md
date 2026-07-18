@@ -29,7 +29,9 @@ Foundation is up. The app boots, applies Neo4j migrations, serves
 end-to-end with audit logging, and exposes a natural-language agent
 (`POST /agent/query`, ADR 0009) that selects and calls those tools via
 OpenAI tool-calling. The two `*_around` tools return `{nodes, edges}`
-payloads rendered as interactive Cytoscape graphs in the React SPA (ADR 0015).
+payloads rendered as interactive `ForceGraph` graphs in the React SPA
+(ADR 0015; renderer per ADR 0016), with click-to-expand via two additional
+`@audited` tools (`expand_network_node`, `expand_social_node`).
 The SPA's Landing page is a graph-diagnostics dashboard backed by an
 authenticated, §76-audited `GET /stats` endpoint that reports node/edge
 counts, top entities and authors, alias-resolution coverage, latest
@@ -138,7 +140,7 @@ redesign of the ingestion pipeline, not an incremental feature add.
   OpenAI-compatible HTTP, provider swappable via env vars
 - **Orchestration**: three Docker Compose projects (chorus app, data-plane,
   vllm-service inference). See Orchestration topology below.
-- **Graph visualization**: Cytoscape.js (pure JS, bundled; no WASM) for the two `*_around` network screens
+- **Graph visualization**: shared `@infra/ui` `<ForceGraph>` (SVG, dependency-free force simulation, no WASM) for the two `*_around` network screens and inline agent graphs, with expand-on-click (ADR 0016)
 - **Reverse proxy**: existing Nginx (new vhost for chorus UI); the chorus `frontend` service is itself nginx, reverse-proxying API prefixes to the backend (same-origin, no CORS)
 
 ### Invariants
@@ -604,8 +606,9 @@ registry):
      the form and `<DataTable>` for you.
    - *Bespoke graph tool* (`network_around`, `social_network_around`): write
      a dedicated route component (e.g. `frontend/src/routes/ToolNetwork.tsx`),
-     add it to the router and sidebar, and add Cytoscape element mappers in
-     `frontend/src/lib/` (e.g. `networkElements.ts`).
+     add it to the router and sidebar, wire it through `useGraphExplorer` for
+     expand-on-click state, and add `ForceGraph` element/style mappers in
+     `frontend/src/lib/` (e.g. `networkElements.ts`) (ADR 0016).
    - *Bespoke tabular tool* (custom result shape, non-graph): write a
      dedicated route component (e.g. `frontend/src/routes/ToolAuthorActivity.tsx`),
      add it to the router and sidebar. No element mappers needed.
@@ -712,9 +715,9 @@ chorus/                      # top-level repo
       i18n/                  # typed en/de catalog (~160 keys) + useT() hook; parity test
       layout/                # Shell.tsx, Sidebar.tsx
       routes/                # Router.tsx + one screen per route (Agent, Ingestion, tool screens)
-      components/            # DataTable, GraphCanvas (Cytoscape), ToolTrace, ToolScreen, ...
-      hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, ingestion hooks
-      lib/                   # networkElements.ts, socialElements.ts, graphStyles.ts (Cytoscape element mappers)
+      components/            # DataTable, AgentGraphCard (inline ForceGraph), ToolTrace, ToolScreen, ...
+      hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, useGraphExplorer, ingestion hooks
+      lib/                   # networkElements.ts, socialElements.ts, graphExplorer.ts (ForceGraph element/style mappers + merge logic, ADR 0016)
       config/                # ConfigProvider, useConfig(), useT() i18n hook
       tools/                 # specs.ts — ToolSpec declarations for the generic table-tool screens
   tests/                     # unit dirs mirror chorus/; per-tool tests in tests/integration/

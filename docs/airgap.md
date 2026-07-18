@@ -24,8 +24,10 @@ before the image reaches the internal registry.
 - **Fonts** are bundled via the `@fontsource/inter` npm package — Inter is
   served as a same-origin static asset from the nginx image. No Google Fonts CDN
   call is ever made.
-- **Graph rendering** uses Cytoscape.js, a pure-JS canvas library bundled into
-  the static SPA. No WASM, no CDN requests, no subprocess.
+- **Graph rendering** uses the shared `@infra/ui` `<ForceGraph>` component, a
+  dependency-free SVG force simulation bundled into the static SPA (ADR 0016;
+  replaces the earlier Cytoscape.js integration). No WASM, no CDN requests,
+  no subprocess.
 - **CSP lockdown.** `frontend/nginx/security-headers.conf` emits a
   `Content-Security-Policy` header that restricts `connect-src`, `script-src`,
   `font-src`, and `img-src` to `'self'` (plus `data:` for img). External origins
