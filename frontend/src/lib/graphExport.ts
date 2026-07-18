@@ -289,26 +289,52 @@ export function toGraphHtml(opts: GraphHtmlOptions): string {
     </defs>\n`
     : ''
 
+  // The `<script>` block below is a fully static template — no user-controlled
+  // string is ever interpolated into it. The one exception is `VB`, the
+  // viewBox baked as numeric literals: each component is coerced with
+  // Number() and falls back to 0 if not finite, so only digits/minus/dot can
+  // ever land in the emitted source (asserted in graphExport.test.ts).
+  const vb = [viewMinX, viewMinY, viewWidth, viewHeight].map((n) => {
+    const v = Number(n)
+    return Number.isFinite(v) ? v : 0
+  })
+  const vbLiteral = `[${vb.join(', ')}]`
+
   const script = `<script>
   (function () {
     var svg = document.getElementById('graph-svg');
     var g = document.getElementById('graph-viewport');
+    var VB = ${vbLiteral}; // [minX, minY, width, height] — baked numeric viewBox
     var scale = 1, tx = 0, ty = 0;
 
     function apply() {
       g.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
     }
 
+    // preserveAspectRatio="xMidYMid meet" scales the viewBox to fit the
+    // rendered (CSS pixel) box uniformly and centers it; convert pointer
+    // coords from CSS pixels into viewBox units before using them, since tx/ty
+    // translate a <g> living in viewBox space.
+    function toViewBoxPoint(clientX, clientY) {
+      var rect = svg.getBoundingClientRect();
+      var s = Math.min(rect.width / VB[2], rect.height / VB[3]);
+      var offX = (rect.width - VB[2] * s) / 2;
+      var offY = (rect.height - VB[3] * s) / 2;
+      return {
+        x: VB[0] + (clientX - rect.left - offX) / s,
+        y: VB[1] + (clientY - rect.top - offY) / s,
+        s: s,
+      };
+    }
+
     svg.addEventListener('wheel', function (e) {
       e.preventDefault();
-      var rect = svg.getBoundingClientRect();
-      var mx = e.clientX - rect.left;
-      var my = e.clientY - rect.top;
+      var p = toViewBoxPoint(e.clientX, e.clientY);
       var prevScale = scale;
       var delta = e.deltaY < 0 ? 1.1 : 0.9;
       scale = Math.min(8, Math.max(0.15, scale * delta));
-      tx = mx - (mx - tx) * (scale / prevScale);
-      ty = my - (my - ty) * (scale / prevScale);
+      tx = p.x - (p.x - tx) * (scale / prevScale);
+      ty = p.y - (p.y - ty) * (scale / prevScale);
       apply();
     }, { passive: false });
 
@@ -320,8 +346,10 @@ export function toGraphHtml(opts: GraphHtmlOptions): string {
     });
     window.addEventListener('mousemove', function (e) {
       if (!dragging) return;
-      tx += e.clientX - lastX;
-      ty += e.clientY - lastY;
+      var rect = svg.getBoundingClientRect();
+      var s = Math.min(rect.width / VB[2], rect.height / VB[3]);
+      tx += (e.clientX - lastX) / s;
+      ty += (e.clientY - lastY) / s;
       lastX = e.clientX;
       lastY = e.clientY;
       apply();

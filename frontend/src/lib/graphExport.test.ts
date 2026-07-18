@@ -244,6 +244,33 @@ describe('toGraphHtml', () => {
   it('is deterministic for the same input', () => {
     expect(toGraphHtml(baseOpts)).toBe(toGraphHtml(baseOpts))
   })
+
+  it('bakes the viewBox as a numeric VB literal matching the emitted <svg viewBox>', () => {
+    const html = toGraphHtml(baseOpts)
+
+    const svgMatch = html.match(/<svg[^>]*viewBox="([^"]+)"/)
+    expect(svgMatch).not.toBeNull()
+    const viewBoxNums = svgMatch![1].trim().split(/\s+/).map(Number)
+
+    const vbMatch = html.match(/var VB = \[([^\]]+)\];/)
+    expect(vbMatch).not.toBeNull()
+    const vbNums = vbMatch![1].split(',').map((s) => Number(s.trim()))
+
+    expect(vbNums).toEqual(viewBoxNums)
+  })
+
+  it('only interpolates digits/minus/dot into the VB literal (injection-safe)', () => {
+    const html = toGraphHtml(baseOpts)
+    const vbMatch = html.match(/var VB = \[([^\]]+)\];/)
+    expect(vbMatch).not.toBeNull()
+    expect(vbMatch![1]).toMatch(/^[\d.,\s-]+$/)
+  })
+
+  it('converts pointer coords from CSS pixels to viewBox units before panning/zooming', () => {
+    const html = toGraphHtml(baseOpts)
+    expect(html).toContain('function toViewBoxPoint(')
+    expect(html).toContain('Math.min(rect.width / VB[2], rect.height / VB[3])')
+  })
 })
 
 describe('downloadText', () => {
