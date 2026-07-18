@@ -168,6 +168,36 @@ describe('useNetworkExplorer', () => {
 
     expect(result.current.graph?.nodes.map((n) => n.id)).toContain('author:auth-1')
   })
+
+  it('discards an in-flight expansion of a node removed before it resolves', async () => {
+    const expandOut: ExpandNetworkNodeOut = {
+      nodes: [{ id: 'topic:ent-2', kind: 'topic', label: 'Entity Two', entity_id: 'ent-2', is_seed: false }],
+      edges: [{ source: 'author:auth-1', target: 'topic:ent-2', weight: 1 }],
+      truncated: true
+    }
+    let resolveCall: (out: ExpandNetworkNodeOut) => void = () => {}
+    vi.mocked(callTool).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCall = resolve
+      })
+    )
+
+    const { result } = renderHook(() => useNetworkExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(networkSeed))
+
+    act(() => result.current.expand('author:auth-1'))
+    expect(result.current.expandingId).toBe('author:auth-1')
+
+    act(() => result.current.removeNode('author:auth-1'))
+    expect(result.current.graph?.nodes.map((n) => n.id)).toEqual(['topic:ent-1'])
+
+    act(() => resolveCall(expandOut))
+    await waitFor(() => expect(result.current.expandingId).toBeNull())
+
+    expect(result.current.graph?.nodes.map((n) => n.id)).toEqual(['topic:ent-1'])
+    expect(result.current.graph?.edges).toHaveLength(0)
+    expect(result.current.expansionTruncated).toBe(false)
+  })
 })
 
 describe('useSocialExplorer', () => {
@@ -311,5 +341,35 @@ describe('useSocialExplorer', () => {
     await waitFor(() => expect(result.current.expandingId).toBeNull())
 
     expect(result.current.graph?.nodes.map((n) => n.id)).toContain('author:auth-b')
+  })
+
+  it('discards an in-flight expansion of a node removed before it resolves', async () => {
+    const expandOut: ExpandSocialNodeOut = {
+      nodes: [{ id: 'author:auth-c', label: 'Author C' }],
+      edges: [{ source: 'author:auth-b', target: 'author:auth-c', kind: 'follows', directed: true }],
+      truncated: true
+    }
+    let resolveCall: (out: ExpandSocialNodeOut) => void = () => {}
+    vi.mocked(callTool).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCall = resolve
+      })
+    )
+
+    const { result } = renderHook(() => useSocialExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(socialSeed))
+
+    act(() => result.current.expand('author:auth-b'))
+    expect(result.current.expandingId).toBe('author:auth-b')
+
+    act(() => result.current.removeNode('author:auth-b'))
+    expect(result.current.graph?.nodes.map((n) => n.id)).toEqual(['author:auth-a'])
+
+    act(() => resolveCall(expandOut))
+    await waitFor(() => expect(result.current.expandingId).toBeNull())
+
+    expect(result.current.graph?.nodes.map((n) => n.id)).toEqual(['author:auth-a'])
+    expect(result.current.graph?.edges).toHaveLength(0)
+    expect(result.current.expansionTruncated).toBe(false)
   })
 })

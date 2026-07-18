@@ -221,6 +221,41 @@ describe('ToolSocial', () => {
     vi.restoreAllMocks()
   })
 
+  it('clicking the background clears the selection (Expand button disappears)', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce(SEED_RESULT)
+
+    const { container } = render(<ToolSocial />, { wrapper: makeWrapper() })
+    await submit()
+    await waitFor(() => expect(container.querySelectorAll('g[role="button"]')).toHaveLength(2))
+
+    fireEvent.click(screen.getByRole('button', { name: /Bob/ }))
+    expect(await screen.findByRole('button', { name: 'Expand node' })).toBeTruthy()
+
+    const backgroundRect = container.querySelector('svg > rect')
+    expect(backgroundRect).toBeTruthy()
+    fireEvent.pointerDown(backgroundRect!, { clientX: 10, clientY: 10 })
+    fireEvent.pointerUp(backgroundRect!, { clientX: 10, clientY: 10 })
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Expand node' })).toBeNull(),
+    )
+  })
+
+  it('selecting a node then clicking Remove node shrinks the node count', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce(SEED_RESULT)
+
+    const { container } = render(<ToolSocial />, { wrapper: makeWrapper() })
+    await submit()
+    await waitFor(() => expect(container.querySelectorAll('g[role="button"]')).toHaveLength(2))
+
+    fireEvent.click(screen.getByRole('button', { name: /Bob/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove node' }))
+
+    await waitFor(() =>
+      expect(container.querySelectorAll('g[role="button"]')).toHaveLength(1),
+    )
+  })
+
   it('shows empty-state text and no svg for an empty seed result', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce({
       seed: 'ghost',

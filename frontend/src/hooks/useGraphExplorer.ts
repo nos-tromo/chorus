@@ -53,8 +53,13 @@ export function useNetworkExplorer() {
       setExpandingId(nodeId)
       mutation.mutate(nodeId, {
         onSuccess: (out) => {
-          setGraph((g) => (g ? mergeGraph(g, out, (e) => `${e.source}__${e.target}`) : g))
-          setExpansionTruncated(out.truncated)
+          // If the anchor node was removed while this expansion was in flight, discard the
+          // whole result — merging it back in would re-add neighbours orphaned from the graph.
+          setGraph((g) => {
+            if (!g || !g.nodes.some((n) => n.id === nodeId)) return g
+            setExpansionTruncated(out.truncated)
+            return mergeGraph(g, out, (e) => `${e.source}__${e.target}`)
+          })
         },
         onSettled: () => {
           expandingRef.current = null
@@ -140,9 +145,15 @@ export function useSocialExplorer() {
             nodes: out.nodes.map((n) => ({ id: n.id, label: n.label, ring, is_seed: false })),
             edges: out.edges
           }
-          remember(added.nodes)
-          setGraph((g) => (g ? mergeGraph(g, added, (e) => `${e.source}__${e.target}__${e.kind}`) : g))
-          setExpansionTruncated(out.truncated)
+          // If the anchor node (namespaced id, e.g. "author:auth-b") was removed while this
+          // expansion was in flight, discard the whole result — merging it back in would
+          // re-add neighbours orphaned from the graph.
+          setGraph((g) => {
+            if (!g || !g.nodes.some((n) => n.id === nodeId)) return g
+            remember(added.nodes)
+            setExpansionTruncated(out.truncated)
+            return mergeGraph(g, added, (e) => `${e.source}__${e.target}__${e.kind}`)
+          })
         },
         onSettled: () => {
           expandingRef.current = null
