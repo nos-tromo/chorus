@@ -1,27 +1,28 @@
 /**
  * ToolNetwork — `network_around` tool screen.
  *
- * Bipartite author-topic network around a queried entity. Renders a Cytoscape
- * graph with cose layout. Form mirrors the Streamlit page (07_network_around.py).
+ * Bipartite author-topic network around a queried entity. Renders a
+ * reactive, incrementally-expandable ForceGraph. Form mirrors the Streamlit
+ * page (07_network_around.py).
  */
 
-import { useState, type FormEvent } from 'react'
-import { Banner, Spinner } from '@infra/ui'
+import { useMemo, useState, type FormEvent } from 'react'
+import { Banner, ForceGraph, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { useToolCall } from '../hooks/useToolCall'
+import { useNetworkExplorer } from '../hooks/useGraphExplorer'
 import { EntityInput } from '../components/form/EntityInput'
 import { LimitField } from '../components/form/LimitField'
 import { SubmitButton } from '../components/form/SubmitButton'
-import { GraphCanvas } from '../components/GraphCanvas'
-import { toNetworkElements } from '../lib/networkElements'
-import { networkStylesheet } from '../lib/graphStyles'
+import { NETWORK_NODE_STYLES, toNetworkForceGraph } from '../lib/networkElements'
 import type { NetworkAroundOut } from '../api/types'
 
-const COSE_LAYOUT = { name: 'cose' } as const
+const EXPAND_LIMIT = 50
 
 export function ToolNetwork() {
   const t = useT()
   const mutation = useToolCall<NetworkAroundOut>('network_around')
+  const explorer = useNetworkExplorer()
 
   const [entity, setEntity] = useState('')
   const [depth, setDepth] = useState(2)
@@ -30,10 +31,12 @@ export function ToolNetwork() {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    mutation.mutate({ entity, depth, limit, topic_limit: topicLimit })
+    mutation.mutate(
+      { entity, depth, limit, topic_limit: topicLimit },
+      { onSuccess: (out) => explorer.seedFrom(out) },
+    )
   }
 
-  const data = mutation.data
   const errorMessage =
     mutation.error instanceof Error
       ? mutation.error.message
@@ -41,8 +44,17 @@ export function ToolNetwork() {
         ? String(mutation.error)
         : ''
 
-  const authorCount = data ? data.nodes.filter((n) => n.kind === 'author').length : 0
-  const topicCount = data ? data.nodes.filter((n) => n.kind === 'topic').length : 0
+  const authorCount = explorer.graph
+    ? explorer.graph.nodes.filter((n) => n.kind === 'author').length
+    : 0
+  const topicCount = explorer.graph
+    ? explorer.graph.nodes.filter((n) => n.kind === 'topic').length
+    : 0
+
+  const fg = useMemo(
+    () => (explorer.graph ? toNetworkForceGraph(explorer.graph) : null),
+    [explorer.graph],
+  )
 
   return (
     <div className="p-8 space-y-6">
@@ -99,31 +111,56 @@ export function ToolNetwork() {
       {mutation.isPending && <Spinner label="…" />}
 
       {/* Results */}
-      {data && !mutation.isPending && (
-        <div className="space-y-4">
-          {data.nodes.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('network.empty')}</p>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">
-                {t('network.counts', {
-                  n: data.nodes.length,
-                  authors: authorCount,
-                  topics: topicCount,
-                  edges: data.edges.length,
-                })}
-              </p>
-              {data.truncated && (
-                <Banner variant="info">{t('network.capped')}</Banner>
-              )}
-              <GraphCanvas
-                elements={toNetworkElements(data)}
-                stylesheet={networkStylesheet}
-                layout={COSE_LAYOUT}
-              />
-            </>
-          )}
-        </div>
+      {fg && explorer.graph && (
+        explorer.graph.nodes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('network.empty')}</p>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {t('network.counts', {
+                n: explorer.graph.nodes.length,
+                authors: authorCount,
+                topics: topicCount,
+                edges: explorer.graph.edges.length,
+              })}
+            </p>
+            {mutation.data?.truncated && <Banner variant="info">{t('network.capped')}</Banner>}
+            {explorer.expansionTruncated && (
+              <Banner variant="info">
+                {t('graph.expansion_capped', { limit: EXPAND_LIMIT })}
+              </Banner>
+            )}
+            {explorer.expandError && (
+              <Banner variant="danger">
+                {t('graph.expand_failed', { error: explorer.expandError })}
+              </Banner>
+            )}
+            <ForceGraph
+              nodes={fg.nodes}
+              edges={fg.edges}
+              nodeStyles={NETWORK_NODE_STYLES}
+              selectedId={explorer.selectedId}
+              onSelectNode={explorer.select}
+              onExpandNode={explorer.expand}
+              expandingId={explorer.expandingId}
+              statusText={t('graph.hint')}
+              legend={[
+                { kind: 'seed', label: t('network.legend_seed') },
+                { kind: 'author', label: t('network.legend_author') },
+                { kind: 'topic', label: t('network.legend_topic') },
+              ]}
+              labels={{
+                minEdges: t('graph.min_edges'),
+                edgeLength: t('graph.edge_length'),
+                zoom: t('graph.zoom'),
+                reset: t('graph.reset'),
+                expandSelected: t('graph.expand_node'),
+                maximize: t('graph.maximize'),
+                minimize: t('graph.minimize'),
+              }}
+            />
+          </div>
+        )
       )}
     </div>
   )

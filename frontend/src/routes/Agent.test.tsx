@@ -58,6 +58,7 @@ const SIMPLE_RESPONSE: AgentResponse = {
       arguments: { author: 'Alice' },
       error: null,
       result_count: 1,
+      result: null,
     },
   ],
   truncated: false,
