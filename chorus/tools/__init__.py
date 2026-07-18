@@ -6,6 +6,7 @@ from chorus.tools import (
     authors_connected_by_topic,  # noqa: F401
     authors_mentioning,  # noqa: F401
     expand_network_node,  # noqa: F401
+    expand_social_node,  # noqa: F401
     network_around,  # noqa: F401
     posts_mentioning,  # noqa: F401
     social_network_around,  # noqa: F401

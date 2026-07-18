@@ -39,6 +39,7 @@ _CHORUS_ENV_MODULES = (
     "chorus.tools.authors_connected_by_topic",
     "chorus.tools.authors_mentioning",
     "chorus.tools.expand_network_node",
+    "chorus.tools.expand_social_node",
     "chorus.tools.network_around",
     "chorus.tools.social_network_around",
     "chorus.tools",
