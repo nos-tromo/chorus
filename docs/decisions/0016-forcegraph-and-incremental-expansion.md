@@ -128,6 +128,30 @@ Deferred: image export (PNG/SVG snapshot of the rendered layout as a
 downloadable image rather than an HTML document) and exporting an inline
 agent-answer graph card — both are additive, not blocked by this shape.
 
+## Addendum: node removal, background deselect, label readability (2026-07-18)
+
+`@infra/ui#v0.3.3` adds three small `ForceGraph` affordances, wired
+identically across `ToolNetwork`, `ToolSocial`, and `AgentGraphCard`: a
+per-style `labelColor` (author/ring1 nodes now render their label in a
+lighter violet, ring2 in slate, so text stays legible against the darker
+node fill — seed/topic/ring N were already readable and are unchanged);
+`onSelectNode` firing `null` on a background click, clearing selection
+(and with it the Expand/Remove affordances) without a dedicated deselect
+control; and `onDeleteNode`, wired to a new `removeNode` on
+`useNetworkExplorer`/`useSocialExplorer`, which drops a node and its
+incident edges from the accumulated explorer graph state.
+
+Node removal is **view-state only** — it declutters the canvas, exactly
+like the existing merge/ring bookkeeping in `useGraphExplorer.ts`. It never
+calls the backend and never deletes graph data; the removed node returns
+to the canvas if the analyst later expands a still-visible neighbour that
+re-introduces it (`mergeGraph` accepts it back by id, same as any other
+expansion). Consistent with the export addendum above, this is a client-side
+interaction over data the client already holds, so it adds no new §76 audit
+surface — the existing audited tool calls (`network_around` /
+`social_network_around`, the two expand tools) remain the full accounting
+of what left the backend.
+
 ## Future: unified explorer
 
 Merging the two graph screens (`ToolNetwork`, `ToolSocial`) into one combined
