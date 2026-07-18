@@ -5,6 +5,7 @@ import { Banner, Button, CopyButton, Input, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { useAgentQuery } from '../hooks/useAgentQuery'
 import { ToolTrace } from '../components/ToolTrace'
+import { AgentGraphCard } from '../components/AgentGraphCard'
 import type { AgentMessage, AgentTraceEntry } from '../api/types'
 
 // ── Local message type (adds optional trace for assistant turns) ──────────────
@@ -141,6 +142,11 @@ export function Agent() {
                 {turn.role === 'assistant' && turn.trace && turn.trace.length > 0 && (
                   <ToolTrace trace={turn.trace} />
                 )}
+
+                {turn.role === 'assistant' &&
+                  turn.trace
+                    ?.filter((s) => s.result != null)
+                    .map((s, i) => <AgentGraphCard key={`${s.tool}:${i}`} entry={s} />)}
 
                 {turn.truncated && (
                   <Banner variant="info" className="mt-2 text-xs" data-testid="truncation-notice">
