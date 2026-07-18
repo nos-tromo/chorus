@@ -1,6 +1,6 @@
 [project]
 name = "chorus"
-version = "0.1.3"
+version = "0.2.0"
 description = "GraphRAG system for social network analysis"
 authors = [
   { name = "nos-tromo" }
