@@ -28,6 +28,15 @@ from chorus.tools import TOOLS
 _MAX_TOOL_MESSAGE_ITEMS = 8
 _MAX_TOOL_MESSAGE_STRING_CHARS = 280
 
+# Graph tools whose full node/edge payload is echoed on the trace so the SPA
+# can render the graph inline (wiring (a) of the reactive-graph design). The
+# node cap keeps one huge graph from ballooning the /agent/query response;
+# result_count still reports the true size when the payload is withheld.
+_GRAPH_RESULT_TOOLS = frozenset(
+    {"network_around", "social_network_around", "expand_network_node", "expand_social_node"}
+)
+_MAX_TRACE_GRAPH_NODES = 500
+
 
 class AgentInferenceError(RuntimeError):
     """Raised when the agent's inference call fails (unreachable or errored).
@@ -63,12 +72,15 @@ class TraceStep(BaseModel):
             call errored or the tool reports no count.
         error: Error message when the call failed (unknown tool, invalid
             arguments, or a tool exception); ``None`` on success.
+        result: Full tool output for graph tools (node/edge payloads the SPA
+            renders inline), when within the size cap; None otherwise.
     """
 
     tool: str
     arguments: dict[str, Any]
     result_count: int | None = None
     error: str | None = None
+    result: dict[str, Any] | None = None
 
 
 class AgentResult(BaseModel):
@@ -238,8 +250,13 @@ def _execute_tool_call(
     result = out.model_dump(mode="json")
     count_fn = getattr(out, "audit_result_count", None)
     result_count: int | None = cast("int | None", count_fn()) if callable(count_fn) else None
+    trace_result: dict[str, Any] | None = None
+    if name in _GRAPH_RESULT_TOOLS:
+        nodes = result.get("nodes")
+        if isinstance(nodes, list) and len(nodes) <= _MAX_TRACE_GRAPH_NODES:
+            trace_result = result
     return (
-        TraceStep(tool=name, arguments=arguments, result_count=result_count),
+        TraceStep(tool=name, arguments=arguments, result_count=result_count, result=trace_result),
         _tool_message(tc, result, result_count=result_count, max_items=max_items, max_chars=max_chars),
     )
 

@@ -7,6 +7,7 @@ real against the migrated test database.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sqlite3
 from collections.abc import Callable, Iterator
@@ -54,6 +55,14 @@ def _always(monkeypatch: pytest.MonkeyPatch, factory: Callable[[], _FakeMessage]
         return factory()
 
     monkeypatch.setattr(provider, "chat_message", _fn)
+
+
+def _install_fake_tool_run(monkeypatch: pytest.MonkeyPatch, name: str, fn: Callable[..., Any]) -> None:
+    """Replace a registered tool's ``run`` callable for the duration of the test."""
+    from chorus.tools import TOOLS
+
+    original = TOOLS[name]
+    monkeypatch.setitem(TOOLS, name, dataclasses.replace(original, run=fn))
 
 
 def test_no_tool_call_returns_content(
@@ -493,3 +502,129 @@ def test_default_language_is_english_prompt(
         messages=[{"role": "user", "content": "hi"}],
     )
     assert captured[0]["content"] == get_system_prompt("en")
+
+
+def test_trace_carries_graph_tool_result(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A graph tool's full node/edge payload rides on the trace, uncompacted."""
+    from chorus.agent.loop import run_agent
+    from chorus.tools.network_around import NetworkAroundOut, NetworkEdge, NetworkNode
+
+    fake_out = NetworkAroundOut(
+        seed="Berlin",
+        seed_node_id="topic:berlin",
+        nodes=[
+            NetworkNode(id="topic:berlin", kind="topic", label="Berlin", entity_id=None, is_seed=True),
+            NetworkNode(id="author:a1", kind="author", label="alice", entity_id=None, is_seed=False),
+        ],
+        edges=[NetworkEdge(source="author:a1", target="topic:berlin", weight=1)],
+        truncated=False,
+    )
+    _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, user, audit: fake_out)
+    _script(
+        monkeypatch,
+        [
+            _FakeMessage(tool_calls=[_FakeToolCall("c1", "network_around", '{"entity": "Berlin"}')]),
+            _FakeMessage(content="Here is the network."),
+        ],
+    )
+    result = run_agent(
+        migrated_driver,
+        in_memory_audit,
+        user="u",
+        messages=[{"role": "user", "content": "show network around Berlin"}],
+    )
+    assert len(result.trace) == 1
+    assert result.trace[0].tool == "network_around"
+    assert result.trace[0].result == fake_out.model_dump(mode="json")
+    assert result.trace[0].result_count == 2
+
+
+def test_trace_omits_result_for_non_graph_tools(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-graph tool (e.g. posts_mentioning) never populates trace.result."""
+    from chorus.agent.loop import run_agent
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (al:Alias {surface_form: 'Berlin'})
+            MERGE (p:Post:Posting {uuid: 'p-1'})
+              ON CREATE SET p.text = 'hello berlin',
+                            p.timestamp = datetime('2026-05-01T10:00:00+00:00')
+            MERGE (p)-[:MENTIONS]->(al)
+            """
+        )
+    _script(
+        monkeypatch,
+        [
+            _FakeMessage(tool_calls=[_FakeToolCall("c1", "posts_mentioning", '{"entity": "Berlin", "limit": 5}')]),
+            _FakeMessage(content="Found 1 post mentioning Berlin."),
+        ],
+    )
+    result = run_agent(
+        migrated_driver,
+        in_memory_audit,
+        user="analyst",
+        messages=[{"role": "user", "content": "posts about Berlin?"}],
+    )
+    assert len(result.trace) == 1
+    assert result.trace[0].tool == "posts_mentioning"
+    assert result.trace[0].result_count == 1
+    assert result.trace[0].result is None
+
+
+def test_trace_omits_oversized_graph_result(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A graph tool result over the node cap is withheld, but result_count still reports the true size."""
+    from chorus.agent.loop import run_agent
+    from chorus.tools.network_around import NetworkAroundOut, NetworkNode
+
+    nodes = [
+        NetworkNode(id=f"author:a{i}", kind="author", label=f"a{i}", entity_id=None, is_seed=False) for i in range(501)
+    ]
+    fake_out = NetworkAroundOut(seed="Berlin", seed_node_id="topic:berlin", nodes=nodes, edges=[], truncated=True)
+    _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, user, audit: fake_out)
+    _script(
+        monkeypatch,
+        [
+            _FakeMessage(tool_calls=[_FakeToolCall("c1", "network_around", '{"entity": "Berlin"}')]),
+            _FakeMessage(content="Large network."),
+        ],
+    )
+    result = run_agent(
+        migrated_driver,
+        in_memory_audit,
+        user="u",
+        messages=[{"role": "user", "content": "show network around Berlin"}],
+    )
+    assert len(result.trace) == 1
+    assert result.trace[0].result is None
+    assert result.trace[0].result_count == 501
+
+
+def test_trace_result_none_on_tool_error(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed tool call (unknown tool) leaves trace.result None alongside the error."""
+    from chorus.agent.loop import run_agent
+
+    _script(
+        monkeypatch,
+        [
+            _FakeMessage(tool_calls=[_FakeToolCall("c1", "does_not_exist", "{}")]),
+            _FakeMessage(content="Sorry, I can't do that."),
+        ],
+    )
+    result = run_agent(
+        migrated_driver,
+        in_memory_audit,
+        user="u",
+        messages=[{"role": "user", "content": "do the impossible"}],
+    )
+    assert len(result.trace) == 1
+    assert result.trace[0].error is not None
+    assert result.trace[0].result is None
