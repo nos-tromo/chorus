@@ -584,8 +584,7 @@ def test_trace_omits_oversized_graph_result(
     from chorus.tools.network_around import NetworkAroundOut, NetworkNode
 
     nodes = [
-        NetworkNode(id=f"author:a{i}", kind="author", label=f"a{i}", entity_id=None, is_seed=False)
-        for i in range(501)
+        NetworkNode(id=f"author:a{i}", kind="author", label=f"a{i}", entity_id=None, is_seed=False) for i in range(501)
     ]
     fake_out = NetworkAroundOut(seed="Berlin", seed_node_id="topic:berlin", nodes=nodes, edges=[], truncated=True)
     _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, user, audit: fake_out)
