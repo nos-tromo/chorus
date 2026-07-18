@@ -119,6 +119,55 @@ describe('useNetworkExplorer', () => {
 
     expect(callTool).toHaveBeenCalledTimes(1)
   })
+
+  it('removeNode drops the node and its incident edges', () => {
+    const { result } = renderHook(() => useNetworkExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(networkSeed))
+
+    act(() => result.current.removeNode('author:auth-1'))
+
+    expect(result.current.graph?.nodes.map((n) => n.id)).toEqual(['topic:ent-1'])
+    expect(result.current.graph?.edges).toHaveLength(0)
+  })
+
+  it('removeNode clears selection when the removed node was selected', () => {
+    const { result } = renderHook(() => useNetworkExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(networkSeed))
+    act(() => result.current.select('author:auth-1'))
+
+    act(() => result.current.removeNode('author:auth-1'))
+
+    expect(result.current.selectedId).toBeNull()
+  })
+
+  it('removeNode keeps selection when a different node was selected', () => {
+    const { result } = renderHook(() => useNetworkExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(networkSeed))
+    act(() => result.current.select('topic:ent-1'))
+
+    act(() => result.current.removeNode('author:auth-1'))
+
+    expect(result.current.selectedId).toBe('topic:ent-1')
+  })
+
+  it('a removed node can be re-added by expanding a neighbour', async () => {
+    const expandOut: ExpandNetworkNodeOut = {
+      nodes: [{ id: 'author:auth-1', kind: 'author', label: 'Author One', entity_id: null, is_seed: false }],
+      edges: [{ source: 'topic:ent-1', target: 'author:auth-1', weight: 1 }],
+      truncated: false
+    }
+    vi.mocked(callTool).mockResolvedValueOnce(expandOut)
+
+    const { result } = renderHook(() => useNetworkExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(networkSeed))
+    act(() => result.current.removeNode('author:auth-1'))
+    expect(result.current.graph?.nodes.map((n) => n.id)).toEqual(['topic:ent-1'])
+
+    act(() => result.current.expand('topic:ent-1'))
+    await waitFor(() => expect(result.current.expandingId).toBeNull())
+
+    expect(result.current.graph?.nodes.map((n) => n.id)).toContain('author:auth-1')
+  })
 })
 
 describe('useSocialExplorer', () => {
@@ -213,5 +262,54 @@ describe('useSocialExplorer', () => {
     act(() => result.current.expand('author:auth-b'))
 
     expect(callTool).toHaveBeenCalledTimes(1)
+  })
+
+  it('removeNode drops the node and its incident edges', () => {
+    const { result } = renderHook(() => useSocialExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(socialSeed))
+
+    act(() => result.current.removeNode('author:auth-b'))
+
+    expect(result.current.graph?.nodes.map((n) => n.id)).toEqual(['author:auth-a'])
+    expect(result.current.graph?.edges).toHaveLength(0)
+  })
+
+  it('removeNode clears selection when the removed node was selected', () => {
+    const { result } = renderHook(() => useSocialExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(socialSeed))
+    act(() => result.current.select('author:auth-b'))
+
+    act(() => result.current.removeNode('author:auth-b'))
+
+    expect(result.current.selectedId).toBeNull()
+  })
+
+  it('removeNode keeps selection when a different node was selected', () => {
+    const { result } = renderHook(() => useSocialExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(socialSeed))
+    act(() => result.current.select('author:auth-a'))
+
+    act(() => result.current.removeNode('author:auth-b'))
+
+    expect(result.current.selectedId).toBe('author:auth-a')
+  })
+
+  it('a removed node can be re-added by expanding a neighbour', async () => {
+    const expandOut: ExpandSocialNodeOut = {
+      nodes: [{ id: 'author:auth-b', label: 'Author B' }],
+      edges: [{ source: 'author:auth-a', target: 'author:auth-b', kind: 'follows', directed: true }],
+      truncated: false
+    }
+    vi.mocked(callTool).mockResolvedValueOnce(expandOut)
+
+    const { result } = renderHook(() => useSocialExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(socialSeed))
+    act(() => result.current.removeNode('author:auth-b'))
+    expect(result.current.graph?.nodes.map((n) => n.id)).toEqual(['author:auth-a'])
+
+    act(() => result.current.expand('author:auth-a'))
+    await waitFor(() => expect(result.current.expandingId).toBeNull())
+
+    expect(result.current.graph?.nodes.map((n) => n.id)).toContain('author:auth-b')
   })
 })

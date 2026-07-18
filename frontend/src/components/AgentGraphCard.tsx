@@ -165,6 +165,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
           selectedId={explorer.selectedId}
           onSelectNode={explorer.select}
           onExpandNode={explorer.expand}
+          onDeleteNode={explorer.removeNode}
           expandingId={explorer.expandingId}
           statusText={t('graph.hint')}
           legend={[
@@ -179,6 +180,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
             reset: t('graph.reset'),
             fit: t('graph.fit'),
             expandSelected: t('graph.expand_node'),
+            removeSelected: t('graph.remove_node'),
             maximize: t('graph.maximize'),
             minimize: t('graph.minimize'),
           }}
@@ -192,6 +194,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
           selectedId={explorer.selectedId}
           onSelectNode={explorer.select}
           onExpandNode={explorer.expand}
+          onDeleteNode={explorer.removeNode}
           expandingId={explorer.expandingId}
           statusText={t('graph.hint')}
           legend={[
@@ -207,6 +210,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
             reset: t('graph.reset'),
             fit: t('graph.fit'),
             expandSelected: t('graph.expand_node'),
+            removeSelected: t('graph.remove_node'),
             maximize: t('graph.maximize'),
             minimize: t('graph.minimize'),
           }}

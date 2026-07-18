@@ -65,10 +65,26 @@ export function useNetworkExplorer() {
     [mutation]
   )
 
+  // View-state only: declutters the canvas, never touches graph data. A removed
+  // node returns if re-added via a neighbour's expansion (ringsRef-equivalent
+  // state, if any, is left untouched — harmless, and re-adding the same id is
+  // the desirable outcome).
+  const removeNode = useCallback((nodeId: string) => {
+    setGraph((g) => {
+      if (!g) return g
+      return {
+        nodes: g.nodes.filter((n) => n.id !== nodeId),
+        edges: g.edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
+      }
+    })
+    select((current) => (current === nodeId ? null : current))
+  }, [])
+
   return {
     graph,
     seedFrom,
     expand,
+    removeNode,
     expandingId,
     expansionTruncated,
     selectedId,
@@ -137,10 +153,26 @@ export function useSocialExplorer() {
     [mutation]
   )
 
+  // View-state only: declutters the canvas, never touches graph data. Ring
+  // bookkeeping (ringsRef) is left untouched on removal — harmless, and a
+  // re-added node (via a neighbour's expansion) regains its old ring, which
+  // is the desirable outcome.
+  const removeNode = useCallback((nodeId: string) => {
+    setGraph((g) => {
+      if (!g) return g
+      return {
+        nodes: g.nodes.filter((n) => n.id !== nodeId),
+        edges: g.edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
+      }
+    })
+    select((current) => (current === nodeId ? null : current))
+  }, [])
+
   return {
     graph,
     seedFrom,
     expand,
+    removeNode,
     expandingId,
     expansionTruncated,
     selectedId,

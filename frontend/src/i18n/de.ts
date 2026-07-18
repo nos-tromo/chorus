@@ -100,6 +100,7 @@ export const de: Strings = {
   'graph.reset': 'Zurücksetzen',
   'graph.fit': 'Einpassen',
   'graph.expand_node': 'Knoten erweitern',
+  'graph.remove_node': 'Knoten entfernen',
   'graph.maximize': 'Graph vergrößern',
   'graph.minimize': 'Graph verkleinern',
   'graph.expansion_capped':

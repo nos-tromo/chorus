@@ -18,7 +18,7 @@ const SEED_SIZE_FLOOR = 6
  */
 export const NETWORK_NODE_STYLES: Record<string, ForceGraphNodeStyle> = {
   seed: { color: '#fbbf24' },
-  author: { color: '#7c3aed' },
+  author: { color: '#7c3aed', labelColor: '#a78bfa' },
   topic: { color: '#4ade80' },
 }
 

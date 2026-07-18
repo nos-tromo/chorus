@@ -14,8 +14,8 @@ describe('SOCIAL_NODE_STYLES / SOCIAL_EDGE_STYLES', () => {
   it('defines exactly seed, ring1, ring2, ringN with the fixed palette', () => {
     expect(SOCIAL_NODE_STYLES).toEqual({
       seed: { color: '#fbbf24' },
-      ring1: { color: '#7c3aed' },
-      ring2: { color: '#64748b' },
+      ring1: { color: '#7c3aed', labelColor: '#a78bfa' },
+      ring2: { color: '#64748b', labelColor: '#94a3b8' },
       ringN: { color: '#b0bec5' },
     })
   })

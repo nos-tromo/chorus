@@ -92,6 +92,7 @@ export const en = {
   'graph.reset': 'Reset',
   'graph.fit': 'Fit',
   'graph.expand_node': 'Expand node',
+  'graph.remove_node': 'Remove node',
   'graph.maximize': 'Expand graph',
   'graph.minimize': 'Collapse graph',
   'graph.expansion_capped':

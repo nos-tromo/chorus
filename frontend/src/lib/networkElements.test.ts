@@ -14,7 +14,7 @@ describe('NETWORK_NODE_STYLES', () => {
   it('defines exactly seed, author, topic with the fixed palette', () => {
     expect(NETWORK_NODE_STYLES).toEqual({
       seed: { color: '#fbbf24' },
-      author: { color: '#7c3aed' },
+      author: { color: '#7c3aed', labelColor: '#a78bfa' },
       topic: { color: '#4ade80' },
     })
   })

@@ -21,8 +21,8 @@ import type { SocialEdge, SocialNode } from '../api/types'
  */
 export const SOCIAL_NODE_STYLES: Record<string, ForceGraphNodeStyle> = {
   seed: { color: '#fbbf24' },
-  ring1: { color: '#7c3aed' },
-  ring2: { color: '#64748b' },
+  ring1: { color: '#7c3aed', labelColor: '#a78bfa' },
+  ring2: { color: '#64748b', labelColor: '#94a3b8' },
   ringN: { color: '#b0bec5' },
 }
 
