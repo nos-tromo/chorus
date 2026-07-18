@@ -144,4 +144,48 @@ describe('useSocialExplorer', () => {
 
     expect(result.current.expandError).toBe('boom')
   })
+
+  it('ring bookkeeping survives back-edges to already-known nodes', async () => {
+    // Seed: auth-a ring 0, auth-b ring 1
+    const { result } = renderHook(() => useSocialExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFrom(socialSeed))
+
+    // Expand auth-b: returns auth-a (back-edge, already in graph at ring 0) and auth-c (new)
+    const expandBOut: ExpandSocialNodeOut = {
+      nodes: [
+        { id: 'author:auth-a', label: 'Author A' },
+        { id: 'author:auth-c', label: 'Author C' }
+      ],
+      edges: [
+        { source: 'author:auth-b', target: 'author:auth-a', kind: 'follows', directed: true },
+        { source: 'author:auth-b', target: 'author:auth-c', kind: 'follows', directed: true }
+      ],
+      truncated: false
+    }
+    vi.mocked(callTool).mockResolvedValueOnce(expandBOut)
+
+    act(() => result.current.expand('author:auth-b'))
+    await waitFor(() => expect(result.current.expandingId).toBeNull())
+
+    // After merge: auth-a still ring 0, auth-c newly added as ring 2
+    const authA = result.current.graph?.nodes.find((n) => n.id === 'author:auth-a')
+    const authC = result.current.graph?.nodes.find((n) => n.id === 'author:auth-c')
+    expect(authA?.ring).toBe(0)
+    expect(authC?.ring).toBe(2)
+
+    // Expand auth-a again: should assign its new neighbours ring 1 (not 3)
+    const expandAOut: ExpandSocialNodeOut = {
+      nodes: [{ id: 'author:auth-d', label: 'Author D' }],
+      edges: [{ source: 'author:auth-a', target: 'author:auth-d', kind: 'follows', directed: true }],
+      truncated: false
+    }
+    vi.mocked(callTool).mockResolvedValueOnce(expandAOut)
+
+    act(() => result.current.expand('author:auth-a'))
+    await waitFor(() => expect(result.current.expandingId).toBeNull())
+
+    // auth-d should be ring 1 (auth-a's ring 0 + 1), not 3
+    const authD = result.current.graph?.nodes.find((n) => n.id === 'author:auth-d')
+    expect(authD?.ring).toBe(1)
+  })
 })

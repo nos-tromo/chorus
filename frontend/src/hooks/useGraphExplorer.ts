@@ -28,6 +28,7 @@ function errText(err: unknown): string {
 export function useNetworkExplorer() {
   const [graph, setGraph] = useState<GraphState<NetworkNode, NetworkEdge> | null>(null)
   const [selectedId, select] = useState<string | null>(null)
+  // UI disables expansion triggers while expandingId is set (concurrent expansions share this flag).
   const [expandingId, setExpandingId] = useState<string | null>(null)
   const [expansionTruncated, setExpansionTruncated] = useState(false)
 
@@ -71,13 +72,17 @@ export function useNetworkExplorer() {
 export function useSocialExplorer() {
   const [graph, setGraph] = useState<GraphState<SocialNode, SocialEdge> | null>(null)
   const [selectedId, select] = useState<string | null>(null)
+  // UI disables expansion triggers while expandingId is set (concurrent expansions share this flag).
   const [expandingId, setExpandingId] = useState<string | null>(null)
   const [expansionTruncated, setExpansionTruncated] = useState(false)
   // Ring lookup for ring+1 assignment on expansion; refreshed on every graph set.
   const ringsRef = useRef<Map<string, number>>(new Map())
 
   const remember = (nodes: SocialNode[]) => {
-    for (const n of nodes) ringsRef.current.set(n.id, n.ring)
+    // First-wins: never overwrite an existing entry (mirrors mergeGraph's dedup logic).
+    for (const n of nodes) {
+      if (!ringsRef.current.has(n.id)) ringsRef.current.set(n.id, n.ring)
+    }
   }
 
   const mutation = useMutation({
