@@ -31,7 +31,9 @@ end-to-end with audit logging, and exposes a natural-language agent
 OpenAI tool-calling. The two `*_around` tools return `{nodes, edges}`
 payloads rendered as interactive `ForceGraph` graphs in the React SPA
 (ADR 0015; renderer per ADR 0016), with click-to-expand via two additional
-`@audited` tools (`expand_network_node`, `expand_social_node`).
+`@audited` tools (`expand_network_node`, `expand_social_node`) and
+shift+click/marquee multi-select with batch, view-only node removal
+(`@infra/ui#v0.4.0`, ADR 0016 addendum).
 The SPA's Landing page is a graph-diagnostics dashboard backed by an
 authenticated, §76-audited `GET /stats` endpoint that reports node/edge
 counts, top entities and authors, alias-resolution coverage, latest

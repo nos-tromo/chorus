@@ -152,6 +152,15 @@ surface — the existing audited tool calls (`network_around` /
 `social_network_around`, the two expand tools) remain the full accounting
 of what left the backend.
 
+## Addendum: multi-select and batch removal (2026-07-19)
+
+`@infra/ui#v0.4.0` replaces single-node selection with a set (shift+click
+toggles, shift+drag marquee-selects), so `useNetworkExplorer`/
+`useSocialExplorer` now expose `selectedIds`/batch `removeNodes` instead of
+`selectedId`/`removeNode`, and the Remove button removes the whole selected
+set at once (still view-state only — no new §76 audit surface, per the
+addendum above).
+
 ## Future: unified explorer
 
 Merging the two graph screens (`ToolNetwork`, `ToolSocial`) into one combined
