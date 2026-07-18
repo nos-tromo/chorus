@@ -106,6 +106,18 @@ describe('toGraphML', () => {
     expect(xml).toContain('id="n&quot;1"')
   })
 
+  it('escapes special characters like & in edge source and target attributes', () => {
+    const nodes: ForceGraphNode[] = [
+      { id: 'n1', label: 'x', kind: 'seed' },
+      { id: 'n2', label: 'y', kind: 'seed' },
+    ]
+    const edges: ForceGraphEdge[] = [
+      { source: 'entity&topic', target: 'author<name>', kind: 'mentions' },
+    ]
+    const xml = toGraphML(nodes, edges)
+    expect(xml).toContain('<edge source="entity&amp;topic" target="author&lt;name&gt;">')
+  })
+
   it('is deterministic for the same input', () => {
     expect(toGraphML(NODES, EDGES)).toBe(toGraphML(NODES, EDGES))
   })
@@ -142,14 +154,22 @@ describe('downloadText', () => {
   })
 
   it('creates a Blob object URL, triggers a download click, and revokes the URL', () => {
-    downloadText('synthetic.json', '{"a":1}', 'application/json')
+    vi.useFakeTimers()
+    try {
+      downloadText('synthetic.json', '{"a":1}', 'application/json')
 
-    expect(createObjectURL).toHaveBeenCalledTimes(1)
-    const blobArg = createObjectURL.mock.calls[0][0] as Blob
-    expect(blobArg).toBeInstanceOf(Blob)
-    expect(blobArg.type).toBe('application/json')
+      expect(createObjectURL).toHaveBeenCalledTimes(1)
+      const blobArg = createObjectURL.mock.calls[0][0] as Blob
+      expect(blobArg).toBeInstanceOf(Blob)
+      expect(blobArg.type).toBe('application/json')
 
-    expect(clickSpy).toHaveBeenCalledTimes(1)
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
+      expect(clickSpy).toHaveBeenCalledTimes(1)
+      // revoke is deferred via setTimeout(..., 0), so run all timers
+      expect(revokeObjectURL).not.toHaveBeenCalled()
+      vi.runAllTimers()
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

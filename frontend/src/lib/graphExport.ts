@@ -83,6 +83,10 @@ export function toGraphML(nodes: ForceGraphNode[], edges: ForceGraphEdge[]): str
 /**
  * Trigger a client-side download of `text` as `filename` via a transient
  * Blob object URL — no backend round-trip.
+ *
+ * Defers URL.revokeObjectURL() via setTimeout(..., 0) to ensure the download
+ * dispatch completes before the URL is revoked (older browsers may drop the
+ * download if the URL is revoked too eagerly).
  */
 export function downloadText(filename: string, text: string, mimeType: string): void {
   const blob = new Blob([text], { type: mimeType })
@@ -91,5 +95,5 @@ export function downloadText(filename: string, text: string, mimeType: string): 
   anchor.href = url
   anchor.download = filename
   anchor.click()
-  URL.revokeObjectURL(url)
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
