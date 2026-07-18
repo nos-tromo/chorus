@@ -1,0 +1,129 @@
+/**
+ * Explorer state for the two graph screens and the agent's inline graphs:
+ * a growing {nodes, edges} graph seeded from a seed-tool payload and grown by
+ * the expand-on-click tools, plus selection. Merge/ring assignment is view
+ * state — the backend returns flat neighbour lists.
+ */
+import { useCallback, useRef, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { callTool } from '../api/tools'
+import { mergeGraph, type GraphState } from '../lib/graphExplorer'
+import type {
+  ExpandNetworkNodeOut,
+  ExpandSocialNodeOut,
+  NetworkAroundOut,
+  NetworkEdge,
+  NetworkNode,
+  SocialEdge,
+  SocialNetworkAroundOut,
+  SocialNode
+} from '../api/types'
+
+const EXPAND_LIMIT = 50
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+export function useNetworkExplorer() {
+  const [graph, setGraph] = useState<GraphState<NetworkNode, NetworkEdge> | null>(null)
+  const [selectedId, select] = useState<string | null>(null)
+  const [expandingId, setExpandingId] = useState<string | null>(null)
+  const [expansionTruncated, setExpansionTruncated] = useState(false)
+
+  const mutation = useMutation({
+    mutationFn: (nodeId: string) =>
+      callTool<ExpandNetworkNodeOut>('expand_network_node', { node_id: nodeId, limit: EXPAND_LIMIT })
+  })
+
+  const seedFrom = useCallback((out: NetworkAroundOut) => {
+    setGraph({ nodes: out.nodes, edges: out.edges })
+    select(null)
+    setExpansionTruncated(false)
+  }, [])
+
+  const expand = useCallback(
+    (nodeId: string) => {
+      setExpandingId(nodeId)
+      mutation.mutate(nodeId, {
+        onSuccess: (out) => {
+          setGraph((g) => (g ? mergeGraph(g, out, (e) => `${e.source}__${e.target}`) : g))
+          setExpansionTruncated(out.truncated)
+        },
+        onSettled: () => setExpandingId(null)
+      })
+    },
+    [mutation]
+  )
+
+  return {
+    graph,
+    seedFrom,
+    expand,
+    expandingId,
+    expansionTruncated,
+    selectedId,
+    select,
+    expandError: mutation.isError ? errText(mutation.error) : null
+  }
+}
+
+export function useSocialExplorer() {
+  const [graph, setGraph] = useState<GraphState<SocialNode, SocialEdge> | null>(null)
+  const [selectedId, select] = useState<string | null>(null)
+  const [expandingId, setExpandingId] = useState<string | null>(null)
+  const [expansionTruncated, setExpansionTruncated] = useState(false)
+  // Ring lookup for ring+1 assignment on expansion; refreshed on every graph set.
+  const ringsRef = useRef<Map<string, number>>(new Map())
+
+  const remember = (nodes: SocialNode[]) => {
+    for (const n of nodes) ringsRef.current.set(n.id, n.ring)
+  }
+
+  const mutation = useMutation({
+    mutationFn: (nodeId: string) =>
+      callTool<ExpandSocialNodeOut>('expand_social_node', {
+        author_id: nodeId.replace(/^author:/, ''),
+        limit: EXPAND_LIMIT
+      })
+  })
+
+  const seedFrom = useCallback((out: SocialNetworkAroundOut) => {
+    ringsRef.current = new Map()
+    remember(out.nodes)
+    setGraph({ nodes: out.nodes, edges: out.edges })
+    select(null)
+    setExpansionTruncated(false)
+  }, [])
+
+  const expand = useCallback(
+    (nodeId: string) => {
+      setExpandingId(nodeId)
+      mutation.mutate(nodeId, {
+        onSuccess: (out) => {
+          const ring = (ringsRef.current.get(nodeId) ?? 0) + 1
+          const added = {
+            nodes: out.nodes.map((n) => ({ id: n.id, label: n.label, ring, is_seed: false })),
+            edges: out.edges
+          }
+          remember(added.nodes)
+          setGraph((g) => (g ? mergeGraph(g, added, (e) => `${e.source}__${e.target}__${e.kind}`) : g))
+          setExpansionTruncated(out.truncated)
+        },
+        onSettled: () => setExpandingId(null)
+      })
+    },
+    [mutation]
+  )
+
+  return {
+    graph,
+    seedFrom,
+    expand,
+    expandingId,
+    expansionTruncated,
+    selectedId,
+    select,
+    expandError: mutation.isError ? errText(mutation.error) : null
+  }
+}
