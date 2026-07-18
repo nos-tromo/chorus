@@ -93,6 +93,7 @@ export const en = {
   'graph.fit': 'Fit',
   'graph.expand_node': 'Expand node',
   'graph.remove_node': 'Remove node',
+  'graph.remove_nodes': 'Remove {n} nodes',
   'graph.maximize': 'Expand graph',
   'graph.minimize': 'Collapse graph',
   'graph.expansion_capped':

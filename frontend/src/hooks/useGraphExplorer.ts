@@ -27,7 +27,7 @@ function errText(err: unknown): string {
 
 export function useNetworkExplorer() {
   const [graph, setGraph] = useState<GraphState<NetworkNode, NetworkEdge> | null>(null)
-  const [selectedId, select] = useState<string | null>(null)
+  const [selectedIds, select] = useState<string[]>([])
   // UI disables expansion triggers while expandingId is set (concurrent expansions share this flag).
   const [expandingId, setExpandingId] = useState<string | null>(null)
   const [expansionTruncated, setExpansionTruncated] = useState(false)
@@ -42,7 +42,7 @@ export function useNetworkExplorer() {
 
   const seedFrom = useCallback((out: NetworkAroundOut) => {
     setGraph({ nodes: out.nodes, edges: out.edges })
-    select(null)
+    select([])
     setExpansionTruncated(false)
   }, [])
 
@@ -70,29 +70,30 @@ export function useNetworkExplorer() {
     [mutation]
   )
 
-  // View-state only: declutters the canvas, never touches graph data. A removed
-  // node returns if re-added via a neighbour's expansion (ringsRef-equivalent
+  // View-state only: declutters the canvas, never touches graph data. Removed
+  // nodes return if re-added via a neighbour's expansion (ringsRef-equivalent
   // state, if any, is left untouched — harmless, and re-adding the same id is
   // the desirable outcome).
-  const removeNode = useCallback((nodeId: string) => {
+  const removeNodes = useCallback((nodeIds: string[]) => {
+    const removed = new Set(nodeIds)
     setGraph((g) => {
       if (!g) return g
       return {
-        nodes: g.nodes.filter((n) => n.id !== nodeId),
-        edges: g.edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
+        nodes: g.nodes.filter((n) => !removed.has(n.id)),
+        edges: g.edges.filter((e) => !removed.has(e.source) && !removed.has(e.target))
       }
     })
-    select((current) => (current === nodeId ? null : current))
+    select((current) => current.filter((id) => !removed.has(id)))
   }, [])
 
   return {
     graph,
     seedFrom,
     expand,
-    removeNode,
+    removeNodes,
     expandingId,
     expansionTruncated,
-    selectedId,
+    selectedIds,
     select,
     expandError: mutation.isError ? errText(mutation.error) : null
   }
@@ -100,7 +101,7 @@ export function useNetworkExplorer() {
 
 export function useSocialExplorer() {
   const [graph, setGraph] = useState<GraphState<SocialNode, SocialEdge> | null>(null)
-  const [selectedId, select] = useState<string | null>(null)
+  const [selectedIds, select] = useState<string[]>([])
   // UI disables expansion triggers while expandingId is set (concurrent expansions share this flag).
   const [expandingId, setExpandingId] = useState<string | null>(null)
   const [expansionTruncated, setExpansionTruncated] = useState(false)
@@ -129,7 +130,7 @@ export function useSocialExplorer() {
     ringsRef.current = new Map()
     remember(out.nodes)
     setGraph({ nodes: out.nodes, edges: out.edges })
-    select(null)
+    select([])
     setExpansionTruncated(false)
   }, [])
 
@@ -168,25 +169,26 @@ export function useSocialExplorer() {
   // bookkeeping (ringsRef) is left untouched on removal — harmless, and a
   // re-added node (via a neighbour's expansion) regains its old ring, which
   // is the desirable outcome.
-  const removeNode = useCallback((nodeId: string) => {
+  const removeNodes = useCallback((nodeIds: string[]) => {
+    const removed = new Set(nodeIds)
     setGraph((g) => {
       if (!g) return g
       return {
-        nodes: g.nodes.filter((n) => n.id !== nodeId),
-        edges: g.edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
+        nodes: g.nodes.filter((n) => !removed.has(n.id)),
+        edges: g.edges.filter((e) => !removed.has(e.source) && !removed.has(e.target))
       }
     })
-    select((current) => (current === nodeId ? null : current))
+    select((current) => current.filter((id) => !removed.has(id)))
   }, [])
 
   return {
     graph,
     seedFrom,
     expand,
-    removeNode,
+    removeNodes,
     expandingId,
     expansionTruncated,
-    selectedId,
+    selectedIds,
     select,
     expandError: mutation.isError ? errText(mutation.error) : null
   }

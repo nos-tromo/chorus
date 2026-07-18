@@ -162,10 +162,10 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
           nodes={fg.nodes}
           edges={fg.edges}
           nodeStyles={NETWORK_NODE_STYLES}
-          selectedId={explorer.selectedId}
-          onSelectNode={explorer.select}
+          selectedIds={explorer.selectedIds}
+          onSelectionChange={explorer.select}
           onExpandNode={explorer.expand}
-          onDeleteNode={explorer.removeNode}
+          onDeleteNodes={explorer.removeNodes}
           expandingId={explorer.expandingId}
           statusText={t('graph.hint')}
           legend={[
@@ -181,6 +181,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
             fit: t('graph.fit'),
             expandSelected: t('graph.expand_node'),
             removeSelected: t('graph.remove_node'),
+            removeSelectedMany: t('graph.remove_nodes'),
             maximize: t('graph.maximize'),
             minimize: t('graph.minimize'),
           }}
@@ -191,10 +192,10 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
           edges={fg.edges}
           nodeStyles={SOCIAL_NODE_STYLES}
           edgeStyles={SOCIAL_EDGE_STYLES}
-          selectedId={explorer.selectedId}
-          onSelectNode={explorer.select}
+          selectedIds={explorer.selectedIds}
+          onSelectionChange={explorer.select}
           onExpandNode={explorer.expand}
-          onDeleteNode={explorer.removeNode}
+          onDeleteNodes={explorer.removeNodes}
           expandingId={explorer.expandingId}
           statusText={t('graph.hint')}
           legend={[
@@ -211,6 +212,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
             fit: t('graph.fit'),
             expandSelected: t('graph.expand_node'),
             removeSelected: t('graph.remove_node'),
+            removeSelectedMany: t('graph.remove_nodes'),
             maximize: t('graph.maximize'),
             minimize: t('graph.minimize'),
           }}

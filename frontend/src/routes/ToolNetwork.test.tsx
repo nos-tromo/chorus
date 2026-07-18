@@ -258,6 +258,42 @@ describe('ToolNetwork', () => {
     )
   })
 
+  it('shift+click adds a second node to the selection, shows the plural Remove label, and removes both on click', async () => {
+    const THREE_NODE_SEED = {
+      seed: 'Climate',
+      seed_node_id: 'entity:e1',
+      nodes: [
+        { id: 'entity:e1', kind: 'topic', label: 'Climate', entity_id: 'e1', is_seed: true },
+        { id: 'author:u1', kind: 'author', label: 'Alice', entity_id: null, is_seed: false },
+        { id: 'author:u2', kind: 'author', label: 'Bob', entity_id: null, is_seed: false },
+      ],
+      edges: [
+        { source: 'author:u1', target: 'entity:e1', weight: 3 },
+        { source: 'author:u2', target: 'entity:e1', weight: 1 },
+      ],
+      truncated: false,
+    }
+    vi.mocked(apiPost).mockResolvedValueOnce(THREE_NODE_SEED)
+
+    const { container } = render(<ToolNetwork />, { wrapper: makeWrapper() })
+    await submit()
+    await waitFor(() => expect(container.querySelectorAll('g[role="button"]')).toHaveLength(3))
+
+    fireEvent.click(screen.getByRole('button', { name: /Alice/ }))
+    expect(await screen.findByRole('button', { name: 'Expand node' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /Bob/ }), { shiftKey: true })
+
+    expect(screen.queryByRole('button', { name: 'Expand node' })).toBeNull()
+    const removeMany = await screen.findByRole('button', { name: 'Remove 2 nodes' })
+
+    fireEvent.click(removeMany)
+
+    await waitFor(() =>
+      expect(container.querySelectorAll('g[role="button"]')).toHaveLength(1),
+    )
+  })
+
   it('shows empty-state text and no svg for an empty seed result', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce({
       seed: 'ghost',
