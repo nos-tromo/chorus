@@ -230,6 +230,19 @@ describe('ToolExplorer', () => {
     expect(screen.getByRole('button', { name: 'Export HTML' })).toBeTruthy()
   })
 
+  it('keeps the seed-capped banner visible after toggling the segmented control without reseeding', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce({ ...NETWORK_SEED, truncated: true })
+
+    render(<ToolExplorer />, { wrapper: makeWrapper() })
+    await submitEntity()
+
+    expect(await screen.findByText(/capped view/i)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Author' }))
+
+    expect(screen.getByText(/capped view/i)).toBeTruthy()
+  })
+
   it('shows empty-state text and no svg for an empty seed result', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce({
       seed: 'ghost',

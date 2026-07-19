@@ -147,7 +147,7 @@ redesign of the ingestion pipeline, not an incremental feature add.
   OpenAI-compatible HTTP, provider swappable via env vars
 - **Orchestration**: three Docker Compose projects (chorus app, data-plane,
   vllm-service inference). See Orchestration topology below.
-- **Graph visualization**: shared `@infra/ui` `<ForceGraph>` (SVG, dependency-free force simulation, no WASM) for the two `*_around` network screens and inline agent graphs, with expand-on-click (ADR 0016)
+- **Graph visualization**: shared `@infra/ui` `<ForceGraph>` (SVG, dependency-free force simulation, no WASM) for the unified graph explorer screen and inline agent graphs, with expand-on-click (ADR 0016)
 - **Reverse proxy**: existing Nginx (new vhost for chorus UI); the chorus `frontend` service is itself nginx, reverse-proxying API prefixes to the backend (same-origin, no CORS)
 
 ### Invariants

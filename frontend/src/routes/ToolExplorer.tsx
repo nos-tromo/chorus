@@ -38,29 +38,42 @@ export function ToolExplorer() {
   const [depth, setDepth] = useState(2)
   const [limit, setLimit] = useState(25)
   const [secondaryLimit, setSecondaryLimit] = useState(50)
+  const [seededVia, setSeededVia] = useState<SeedType | null>(null)
 
   const mutation = seedType === 'entity' ? networkMutation : socialMutation
+  const seededMutation =
+    seededVia === 'entity' ? networkMutation : seededVia === 'author' ? socialMutation : null
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (seedType === 'entity') {
       networkMutation.mutate(
         { entity, depth, limit, topic_limit: secondaryLimit },
-        { onSuccess: (out) => explorer.seedFromNetwork(out) },
+        {
+          onSuccess: (out) => {
+            explorer.seedFromNetwork(out)
+            setSeededVia('entity')
+          },
+        },
       )
     } else {
       socialMutation.mutate(
         { author, depth, limit, second_ring_limit: secondaryLimit },
-        { onSuccess: (out) => explorer.seedFromSocial(out) },
+        {
+          onSuccess: (out) => {
+            explorer.seedFromSocial(out)
+            setSeededVia('author')
+          },
+        },
       )
     }
   }
 
   const errorMessage =
-    mutation.error instanceof Error
-      ? mutation.error.message
-      : mutation.error
-        ? String(mutation.error)
+    seededMutation?.error instanceof Error
+      ? seededMutation.error.message
+      : seededMutation?.error
+        ? String(seededMutation.error)
         : ''
 
   const fg = useMemo(
@@ -152,7 +165,7 @@ export function ToolExplorer() {
       </form>
 
       {/* Error */}
-      {mutation.isError && (
+      {seededMutation?.isError && (
         <Banner variant="danger">
           {t('common.tool_call_failed', { error: errorMessage })}
         </Banner>
@@ -226,7 +239,7 @@ export function ToolExplorer() {
                 {t('graph.export_html')}
               </Button>
             </div>
-            {mutation.data?.truncated && <Banner variant="info">{t('explorer.capped')}</Banner>}
+            {seededMutation?.data?.truncated && <Banner variant="info">{t('explorer.capped')}</Banner>}
             {explorer.expansionTruncated && (
               <Banner variant="info">
                 {t('graph.expansion_capped', { limit: EXPAND_LIMIT })}
