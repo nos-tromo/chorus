@@ -18,6 +18,7 @@ import { EntityInput } from '../components/form/EntityInput'
 import { LimitField } from '../components/form/LimitField'
 import { SubmitButton } from '../components/form/SubmitButton'
 import { EXPLORER_NODE_STYLES, EXPLORER_EDGE_STYLES, toExplorerForceGraph } from '../lib/explorerElements'
+import { computeExpandActions, dispatchExpandAction } from '../lib/explorerActions'
 import { downloadText, toGraphHtml, toGraphJson, toGraphML } from '../lib/graphExport'
 import type { NetworkAroundOut, SocialNetworkAroundOut } from '../api/types'
 
@@ -72,19 +73,9 @@ export function ToolExplorer() {
     explorer.selectedIds.length === 1
       ? (explorer.graph?.nodes.find((n) => n.id === explorer.selectedIds[0]) ?? null)
       : null
-  const expandActions = selectedNode
-    ? selectedNode.kind === 'author'
-      ? [
-          { id: 'topics', label: t('explorer.expand_topics') },
-          { id: 'ties', label: t('explorer.expand_ties') },
-        ]
-      : [{ id: 'mentions', label: t('explorer.expand_mentions') }]
-    : []
-  const onExpandAction = (actionId: string, nodeId: string) => {
-    if (actionId === 'ties') explorer.expandTies(nodeId)
-    else if (actionId === 'topics') explorer.expandTopics(nodeId)
-    else explorer.expandTopic(nodeId)
-  }
+  const expandActions = computeExpandActions(selectedNode, t)
+  const onExpandAction = (actionId: string, nodeId: string) =>
+    dispatchExpandAction(explorer, actionId, nodeId)
 
   return (
     <div className="p-8 space-y-6">

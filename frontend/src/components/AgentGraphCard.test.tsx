@@ -164,14 +164,17 @@ describe('AgentGraphCard', () => {
     expect(await screen.findByText('Boo')).toBeTruthy()
   })
 
-  it('expand button calls the right expand tool', async () => {
+  it('expand action calls the right expand tool', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce(EXPAND_NETWORK_RESULT)
 
     render(<AgentGraphCard entry={NETWORK_ENTRY} />, { wrapper: makeWrapper() })
     await screen.findByRole('button', { name: /Aria/ })
 
     fireEvent.click(screen.getByRole('button', { name: /Aria/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Expand node' }))
+    // An author node in the unified explorer offers two expand actions
+    // (topics, ties); "Expand topics" is the one that calls
+    // expand_network_node.
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand topics' }))
 
     await waitFor(() => {
       const expandCall = vi
