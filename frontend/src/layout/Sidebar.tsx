@@ -36,10 +36,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     groupKey: 'nav.group.networks',
-    items: [
-      { labelKey: 'network.title', to: '/tools/network-around' },
-      { labelKey: 'social.title', to: '/tools/social-network-around' },
-    ],
+    items: [{ labelKey: 'nav.explorer', to: '/tools/explorer' }],
   },
 ]
 

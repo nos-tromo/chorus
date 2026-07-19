@@ -1,18 +1,18 @@
 /**
  * AgentGraphCard — inline, expandable graph rendered under an agent trace
  * entry that carries a graph-tool result (network_around, expand_network_node,
- * social_network_around, expand_social_node). Mirrors the ForceGraph wiring
- * in ToolNetwork.tsx / ToolSocial.tsx, but seeds from the trace entry's
- * `result` instead of a form submission, and renders nothing for any other
- * tool or a null result.
+ * social_network_around, expand_social_node). Mirrors the unified-explorer
+ * wiring in ToolExplorer.tsx, but seeds from the trace entry's `result`
+ * instead of a form submission, and renders nothing for any other tool or a
+ * null/malformed result.
  */
 
 import { useEffect, useMemo } from 'react'
 import { Banner, ForceGraph } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
-import { useNetworkExplorer, useSocialExplorer } from '../hooks/useGraphExplorer'
-import { NETWORK_NODE_STYLES, toNetworkForceGraph } from '../lib/networkElements'
-import { SOCIAL_NODE_STYLES, SOCIAL_EDGE_STYLES, toSocialForceGraph } from '../lib/socialElements'
+import { useUnifiedExplorer } from '../hooks/useUnifiedExplorer'
+import { EXPLORER_NODE_STYLES, EXPLORER_EDGE_STYLES, toExplorerForceGraph } from '../lib/explorerElements'
+import { computeExpandActions, dispatchExpandAction } from '../lib/explorerActions'
 import type {
   AgentTraceEntry,
   ExpandNetworkNodeOut,
@@ -43,8 +43,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
   const isNetwork = NETWORK_TOOLS.has(entry.tool)
   const isSocial = SOCIAL_TOOLS.has(entry.tool)
 
-  const networkExplorer = useNetworkExplorer()
-  const socialExplorer = useSocialExplorer()
+  const explorer = useUnifiedExplorer()
 
   useEffect(() => {
     if (!entry.result) return
@@ -83,7 +82,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
       } else {
         out = entry.result as unknown as NetworkAroundOut
       }
-      networkExplorer.seedFrom(out)
+      explorer.seedFromNetwork(out)
     } else if (isSocial) {
       let out: SocialNetworkAroundOut
       if (entry.tool === 'expand_social_node') {
@@ -116,20 +115,17 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
       } else {
         out = entry.result as unknown as SocialNetworkAroundOut
       }
-      socialExplorer.seedFrom(out)
+      explorer.seedFromSocial(out)
     }
-    // Seed only when the trace entry identity changes — seedFrom identities
-    // are stable across renders (useCallback with no deps).
+    // Seed only when the trace entry identity changes — seedFromNetwork/
+    // seedFromSocial identities are stable across renders (useCallback with
+    // no deps).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry])
 
-  const networkFg = useMemo(
-    () => (networkExplorer.graph ? toNetworkForceGraph(networkExplorer.graph) : null),
-    [networkExplorer.graph],
-  )
-  const socialFg = useMemo(
-    () => (socialExplorer.graph ? toSocialForceGraph(socialExplorer.graph) : null),
-    [socialExplorer.graph],
+  const fg = useMemo(
+    () => (explorer.graph ? toExplorerForceGraph(explorer.graph) : null),
+    [explorer.graph],
   )
 
   const hasGraphShape =
@@ -137,10 +133,15 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
     Array.isArray((entry.result as { nodes?: unknown }).nodes) &&
     Array.isArray((entry.result as { edges?: unknown }).edges)
   if (!hasGraphShape || !GRAPH_TRACE_TOOLS.has(entry.tool)) return null
-
-  const explorer = isNetwork ? networkExplorer : socialExplorer
-  const fg = isNetwork ? networkFg : socialFg
   if (!fg) return null
+
+  const selectedNode =
+    explorer.selectedIds.length === 1
+      ? (explorer.graph?.nodes.find((n) => n.id === explorer.selectedIds[0]) ?? null)
+      : null
+  const expandActions = computeExpandActions(selectedNode, t)
+  const onExpandAction = (actionId: string, nodeId: string) =>
+    dispatchExpandAction(explorer, actionId, nodeId)
 
   return (
     <div className="mt-3 rounded-lg border border-border p-3 space-y-2">
@@ -157,67 +158,36 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
         </Banner>
       )}
 
-      {isNetwork ? (
-        <ForceGraph
-          nodes={fg.nodes}
-          edges={fg.edges}
-          nodeStyles={NETWORK_NODE_STYLES}
-          selectedIds={explorer.selectedIds}
-          onSelectionChange={explorer.select}
-          onExpandNode={explorer.expand}
-          onDeleteNodes={explorer.removeNodes}
-          expandingId={explorer.expandingId}
-          statusText={t('graph.hint')}
-          legend={[
-            { kind: 'seed', label: t('network.legend_seed') },
-            { kind: 'author', label: t('network.legend_author') },
-            { kind: 'topic', label: t('network.legend_topic') },
-          ]}
-          labels={{
-            minEdges: t('graph.min_edges'),
-            edgeLength: t('graph.edge_length'),
-            zoom: t('graph.zoom'),
-            reset: t('graph.reset'),
-            fit: t('graph.fit'),
-            expandSelected: t('graph.expand_node'),
-            removeSelected: t('graph.remove_node'),
-            removeSelectedMany: t('graph.remove_nodes'),
-            maximize: t('graph.maximize'),
-            minimize: t('graph.minimize'),
-          }}
-        />
-      ) : (
-        <ForceGraph
-          nodes={fg.nodes}
-          edges={fg.edges}
-          nodeStyles={SOCIAL_NODE_STYLES}
-          edgeStyles={SOCIAL_EDGE_STYLES}
-          selectedIds={explorer.selectedIds}
-          onSelectionChange={explorer.select}
-          onExpandNode={explorer.expand}
-          onDeleteNodes={explorer.removeNodes}
-          expandingId={explorer.expandingId}
-          statusText={t('graph.hint')}
-          legend={[
-            { kind: 'seed', label: t('social.legend_seed') },
-            { kind: 'ring1', label: t('social.legend_ring1') },
-            { kind: 'ring2', label: t('social.legend_ring2') },
-            { kind: 'ringN', label: t('social.legend_ringN') },
-          ]}
-          labels={{
-            minEdges: t('graph.min_edges'),
-            edgeLength: t('graph.edge_length'),
-            zoom: t('graph.zoom'),
-            reset: t('graph.reset'),
-            fit: t('graph.fit'),
-            expandSelected: t('graph.expand_node'),
-            removeSelected: t('graph.remove_node'),
-            removeSelectedMany: t('graph.remove_nodes'),
-            maximize: t('graph.maximize'),
-            minimize: t('graph.minimize'),
-          }}
-        />
-      )}
+      <ForceGraph
+        nodes={fg.nodes}
+        edges={fg.edges}
+        nodeStyles={EXPLORER_NODE_STYLES}
+        edgeStyles={EXPLORER_EDGE_STYLES}
+        selectedIds={explorer.selectedIds}
+        onSelectionChange={explorer.select}
+        expandActions={expandActions}
+        onExpandAction={onExpandAction}
+        onDeleteNodes={explorer.removeNodes}
+        expandingId={explorer.expandingId}
+        statusText={t('graph.hint')}
+        legend={[
+          { kind: 'seed', label: t('explorer.legend_seed') },
+          { kind: 'author', label: t('explorer.legend_author') },
+          { kind: 'topic', label: t('explorer.legend_topic') },
+        ]}
+        labels={{
+          minEdges: t('graph.min_edges'),
+          edgeLength: t('graph.edge_length'),
+          zoom: t('graph.zoom'),
+          reset: t('graph.reset'),
+          fit: t('graph.fit'),
+          expandSelected: t('graph.expand_node'),
+          removeSelected: t('graph.remove_node'),
+          removeSelectedMany: t('graph.remove_nodes'),
+          maximize: t('graph.maximize'),
+          minimize: t('graph.minimize'),
+        }}
+      />
     </div>
   )
 }
