@@ -138,6 +138,21 @@ export const de: Strings = {
     '{n} Autor(en); {edges} Verbindung(en): {follows} Follows, {friends} Freundschaften',
   'social.capped':
     'Begrenzte Ansicht — erhöhe die Limits, um mehr des Netzwerks zu sehen.',
+  // graph explorer (unified network_around + social_network_around)
+  'explorer.title': 'Graph-Explorer',
+  'explorer.caption':
+    'Ausgangspunkt: eine Entität (Autoren-Themen-Erwähnungen) oder ein Autor ' +
+    '(Follows-/Freundschaftsverbindungen) — anschließend auf einen Knoten klicken, ' +
+    'um ihn auf derselben Fläche weiter zu erweitern.',
+  'explorer.seed_entity': 'Entität',
+  'explorer.seed_author': 'Autor',
+  'explorer.expand_topics': 'Themen erweitern',
+  'explorer.expand_ties': 'Verbindungen erweitern',
+  'explorer.expand_mentions': 'Erwähnungen erweitern',
+  'explorer.build': 'Graph aufbauen',
+  'explorer.counts': '{n} Knoten · {edges} Kante(n)',
+  'explorer.capped': 'Begrenzte Ansicht — erhöhe die Limits, um mehr des Netzwerks zu sehen.',
+  'explorer.empty': 'Keine Treffer — nichts zu zeichnen.',
   // data ingestion (01_data_ingestion.py)
   'ingest.title': 'Datenimport',
   'ingest.caption':
@@ -182,6 +197,7 @@ export const de: Strings = {
   'nav.group.authors': 'Autoren',
   'nav.group.topics': 'Themen',
   'nav.group.networks': 'Netzwerke',
+  'nav.explorer': 'Graph-Explorer',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph-Übersicht',
   'dashboard.nodes': 'Knoten',

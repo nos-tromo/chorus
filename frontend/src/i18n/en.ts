@@ -128,6 +128,20 @@ export const en = {
   'social.counts':
     '{n} author(s); {edges} tie(s): {follows} follows, {friends} friends',
   'social.capped': 'Capped view — raise the limits to see more of the network.',
+  // graph explorer (unified network_around + social_network_around)
+  'explorer.title': 'graph explorer',
+  'explorer.caption':
+    'Seed from an entity (author-topic mentions) or an author (follows/friends ' +
+    'ties), then click a node to expand it further on the same canvas.',
+  'explorer.seed_entity': 'Entity',
+  'explorer.seed_author': 'Author',
+  'explorer.expand_topics': 'Expand topics',
+  'explorer.expand_ties': 'Expand ties',
+  'explorer.expand_mentions': 'Expand mentions',
+  'explorer.build': 'Build graph',
+  'explorer.counts': '{n} node(s) · {edges} edge(s)',
+  'explorer.capped': 'Capped view — raise the limits to see more of the network.',
+  'explorer.empty': 'No matches — nothing to draw.',
   // data ingestion (01_data_ingestion.py)
   'ingest.title': 'Data ingestion',
   'ingest.caption':
@@ -171,6 +185,7 @@ export const en = {
   'nav.group.authors': 'Authors',
   'nav.group.topics': 'Topics',
   'nav.group.networks': 'Networks',
+  'nav.explorer': 'graph explorer',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph overview',
   'dashboard.nodes': 'Nodes',
