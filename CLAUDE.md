@@ -33,7 +33,12 @@ payloads rendered as interactive `ForceGraph` graphs in the React SPA
 (ADR 0015; renderer per ADR 0016), with click-to-expand via two additional
 `@audited` tools (`expand_network_node`, `expand_social_node`) and
 shift+click/marquee multi-select with batch, view-only node removal
-(`@infra/ui#v0.4.0`, ADR 0016 addendum).
+(`@infra/ui#v0.4.0`, ADR 0016 addendum). The two per-family screens have
+since been unified into a single `/tools/explorer` screen (`ToolExplorer.tsx`,
+`useUnifiedExplorer`, `explorerElements.ts`/`explorerActions.ts`) with an
+Entity | Author seed selector and per-kind `expandActions`
+(`@infra/ui#v0.5.0`, ADR 0016 addendum); `AgentGraphCard`'s inline agent
+graphs render through the same mappers.
 The SPA's Landing page is a graph-diagnostics dashboard backed by an
 authenticated, §76-audited `GET /stats` endpoint that reports node/edge
 counts, top entities and authors, alias-resolution coverage, latest
@@ -606,11 +611,12 @@ registry):
      `frontend/src/routes/Router.tsx` + the matching Sidebar nav item in
      `frontend/src/layout/Sidebar.tsx`. The generic `<ToolScreen>` renders
      the form and `<DataTable>` for you.
-   - *Bespoke graph tool* (`network_around`, `social_network_around`): write
-     a dedicated route component (e.g. `frontend/src/routes/ToolNetwork.tsx`),
-     add it to the router and sidebar, wire it through `useGraphExplorer` for
-     expand-on-click state, and add `ForceGraph` element/style mappers in
-     `frontend/src/lib/` (e.g. `networkElements.ts`) (ADR 0016).
+   - *Bespoke graph tool* (`network_around`, `social_network_around`): both
+     are served by the unified `frontend/src/routes/ToolExplorer.tsx` screen
+     — a new seed family wires into its Entity | Author selector and the
+     shared `useUnifiedExplorer` hook for expand-on-click state, with
+     `ForceGraph` element/style mappers added to
+     `frontend/src/lib/explorerElements.ts` / `explorerActions.ts` (ADR 0016).
    - *Bespoke tabular tool* (custom result shape, non-graph): write a
      dedicated route component (e.g. `frontend/src/routes/ToolAuthorActivity.tsx`),
      add it to the router and sidebar. No element mappers needed.
@@ -718,8 +724,8 @@ chorus/                      # top-level repo
       layout/                # Shell.tsx, Sidebar.tsx
       routes/                # Router.tsx + one screen per route (Agent, Ingestion, tool screens)
       components/            # DataTable, AgentGraphCard (inline ForceGraph), ToolTrace, ToolScreen, ...
-      hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, useGraphExplorer, ingestion hooks
-      lib/                   # networkElements.ts, socialElements.ts, graphExplorer.ts (ForceGraph element/style mappers + merge logic, ADR 0016)
+      hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, useUnifiedExplorer, ingestion hooks
+      lib/                   # explorerElements.ts, explorerActions.ts, graphExplorer.ts (ForceGraph element/style mappers + merge logic, ADR 0016)
       config/                # ConfigProvider, useConfig(), useT() i18n hook
       tools/                 # specs.ts — ToolSpec declarations for the generic table-tool screens
   tests/                     # unit dirs mirror chorus/; per-tool tests in tests/integration/

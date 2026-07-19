@@ -68,23 +68,9 @@ export const en = {
   'authors_mentioning.caption':
     'Authors ranked by how many of their posts mention the entity.',
   'authors_mentioning.none': 'no authors',
-  // network_around (06)
-  'network.title': 'network around an entity',
-  'network.caption':
-    'Bipartite author-topic network. depth 1 = the authors who mention ' +
-    'the entity; depth 2 also adds the other topics those authors ' +
-    'mention. The view is capped by the limits below. Topics cluster by ' +
-    'canonical entity once a resolution pass has run; on unresolved data ' +
-    'they are raw alias surface forms.',
   'network.depth': 'Depth',
   'network.author_limit': 'Author limit',
   'network.topic_limit': 'Topic limit (depth 2)',
-  'network.build': 'Build network',
-  'network.empty': 'no network — the entity matched nothing',
-  'network.counts':
-    '{n} node(s): {authors} author(s), {topics} topic(s); {edges} edge(s)',
-  'network.capped':
-    'Capped view — raise the author/topic limits to see more of the network.',
   // graph explorer (shared)
   'graph.min_edges': 'Min edges',
   'graph.edge_length': 'Edge length',
@@ -104,30 +90,14 @@ export const en = {
   'graph.export_json': 'Export JSON',
   'graph.export_graphml': 'Export GraphML',
   'graph.export_html': 'Export HTML',
-  'network.legend_seed': 'Seed',
-  'network.legend_author': 'Authors',
-  'network.legend_topic': 'Topics',
-  'social.legend_seed': 'Seed',
-  'social.legend_ring1': 'Direct ties',
-  'social.legend_ring2': 'Second ring',
-  'social.legend_ringN': 'Further out',
+  'explorer.legend_seed': 'Seed',
+  'explorer.legend_author': 'Authors',
+  'explorer.legend_topic': 'Topics',
   'agent.graph_result': 'Graph from {tool}',
-  // social_network_around (08)
-  'social.title': 'social network around an author',
-  'social.caption':
-    "The follows/friends ego network around an author. depth 1 = the author's direct " +
-    'ties (people they follow, their followers, friends); depth 2 also adds those ' +
-    "neighbours' ties. Follows are drawn with arrowheads, friendships as plain lines. " +
-    'The view is capped by the limits below.',
   'social.author_input': 'Author handle or display name',
   'social.depth': 'Depth',
   'social.limit': 'Direct-tie limit',
   'social.second_ring_limit': 'Second-ring limit (depth 2)',
-  'social.build': 'Build network',
-  'social.empty': 'no network — the author matched nothing',
-  'social.counts':
-    '{n} author(s); {edges} tie(s): {follows} follows, {friends} friends',
-  'social.capped': 'Capped view — raise the limits to see more of the network.',
   // graph explorer (unified network_around + social_network_around)
   'explorer.title': 'graph explorer',
   'explorer.caption':

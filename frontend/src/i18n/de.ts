@@ -75,24 +75,9 @@ export const de: Strings = {
   'authors_mentioning.caption':
     'Autoren, gereiht nach der Anzahl ihrer Beiträge, die die Entität erwähnen.',
   'authors_mentioning.none': 'keine Autoren',
-  // network_around (06)
-  'network.title': 'Netzwerk rund um eine Entität',
-  'network.caption':
-    'Bipartites Autoren-Themen-Netzwerk. Tiefe 1 = die Autoren, die die ' +
-    'Entität erwähnen; Tiefe 2 ergänzt zusätzlich die weiteren Themen, ' +
-    'die diese erwähnen. Die Ansicht wird durch die untenstehenden Limits ' +
-    'begrenzt. Themen werden nach einem Auflösungslauf nach kanonischer ' +
-    'Entität gruppiert; auf nicht aufgelösten Daten sind es rohe ' +
-    'Alias-Oberflächenformen.',
   'network.depth': 'Tiefe',
   'network.author_limit': 'Autoren-Limit',
   'network.topic_limit': 'Themen-Limit (Tiefe 2)',
-  'network.build': 'Netzwerk aufbauen',
-  'network.empty': 'kein Netzwerk — die Entität ergab keine Treffer',
-  'network.counts':
-    '{n} Knoten: {authors} Autor(en), {topics} Thema/Themen; {edges} Kante(n)',
-  'network.capped':
-    'Begrenzte Ansicht — erhöhe die Autoren-/Themen-Limits, um mehr des Netzwerks zu sehen.',
   // graph explorer (shared)
   'graph.min_edges': 'Min. Kanten',
   'graph.edge_length': 'Kantenlänge',
@@ -112,32 +97,14 @@ export const de: Strings = {
   'graph.export_json': 'JSON exportieren',
   'graph.export_graphml': 'GraphML exportieren',
   'graph.export_html': 'HTML exportieren',
-  'network.legend_seed': 'Ausgangspunkt',
-  'network.legend_author': 'Autoren',
-  'network.legend_topic': 'Themen',
-  'social.legend_seed': 'Ausgangspunkt',
-  'social.legend_ring1': 'Direkte Verbindungen',
-  'social.legend_ring2': 'Zweiter Ring',
-  'social.legend_ringN': 'Weiter entfernt',
+  'explorer.legend_seed': 'Ausgangspunkt',
+  'explorer.legend_author': 'Autoren',
+  'explorer.legend_topic': 'Themen',
   'agent.graph_result': 'Graph aus {tool}',
-  // social_network_around (08)
-  'social.title': 'Soziales Netzwerk rund um einen Autor',
-  'social.caption':
-    'Das Follows-/Freundschafts-Ego-Netzwerk rund um einen Autor. Tiefe 1 = die ' +
-    'direkten Verbindungen des Autors (wem er folgt, seine Follower, Freunde); Tiefe 2 ' +
-    'ergänzt zusätzlich deren Verbindungen. Follows werden mit Pfeilspitzen gezeichnet, ' +
-    'Freundschaften als einfache Linien. Die Ansicht wird durch die untenstehenden ' +
-    'Limits begrenzt.',
   'social.author_input': 'Handle oder Anzeigename des Autors',
   'social.depth': 'Tiefe',
   'social.limit': 'Limit direkter Verbindungen',
   'social.second_ring_limit': 'Limit des zweiten Rings (Tiefe 2)',
-  'social.build': 'Netzwerk aufbauen',
-  'social.empty': 'kein Netzwerk — der Autor ergab keine Treffer',
-  'social.counts':
-    '{n} Autor(en); {edges} Verbindung(en): {follows} Follows, {friends} Freundschaften',
-  'social.capped':
-    'Begrenzte Ansicht — erhöhe die Limits, um mehr des Netzwerks zu sehen.',
   // graph explorer (unified network_around + social_network_around)
   'explorer.title': 'Graph-Explorer',
   'explorer.caption':

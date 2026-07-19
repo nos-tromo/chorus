@@ -3,10 +3,9 @@
  *
  * One growing canvas over both `network_around` (author/topic mentions) and
  * `social_network_around` (author follows/friends) seeds, expandable via
- * `expand_network_node` / `expand_social_node`. Mirrors `ToolNetwork.tsx` /
- * `ToolSocial.tsx` for every wiring pattern (form, banners, exports); the
- * segmented control picks which tool a submit seeds from, and
- * `useUnifiedExplorer` keeps one node/edge set across both families.
+ * `expand_network_node` / `expand_social_node`. The segmented control picks
+ * which tool a submit seeds from, and `useUnifiedExplorer` keeps one
+ * node/edge set across both families.
  */
 
 import { useMemo, useRef, useState, type FormEvent } from 'react'
@@ -215,9 +214,9 @@ export function ToolExplorer() {
                       nodeStyles: EXPLORER_NODE_STYLES,
                       edgeStyles: EXPLORER_EDGE_STYLES,
                       legend: [
-                        { kind: 'seed', label: t('network.legend_seed') },
-                        { kind: 'author', label: t('network.legend_author') },
-                        { kind: 'topic', label: t('network.legend_topic') },
+                        { kind: 'seed', label: t('explorer.legend_seed') },
+                        { kind: 'author', label: t('explorer.legend_author') },
+                        { kind: 'topic', label: t('explorer.legend_topic') },
                       ],
                     }),
                     'text/html',
@@ -252,9 +251,9 @@ export function ToolExplorer() {
               expandingId={explorer.expandingId}
               statusText={t('graph.hint')}
               legend={[
-                { kind: 'seed', label: t('network.legend_seed') },
-                { kind: 'author', label: t('network.legend_author') },
-                { kind: 'topic', label: t('network.legend_topic') },
+                { kind: 'seed', label: t('explorer.legend_seed') },
+                { kind: 'author', label: t('explorer.legend_author') },
+                { kind: 'topic', label: t('explorer.legend_topic') },
               ]}
               labels={{
                 minEdges: t('graph.min_edges'),

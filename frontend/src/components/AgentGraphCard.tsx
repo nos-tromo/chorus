@@ -171,9 +171,9 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
         expandingId={explorer.expandingId}
         statusText={t('graph.hint')}
         legend={[
-          { kind: 'seed', label: t('network.legend_seed') },
-          { kind: 'author', label: t('network.legend_author') },
-          { kind: 'topic', label: t('network.legend_topic') },
+          { kind: 'seed', label: t('explorer.legend_seed') },
+          { kind: 'author', label: t('explorer.legend_author') },
+          { kind: 'topic', label: t('explorer.legend_topic') },
         ]}
         labels={{
           minEdges: t('graph.min_edges'),

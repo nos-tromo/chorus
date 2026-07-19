@@ -182,3 +182,22 @@ future work supersedes the per-family hooks (`useGraphExplorer` as
 instantiated per screen today); the pure, reusable pieces underneath —
 `ForceGraph`, the merge logic, the style maps, the expand tools — carry over
 unchanged.
+
+## Addendum: unified explorer implemented (2026-07-19)
+
+The merge sketched above landed. `ToolNetwork` and `ToolSocial` are gone,
+replaced by a single `/tools/explorer` screen (`ToolExplorer.tsx`) with an
+Entity | Author segmented seed selector. `useGraphExplorer` (per-family) is
+gone too, replaced by one `useUnifiedExplorer` hook holding a union node/edge
+view-model across both families; `networkElements.ts` / `socialElements.ts`
+are replaced by `explorerElements.ts` (kind/color precedence for nodes that
+are simultaneously mentioning-authors and social neighbors — rings are
+retired, node kinds are now `seed` / `author` / `topic` regardless of which
+tool produced them) and `explorerActions.ts` (per-kind `expandActions` — an
+author node offers both the topics and ties expansions where applicable).
+This required `@infra/ui#v0.5.0` for the per-kind `expandActions` API on
+`ForceGraph`. `AgentGraphCard`'s inline agent graphs were migrated
+internally onto the same `explorerElements` mappers, so agent-returned
+`network_around`/`social_network_around` payloads render identically to the
+dedicated screen. Design spec:
+`docs/superpowers/specs/2026-07-19-unified-explorer-design.md` (docs branch).
