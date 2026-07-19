@@ -274,4 +274,36 @@ describe('useUnifiedExplorer', () => {
 
     expect(result.current.expandError).toBe('boom')
   })
+
+  it('clears stale expand error on reseed from network', async () => {
+    vi.mocked(callTool).mockRejectedValueOnce(new Error('expansion failed'))
+
+    const { result } = renderHook(() => useUnifiedExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFromNetwork(networkSeed))
+
+    // Trigger an expansion that fails
+    act(() => result.current.expandTies('author:auth-1'))
+    await waitFor(() => expect(result.current.expandingId).toBeNull())
+    expect(result.current.expandError).toBe('expansion failed')
+
+    // Reseed with new payload — error should clear
+    act(() => result.current.seedFromNetwork(networkSeed))
+    expect(result.current.expandError).toBeNull()
+  })
+
+  it('clears stale expand error on reseed from social', async () => {
+    vi.mocked(callTool).mockRejectedValueOnce(new Error('expansion failed'))
+
+    const { result } = renderHook(() => useUnifiedExplorer(), { wrapper: makeWrapper() })
+    act(() => result.current.seedFromSocial(socialSeed))
+
+    // Trigger an expansion that fails
+    act(() => result.current.expandTopics('topic:ent-1'))
+    await waitFor(() => expect(result.current.expandingId).toBeNull())
+    expect(result.current.expandError).toBe('expansion failed')
+
+    // Reseed with new payload — error should clear
+    act(() => result.current.seedFromSocial(socialSeed))
+    expect(result.current.expandError).toBeNull()
+  })
 })

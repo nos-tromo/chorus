@@ -85,6 +85,7 @@ export function useUnifiedExplorer() {
     })
     select([])
     setExpansionTruncated(false)
+    setExpandError(null)
   }, [])
 
   const seedFromSocial = useCallback((out: SocialNetworkAroundOut) => {
@@ -94,6 +95,7 @@ export function useUnifiedExplorer() {
     })
     select([])
     setExpansionTruncated(false)
+    setExpandError(null)
   }, [])
 
   const runExpansion = useCallback(
