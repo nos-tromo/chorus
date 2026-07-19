@@ -102,9 +102,12 @@ onExpandAction?: (actionId: string, nodeId: string) => void
 ## 4. Untouched
 
 - Backend: all five graph tools, audit posture, agent loop.
-- Agent inline cards (`AgentGraphCard`): still render per-tool payloads with
-  the per-family mappers — an agent graph is a snapshot of one tool call.
-  (A future "open in explorer" hand-off is noted as an idea, not designed.)
+- Agent inline cards (`AgentGraphCard`): UX and per-tool payload seeding
+  unchanged, but internals migrate to the unified hook/mapper — the card
+  consumed the per-family hooks/mappers, which this design deletes, so it
+  must ride the unified machinery (and thereby gains the per-kind expand
+  actions for free). (A future "open in explorer" hand-off remains an idea,
+  not designed.)
 - docint (consumes v0.4.0 semantics; v0.5.0 is additive).
 
 ## 5. Testing
