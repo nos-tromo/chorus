@@ -72,7 +72,7 @@ describe('Sidebar', () => {
     ).toBeInTheDocument()
     // Networks group
     expect(
-      screen.getByRole('link', { name: /social network/i }),
+      screen.getByRole('link', { name: /graph explorer/i }),
     ).toBeInTheDocument()
   })
 
