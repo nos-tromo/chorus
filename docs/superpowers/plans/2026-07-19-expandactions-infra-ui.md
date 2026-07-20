@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 19, TypeScript, vitest + happy-dom, tsup. No new dependencies.
 
-**Repo:** ALL work in `/Users/himarc/dev/nos-tromo/infra/infra-ui`. Setup: `git fetch origin main -q && git checkout -b feat/forcegraph-expand-actions origin/main`.
+**Repo:** ALL work in `../infra-ui`. Setup: `git fetch origin main -q && git checkout -b feat/forcegraph-expand-actions origin/main`.
 
 ## Global Constraints
 

@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Repo root `/Users/himarc/dev/nos-tromo/infra/chorus`; importable package is the nested `chorus/`; SPA in `frontend/`.
+- Repo root `../chorus`; importable package is the nested `chorus/`; SPA in `frontend/`.
 - Branch: `feat/react-spa-frontend` (continue on it).
 - `/stats` is **authed** (`Depends(resolve_principal)`) + writes a **lightweight §76 audit entry** via the existing `chorus/audit/logger.py` API (do not invent a parallel logger). API stays at root path (no `/api` prefix); add `/stats` to the Vite + nginx proxy prefix lists.
 - Empty graph → all zeros / empty lists / null — never an error.
