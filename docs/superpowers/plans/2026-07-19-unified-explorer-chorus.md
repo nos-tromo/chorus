@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 19, TS, `@infra/ui#v0.5.0` (`expandActions`), @tanstack/react-query, vitest.
 
-**Repo:** `/Users/himarc/dev/nos-tromo/infra/chorus`, branch `feature/unified-explorer` off `main`. **Prerequisite:** infra-ui `v0.5.0` tag exists.
+**Repo:** `../chorus`, branch `feature/unified-explorer` off `main`. **Prerequisite:** infra-ui `v0.5.0` tag exists.
 
 ## Global Constraints
 

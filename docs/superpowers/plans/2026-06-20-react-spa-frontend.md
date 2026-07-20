@@ -812,7 +812,7 @@ EXPOSE 80
 
 **Interfaces:** Ensure CI runs `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test` for `frontend/`, and that the Docker build (which runs `pnpm build`) stays green. If `nos-tromo/.github`'s shared `python-app-ci` already has a frontend job (check how docint/translator wire it), mirror that; else add a `frontend` job.
 
-- [ ] **Step 1:** `grep -rn "pnpm\|frontend\|node" .github/workflows/ /Users/himarc/dev/nos-tromo/infra/docint/.github/workflows/` to see the existing convention. **Step 2:** add/align the job. **Step 3:** commit (`ci(frontend): lint/typecheck/test the SPA`).
+- [ ] **Step 1:** `grep -rn "pnpm\|frontend\|node" .github/workflows/ ../docint/.github/workflows/` to see the existing convention. **Step 2:** add/align the job. **Step 3:** commit (`ci(frontend): lint/typecheck/test the SPA`).
 
 ---
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 (dev), FastAPI, Pydantic, Neo4j 5 (testcontainer for integration tests), pytest, uv.
 
-**Repo:** ALL work happens in `/Users/himarc/dev/nos-tromo/infra/chorus`. Branch `feature/expand-tools` off `main`.
+**Repo:** ALL work happens in `../chorus`. Branch `feature/expand-tools` off `main`.
 
 ## Global Constraints
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 19, TypeScript, Vite, Tailwind v4, `@infra/ui#v0.3.0` (ForceGraph), @tanstack/react-query, vitest + happy-dom.
 
-**Repo:** ALL work in `/Users/himarc/dev/nos-tromo/infra/chorus`, branch `feature/reactive-graph` off `main`. **Prerequisites:** infra-ui `v0.3.0` tag exists (plan `2026-07-18-forcegraph-infra-ui.md` merged) AND the backend expand tools are on `main` (plan `2026-07-18-expand-tools-backend.md` merged). Frontend commands run inside `frontend/` with `pnpm`.
+**Repo:** ALL work in `../chorus`, branch `feature/reactive-graph` off `main`. **Prerequisites:** infra-ui `v0.3.0` tag exists (plan `2026-07-18-forcegraph-infra-ui.md` merged) AND the backend expand tools are on `main` (plan `2026-07-18-expand-tools-backend.md` merged). Frontend commands run inside `frontend/` with `pnpm`.
 
 ## Global Constraints
 

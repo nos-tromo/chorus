@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 19, TypeScript, Tailwind v4 (token classes), tsup build, vitest + happy-dom. No new runtime dependencies.
 
-**Repo:** ALL work in this plan happens in `/Users/himarc/dev/nos-tromo/infra/infra-ui` (its own git repo — branch, commit, and PR there, never at the `infra/` root). Reference sources are read from `/Users/himarc/dev/nos-tromo/infra/docint` (read-only — never modify docint).
+**Repo:** ALL work in this plan happens in `../infra-ui` (its own git repo — branch, commit, and PR there, never at the `infra/` root). Reference sources are read from `../docint` (read-only — never modify docint).
 
 ## Global Constraints
 
@@ -35,7 +35,7 @@
 
 ```bash
 mkdir -p src/graph
-cp /Users/himarc/dev/nos-tromo/infra/docint/frontend/src/lib/forceGraph.ts src/graph/forceGraph.ts
+cp ../docint/frontend/src/lib/forceGraph.ts src/graph/forceGraph.ts
 ```
 
 Then edit only the opening doc comment's first paragraph (it says "docint ships no graph library") to:
@@ -344,7 +344,7 @@ git commit -m "feat: position-merge seeding for incremental graph growth"
 **Files:**
 - Create: `src/graph/ForceGraph.tsx`
 - Test: `src/graph/ForceGraph.test.tsx`
-- Reference (read, do not modify): `/Users/himarc/dev/nos-tromo/infra/docint/frontend/src/components/analysis/EntityGraph.tsx`
+- Reference (read, do not modify): `../docint/frontend/src/components/analysis/EntityGraph.tsx`
 
 **Interfaces:**
 - Consumes: `createForceSimulation`, `ForceNode`, `ForceLink` from `./forceGraph`; `seedPositions` from `./mergePositions`; `cn` from `../cn`.
@@ -421,7 +421,7 @@ export function ForceGraph(props: ForceGraphProps): JSX.Element
 - [ ] **Step 1: Copy the reference and strip docint-specifics**
 
 ```bash
-cp /Users/himarc/dev/nos-tromo/infra/docint/frontend/src/components/analysis/EntityGraph.tsx src/graph/ForceGraph.tsx
+cp ../docint/frontend/src/components/analysis/EntityGraph.tsx src/graph/ForceGraph.tsx
 ```
 
 Then:
