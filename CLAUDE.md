@@ -677,7 +677,10 @@ chorus/                      # top-level repo
       openai_tools.py        # TOOLS registry → OpenAI tool schemas
       prompts.py
     api/
-      main.py                # FastAPI entrypoint (lifespan: logger → driver → migrations → audit)
+      main.py                # FastAPI entrypoint (lifespan: logger → driver → migrations → audit);
+                              # also wires GET /metrics (Prometheus, unauthenticated, aggregate-only
+                              # request counters/latencies, no user data), gated by METRICS_ENABLED
+                              # (default on)
       auth/principal.py      # trusted-header principal seam (OIDC swap-in)
       routers/               # health.py, config.py, tools.py, agent.py, ingestion.py
     audit/
