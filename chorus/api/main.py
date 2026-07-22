@@ -18,12 +18,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from loguru import logger
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from chorus.audit.logger import AuditLogger
 from chorus.db.neo4j import close_driver, get_driver
 from chorus.ingestion.jobs import JobRegistry
 from chorus.migrations.runner import apply_all
-from chorus.utils.env_cfg import load_audit_env
+from chorus.utils.env_cfg import load_audit_env, load_metrics_env
 from chorus.utils.logger_cfg import init_logger
 
 
@@ -85,3 +86,10 @@ app.include_router(_ingestion_router.status_router)
 app.include_router(_ingestion_router.router)
 app.include_router(_stats_router.router)
 app.include_router(_tools_router.router)
+
+# Prometheus metrics — aggregate request counters/latencies only, no user
+# data (§76 audit logging is a separate concern, see chorus/audit/logger.py).
+# Unauthenticated by design, like /health and /config, so the obs-plane
+# scraper can reach it without a principal header.
+if load_metrics_env().enabled:
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
