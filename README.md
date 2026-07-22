@@ -171,6 +171,17 @@ curl -s http://localhost:8000/health
 If you get a 503 here, the API can't reach Neo4j — check `NEO4J_URI`
 and that the container is up.
 
+### Metrics
+
+```bash
+curl -s http://localhost:8000/metrics | head
+```
+
+Unauthenticated, like `/health`, so the obs-plane Prometheus scraper can
+reach it without a principal header. Reports aggregate request counters
+and latency histograms only — no user data. Set `METRICS_ENABLED=false`
+to disable.
+
 ### Tool registry
 
 ```bash

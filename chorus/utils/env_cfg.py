@@ -399,6 +399,23 @@ class IngestionUIConfig:
 
 
 @dataclass(frozen=True)
+class MetricsConfig:
+    """Toggle for the Prometheus ``/metrics`` endpoint.
+
+    Gates ``prometheus-fastapi-instrumentator``, which exposes aggregate
+    request counters and latency histograms for the obs-plane scraper.
+    Default on — the endpoint reports no user data, only request-shape
+    metrics, so unlike :class:`IngestionUIConfig` there is no reason to
+    default it off.
+
+    Attributes:
+        enabled: Whether ``GET /metrics`` is registered on the app.
+    """
+
+    enabled: bool
+
+
+@dataclass(frozen=True)
 class PathConfig:
     """Filesystem paths used by the running app.
 
@@ -638,6 +655,18 @@ def load_ingestion_ui_env() -> IngestionUIConfig:
         A populated :class:`IngestionUIConfig`.
     """
     return IngestionUIConfig(enabled=_env_bool("INGESTION_UI_ENABLED", False))
+
+
+def load_metrics_env() -> MetricsConfig:
+    """Load the Prometheus ``/metrics`` toggle from the environment.
+
+    ``METRICS_ENABLED`` (default ``true``) gates whether the
+    Prometheus instrumentator registers ``GET /metrics`` on the app.
+
+    Returns:
+        A populated :class:`MetricsConfig`.
+    """
+    return MetricsConfig(enabled=_env_bool("METRICS_ENABLED", True))
 
 
 def load_path_env() -> PathConfig:
