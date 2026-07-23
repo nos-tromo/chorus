@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { apiGet, apiPost } from './client'
+import { apiBase, apiGet, apiPost } from './client'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -30,5 +30,17 @@ describe('api client', () => {
     const init = fetchMock.mock.calls[0]![1]!
     expect(init.body).toBeInstanceOf(FormData)
     expect((init.headers as Record<string, string>)['content-type']).toBeUndefined()
+  })
+})
+
+describe('apiBase', () => {
+  it('uses an explicit VITE_API_BASE_URL override verbatim (trailing slash trimmed)', () => {
+    expect(apiBase('http://elsewhere/', '/chorus/')).toBe('http://elsewhere')
+  })
+  it('derives from BASE_URL when no override is set', () => {
+    expect(apiBase(undefined, '/chorus/')).toBe('/chorus')
+  })
+  it('is empty (same-origin root) at root BASE_URL with no override', () => {
+    expect(apiBase(undefined, '/')).toBe('')
   })
 })

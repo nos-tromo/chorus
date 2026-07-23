@@ -198,7 +198,7 @@ chorus/                   # this repo — app only
   docker/compose.yaml
     services:
       backend:            # joins inference-net + data-net; bolt://neo4j:7687
-      frontend:           # nginx SPA; internal chorus-net only; reverse-proxies API prefixes → backend:8000
+      frontend:           # nginx SPA; chorus-net + edge-net (alias chorus-frontend); reverse-proxies API prefixes → backend:8000
     volumes:
       chorus-state:       # external — audit log, raw store, op logs ($CHORUS_HOME)
 ```
@@ -211,6 +211,24 @@ external, so compose never removes it. The worst case is a fast restart.
 networks and the `chorus-state` volume, wait for data-plane health
 (`scripts/check_dataplane_health.sh`), then `up`. Inference is assumed
 to be already running and is not chorus's responsibility to manage.
+
+### Deployment: edge-plane gateway sub-path
+
+The chorus SPA is served in production under the canonical `/chorus/`
+sub-path behind the `edge-plane` gateway, not at its own vhost root. The
+`frontend` service joins the external `edge-net` network (alongside its
+existing `chorus-net` membership) as alias `chorus-frontend`, which is how
+the gateway reaches it. Vite is built with `base: '/chorus/'`, the API base
+derives from `BASE_URL` (`VITE_API_BASE_URL` still overrides it verbatim
+when set — e.g. for standalone/dev use outside the gateway), the SPA router
+uses a matching `basename`, and the frontend's nginx template strips the
+`/chorus` prefix internally before falling through to the existing
+root-anchored locations, redirecting bare `/` to `/chorus/`. The gateway is
+the sole production entry point and is what injects `X-Auth-User` for the
+backend's trusted-header principal seam — production leaves
+`CHORUS_DEFAULT_IDENTITY` unset so requests without that header are
+rejected as unauthenticated. The dev override's
+`CHORUS_DEFAULT_IDENTITY=dev` fallback is unchanged.
 
 ## Airgapped operation
 

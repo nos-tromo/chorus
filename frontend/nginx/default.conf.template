@@ -13,6 +13,16 @@ server {
     # changes after a restart).
     resolver 127.0.0.11 valid=30s ipv6=off;
 
+    # Canonical sub-path: strip the /chorus prefix so the existing
+    # root-anchored locations below apply unchanged. (/.+ not /.*: the
+    # bare prefix must fall through to the SPA fallback, not rewrite to
+    # "/" and loop through the redirect below.)
+    rewrite ^/chorus(/.+)$ $1;
+
+    location = / {
+        return 302 /chorus/;
+    }
+
     gzip on;
     gzip_vary on;
     gzip_proxied any;
@@ -24,7 +34,10 @@ server {
     # its own body-size limit and upload-friendly proxy settings.
     location ~ ^/ingestion(/|$) {
         set $backend_upstream "backend:8000";
-        proxy_pass http://$backend_upstream$request_uri;
+        # $uri (post-rewrite) not $request_uri: the /chorus prefix strip
+        # above must reach the backend as a stripped path, not the
+        # original pre-rewrite one. $is_args$args preserves any query string.
+        proxy_pass http://$backend_upstream$uri$is_args$args;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -46,7 +59,8 @@ server {
     # Covers /health, /config, /tools, /agent, /stats, /version (and any sub-paths).
     location ~ ^/(health|config|tools|agent|stats|version)(/|$) {
         set $backend_upstream "backend:8000";
-        proxy_pass http://$backend_upstream$request_uri;
+        # $uri (post-rewrite) not $request_uri: see comment above.
+        proxy_pass http://$backend_upstream$uri$is_args$args;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

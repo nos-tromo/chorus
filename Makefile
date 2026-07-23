@@ -12,7 +12,7 @@
 .DEFAULT_GOAL := help
 
 REPO     := chorus
-NETWORKS := inference-net data-net
+NETWORKS := inference-net data-net edge-net
 VOLUMES  := chorus-state
 include make/common.mk
 
