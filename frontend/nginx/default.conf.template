@@ -1,3 +1,13 @@
+
+# Proxy target URI: strip the /chorus prefix from the RAW request URI so
+# percent-encoding survives ($uri would arrive decoded and un-re-encoded;
+# $request_uri would keep the prefix the backend doesn't know).
+# $request_uri includes the query string, so no $is_args$args needed.
+map $request_uri $proxy_uri {
+    ~^/chorus(?<rest>/.+)$ $rest;
+    default $request_uri;
+}
+
 server {
     listen 80;
     server_name _;
@@ -13,6 +23,16 @@ server {
     # changes after a restart).
     resolver 127.0.0.11 valid=30s ipv6=off;
 
+    # Canonical sub-path: strip the /chorus prefix so the existing
+    # root-anchored locations below apply unchanged. (/.+ not /.*: the
+    # bare prefix must fall through to the SPA fallback, not rewrite to
+    # "/" and loop through the redirect below.)
+    rewrite ^/chorus(/.+)$ $1;
+
+    location = / {
+        return 302 /chorus/;
+    }
+
     gzip on;
     gzip_vary on;
     gzip_proxied any;
@@ -24,7 +44,10 @@ server {
     # its own body-size limit and upload-friendly proxy settings.
     location ~ ^/ingestion(/|$) {
         set $backend_upstream "backend:8000";
-        proxy_pass http://$backend_upstream$request_uri;
+        # $proxy_uri (map on the raw $request_uri, see top of file) strips
+        # the /chorus prefix while preserving percent-encoding and the
+        # query string — $uri would arrive decoded and un-re-encoded.
+        proxy_pass http://$backend_upstream$proxy_uri;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -46,7 +69,8 @@ server {
     # Covers /health, /config, /tools, /agent, /stats, /version (and any sub-paths).
     location ~ ^/(health|config|tools|agent|stats|version)(/|$) {
         set $backend_upstream "backend:8000";
-        proxy_pass http://$backend_upstream$request_uri;
+        # $proxy_uri: see comment above.
+        proxy_pass http://$backend_upstream$proxy_uri;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -78,6 +78,9 @@ services:
       chorus-net:
         aliases:
           - frontend
+      edge-net:
+        aliases:
+          - chorus-frontend
     expose:
       - "80"
     restart: unless-stopped
@@ -88,6 +91,9 @@ networks:
     external: true   # owned by the vllm-service compose project
   data-net:
     external: true   # owned by the data-plane compose project
+  edge-net:
+    external: true
+    name: ${EDGE_NET:-edge-net}
 
 volumes:
   chorus-state:

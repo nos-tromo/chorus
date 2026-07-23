@@ -12,7 +12,7 @@
 .DEFAULT_GOAL := help
 
 REPO     := chorus
-NETWORKS := inference-net data-net
+NETWORKS := inference-net data-net edge-net
 VOLUMES  := chorus-state
 include make/common.mk
 
@@ -21,7 +21,7 @@ include make/common.mk
 help:
 	@echo "chorus — GraphRAG app (FastAPI backend + React SPA frontend)."
 	@echo
-	@echo "  make network    create the shared inference-net + data-net"
+	@echo "  make network    create the external inference-net + data-net + edge-net"
 	@echo "  make volumes    create the external chorus-state Docker volume"
 	@echo "  make build      build backend + frontend images"
 	@echo "  make bundle     ship the built images as a versioned .tar.gz (latest annotated release tag)"

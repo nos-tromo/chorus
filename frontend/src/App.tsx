@@ -9,7 +9,7 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/+$/, '')}>
           <Shell>
             <AppRoutes />
           </Shell>
