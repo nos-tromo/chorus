@@ -24,7 +24,8 @@ help:
 	@echo "  make network    create the shared inference-net + data-net"
 	@echo "  make volumes    create the external chorus-state Docker volume"
 	@echo "  make build      build backend + frontend images"
-	@echo "  make bundle     ship the built images as a versioned .tar.gz"
+	@echo "  make bundle     ship the built images as a versioned .tar.gz (latest annotated release tag)"
+	@echo "  make bundle-dev like 'bundle', but from the current working tree (dev/soak)"
 	@echo "  make up         start backend + frontend (detached, production shape, no host ports, no build)"
 	@echo "  make up-dev     like 'up', but publishes backend + frontend ports on the host (no build)"
 	@echo "  make dev        build backend + frontend, then up-dev"
@@ -35,6 +36,7 @@ help:
 	@echo "  make resolve    resolve aliases to canonical entities"
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
 	@echo "  make pre-commit run pre-commit hooks (ruff + pyrefly)"
+	@echo "  make verify     pre-push gate: pre-commit + frontend lint/build; mirrors CI's lint gate"
 	@echo "  make test       run pytest"
 
 # Apply pending Neo4j migrations against the configured NEO4J_URI.
