@@ -3,9 +3,9 @@ import type { Strings } from './index'
 export const de: Strings = {
   // common (shared across pages)
   'common.error_request':
-    'Etwas ist schiefgelaufen ({status}). Bitte erneut versuchen oder den Support kontaktieren.',
+    'Fehler ({status}) – Bitte versuchen Sie es erneut oder kontaktieren Sie den Support.',
   'common.error_unknown':
-    'Etwas ist schiefgelaufen. Bitte erneut versuchen oder den Support kontaktieren.',
+    'Fehler – Bitte versuchen Sie es erneut oder kontaktieren Sie den Support.',
   'common.error_network':
     'Dienst nicht erreichbar. Bitte Verbindung prüfen oder später erneut versuchen.',
   'common.entity_input': 'Name oder Alias der Entität',
