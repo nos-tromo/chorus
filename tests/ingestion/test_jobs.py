@@ -71,13 +71,13 @@ def test_job_runs_to_done_and_records_result() -> None:
 
 
 def test_job_failure_is_captured_not_raised() -> None:
-    """A raising job ends ``error`` with a type-prefixed message, no result."""
+    """A raising job ends ``error`` with a static message, no result."""
     reg = JobRegistry()
     try:
         job = reg.submit("ingest", _boom)
         terminal = _wait_terminal(reg, job.id)
         assert terminal.status == "error"
-        assert terminal.error == "ValueError: boom"
+        assert terminal.error == "Job failed."
         assert terminal.result is None
         assert terminal.finished_at is not None
     finally:

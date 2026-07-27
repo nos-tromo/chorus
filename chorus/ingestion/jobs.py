@@ -137,9 +137,9 @@ class JobRegistry:
         except Exception as exc:
             with self._lock:
                 job.status = "error"
-                job.error = f"{type(exc).__name__}: {exc}"
+                job.error = "Job failed."
                 job.finished_at = _now_iso()
-            logger.warning("job {} ({}) failed: {}", job.id, job.kind, job.error)
+            logger.opt(exception=exc).error(f"job {job.id} ({job.kind}) failed")
             return
         with self._lock:
             job.status = "done"

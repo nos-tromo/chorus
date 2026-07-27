@@ -285,7 +285,7 @@ def test_ingest_rejects_unrecognized_filename(monkeypatch: pytest.MonkeyPatch) -
             headers={"X-Auth-User": "analyst"},
         )
         assert resp.status_code == 422
-        assert "data.csv" in resp.text
+        assert resp.json() == {"detail": "Invalid request."}
         assert jobs.get("job-1") is None
     finally:
         jobs.shutdown()
@@ -405,7 +405,7 @@ def test_ingest_error_marks_job_error_and_cleans_staging(
         assert resp.status_code == 202
         done = _await_job(client, resp.json()["job_id"])
         assert done["status"] == "error"
-        assert "disk full" in done["error"]
+        assert done["error"] == "Job failed."
 
         rows = [r for r in _audit_rows(in_memory_audit) if r["tool_name"] == "ingest"]
         assert len(rows) == 1

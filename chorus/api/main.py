@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from chorus.api.errors import install_error_handlers
 from chorus.audit.logger import AuditLogger
 from chorus.db.neo4j import close_driver, get_driver
 from chorus.ingestion.jobs import JobRegistry
@@ -70,6 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="chorus", lifespan=lifespan)
+install_error_handlers(app)
 
 # Routers — imported here so the app object owns route registration order.
 from chorus.api.routers import agent as _agent_router  # noqa: E402

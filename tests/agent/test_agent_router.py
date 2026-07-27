@@ -75,7 +75,7 @@ def test_agent_query_endpoint_returns_answer_and_trace(
 def test_unsupported_model_returns_502(
     migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """If the model rejects tool-calling, /agent/query returns a clear 502."""
+    """If the model rejects tool-calling, /agent/query returns a generic 502."""
     import openai
 
     from chorus.api.routers import agent as agent_router
@@ -97,13 +97,13 @@ def test_unsupported_model_returns_502(
         headers={"X-Auth-User": "analyst"},
     )
     assert resp.status_code == 502
-    assert "tool" in resp.json()["detail"].lower()
+    assert resp.json() == {"detail": "Agent request failed."}
 
 
 def test_inference_unreachable_returns_502(
     migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An unreachable/erroring inference backend returns a clear 502, not a raw 500."""
+    """An unreachable/erroring inference backend returns a generic 502, not a raw 500."""
     import openai
 
     from chorus.api.routers import agent as agent_router
@@ -125,13 +125,13 @@ def test_inference_unreachable_returns_502(
         headers={"X-Auth-User": "analyst"},
     )
     assert resp.status_code == 502
-    assert "inference" in resp.json()["detail"].lower()
+    assert resp.json() == {"detail": "Agent request failed."}
 
 
 def test_context_window_exceeded_returns_502(
     migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A context-window overflow returns a specific 502 detail."""
+    """A context-window overflow returns a generic 502 detail (specifics go to logs)."""
     import openai
 
     from chorus.api.routers import agent as agent_router
@@ -153,7 +153,7 @@ def test_context_window_exceeded_returns_502(
         headers={"X-Auth-User": "analyst"},
     )
     assert resp.status_code == 502
-    assert "context window" in resp.json()["detail"].lower()
+    assert resp.json() == {"detail": "Agent request failed."}
 
 
 def test_response_language_de_uses_german_prompt(
