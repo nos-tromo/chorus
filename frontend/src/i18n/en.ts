@@ -34,6 +34,7 @@ export const en = {
   'agent.thinking': 'Thinking…',
   'agent.tool_calls': 'Tool calls ({n})',
   'agent.trace_error_label': '— error:',
+  'agent.tool_call_failed': 'Tool call failed.',
   'agent.trace_results': ' — {count} result(s)',
   'agent.no_answer': '(no answer)',
   'agent.truncated':

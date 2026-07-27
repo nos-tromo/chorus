@@ -40,6 +40,7 @@ export const de: Strings = {
   'agent.thinking': 'Denkt nach…',
   'agent.tool_calls': 'Werkzeugaufrufe ({n})',
   'agent.trace_error_label': '— Fehler:',
+  'agent.tool_call_failed': 'Tool-Aufruf fehlgeschlagen.',
   'agent.trace_results': ' — {count} Ergebnis(se)',
   'agent.no_answer': '(keine Antwort)',
   'agent.truncated':
