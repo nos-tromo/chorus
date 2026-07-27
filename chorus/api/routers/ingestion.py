@@ -315,7 +315,8 @@ def ingest(
                     summary = resolve_all(driver, load_resolution_env(), audit, user=user)
                     out = {**out, "resolution": summary.as_dict()}
                 except Exception as exc:  # keep ingest counts; surface the resolve failure
-                    out = {**out, "resolution_error": f"{type(exc).__name__}: {exc}"}
+                    logger.opt(exception=exc).error(f"Ingestion job {_job.id} resolution failed")
+                    out = {**out, "resolution_error": "Resolution failed."}
             return out
         finally:
             shutil.rmtree(staging, ignore_errors=True)

@@ -628,3 +628,49 @@ def test_trace_result_none_on_tool_error(
     assert len(result.trace) == 1
     assert result.trace[0].error is not None
     assert result.trace[0].result is None
+
+
+def test_tool_exception_error_is_generic_and_logged(
+    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A raising tool leaves a static TraceStep.error; the exception text only reaches logs.
+
+    AgentResult (including trace) is returned verbatim as the /agent/query
+    response body, so trace[i].error is client-visible state and must not
+    carry exception text (same invariant as the response body itself).
+    """
+    from loguru import logger
+
+    from chorus.agent.loop import run_agent
+
+    marker = "MARKER-SECRET-1234"
+
+    def _boom(*_a: Any, **_kw: Any) -> Any:
+        raise RuntimeError(marker)
+
+    _install_fake_tool_run(monkeypatch, "posts_mentioning", _boom)
+    _script(
+        monkeypatch,
+        [
+            _FakeMessage(tool_calls=[_FakeToolCall("c1", "posts_mentioning", '{"entity": "Berlin"}')]),
+            _FakeMessage(content="Something went wrong."),
+        ],
+    )
+
+    records: list[str] = []
+    sink_id = logger.add(lambda m: records.append(str(m)), level="DEBUG")
+    try:
+        result = run_agent(
+            migrated_driver,
+            in_memory_audit,
+            user="u",
+            messages=[{"role": "user", "content": "posts about Berlin?"}],
+        )
+    finally:
+        logger.remove(sink_id)
+
+    assert len(result.trace) == 1
+    assert result.trace[0].error == "Tool call failed."
+    body = result.model_dump_json()
+    assert marker not in body
+    assert any(marker in r for r in records)
