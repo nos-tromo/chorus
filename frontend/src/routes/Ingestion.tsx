@@ -7,6 +7,7 @@ import { useMigrations } from '../hooks/useMigrations'
 import { useApplyMigrations, useStartIngest, useStartResolve } from '../hooks/useIngest'
 import { useJob, isTerminal } from '../hooks/useJob'
 import { ApiError } from '../api/client'
+import { describeError, type ErrorDescriptor } from '../api/errorMessage'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -18,13 +19,6 @@ function dictToRows(obj: Record<string, unknown>): Array<{ key: string; value: s
   }))
 }
 
-/** Coerce an unknown job result sub-value into a string for display. */
-function safeStr(v: unknown): string {
-  if (v === null || v === undefined) return ''
-  if (typeof v === 'object') return JSON.stringify(v)
-  return String(v)
-}
-
 // ── Migrations section ────────────────────────────────────────────────────────
 
 function MigrationsSection({ busy }: { busy: boolean }) {
@@ -32,7 +26,7 @@ function MigrationsSection({ busy }: { busy: boolean }) {
   const migrations = useMigrations()
   const applyMut = useApplyMigrations()
   const [busyBanner, setBusyBanner] = useState(false)
-  const [applyError, setApplyError] = useState<string | null>(null)
+  const [applyError, setApplyError] = useState<ErrorDescriptor | null>(null)
   const [appliedVersions, setAppliedVersions] = useState<string[] | null>(null)
 
   async function handleApply() {
@@ -47,11 +41,12 @@ function MigrationsSection({ busy }: { busy: boolean }) {
       if (err instanceof ApiError && err.status === 409) {
         setBusyBanner(true)
       } else {
-        const msg = err instanceof ApiError ? String(err.detail ?? err.message) : String(err)
-        setApplyError(msg)
+        setApplyError(describeError(err))
       }
     }
   }
+
+  const migrationsError = migrations.isError ? describeError(migrations.error) : null
 
   return (
     <Card className="p-4 space-y-3">
@@ -59,24 +54,19 @@ function MigrationsSection({ busy }: { busy: boolean }) {
 
       {migrations.isLoading && <Spinner label="…" />}
 
-      {migrations.isError && (
-        <Banner variant="danger">
-          {t('common.tool_call_failed', {
-            error:
-              migrations.error instanceof Error ? migrations.error.message : String(migrations.error),
-          })}
-        </Banner>
+      {migrationsError && (
+        <Banner variant="danger">{t(migrationsError.key, migrationsError.vars)}</Banner>
       )}
 
       {busyBanner && (
         <Banner variant="info" role="alert">
-          {t('common.tool_call_failed', { error: '409 — another job is running' })}
+          {t('ingest.migrations.busy')}
         </Banner>
       )}
 
       {applyError !== null && (
         <Banner variant="danger" role="alert">
-          {t('common.tool_call_failed', { error: applyError })}
+          {t(applyError.key, applyError.vars)}
         </Banner>
       )}
 
@@ -193,9 +183,7 @@ function IngestResultView({
       )}
 
       {resolutionError !== undefined && (
-        <Banner variant="danger">
-          {t('ingest.resolve.failed', { error: safeStr(resolutionError) })}
-        </Banner>
+        <Banner variant="danger">{t('ingest.resolve.failed')}</Banner>
       )}
     </div>
   )
@@ -222,7 +210,7 @@ function JobProgress({
     return <Spinner label={runningLabel} />
   }
 
-  const { status, result, error } = job.data
+  const { status, result } = job.data
 
   if (status === 'queued' || status === 'running') {
     return (
@@ -236,7 +224,7 @@ function JobProgress({
   if (status === 'error') {
     return (
       <Banner variant="danger" role="alert">
-        {failedLabel.replace('{error}', error ?? '')}
+        {failedLabel}
       </Banner>
     )
   }
@@ -263,8 +251,8 @@ export function Ingestion() {
   const [thenResolve, setThenResolve] = useState(false)
   const [ingestJobId, setIngestJobId] = useState<string | null>(null)
   const [resolveJobId, setResolveJobId] = useState<string | null>(null)
-  const [ingestError, setIngestError] = useState<string | null>(null)
-  const [resolveError, setResolveError] = useState<string | null>(null)
+  const [ingestError, setIngestError] = useState<ErrorDescriptor | null>(null)
+  const [resolveError, setResolveError] = useState<ErrorDescriptor | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const startIngest = useStartIngest()
@@ -302,7 +290,7 @@ export function Ingestion() {
       })
       setIngestJobId(accepted.job_id)
     } catch (err) {
-      setIngestError(err instanceof Error ? err.message : String(err))
+      setIngestError(describeError(err))
     }
   }
 
@@ -313,7 +301,7 @@ export function Ingestion() {
       const accepted = await startResolve.mutateAsync()
       setResolveJobId(accepted.job_id)
     } catch (err) {
-      setResolveError(err instanceof Error ? err.message : String(err))
+      setResolveError(describeError(err))
     }
   }
 
@@ -393,7 +381,7 @@ export function Ingestion() {
 
         {ingestError !== null && (
           <Banner variant="danger" role="alert">
-            {t('ingest.error.request', { detail: ingestError })}
+            {t(ingestError.key, ingestError.vars)}
           </Banner>
         )}
 
@@ -429,7 +417,7 @@ export function Ingestion() {
 
         {resolveError !== null && (
           <Banner variant="danger" role="alert">
-            {t('ingest.error.request', { detail: resolveError })}
+            {t(resolveError.key, resolveError.vars)}
           </Banner>
         )}
 

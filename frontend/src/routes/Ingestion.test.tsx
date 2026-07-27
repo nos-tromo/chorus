@@ -126,9 +126,10 @@ describe('Ingestion', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /apply migrations/i }))
 
-    // Expect a danger alert with the error text
+    // Expect a danger alert with the generic status-coded message, never the raw detail
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toMatch(/boom/)
+    expect(alert.textContent).toMatch(/something went wrong \(500\)/i)
+    expect(alert.textContent).not.toMatch(/boom/)
   })
 
   it('(a4) apply-migrations 409 shows a "busy" Banner', async () => {
@@ -341,8 +342,10 @@ describe('Ingestion', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /start ingestion/i }))
 
+    // The static catalog message, never the raw job.error field
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toMatch(/CSV parse failed/i)
+    expect(alert.textContent).toMatch(/ingestion failed/i)
+    expect(alert.textContent).not.toMatch(/CSV parse failed/i)
   })
 
   // ── (f) ingestion disabled notice ────────────────────────────────────────

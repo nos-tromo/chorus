@@ -2,8 +2,12 @@ import type { Strings } from './index'
 
 export const de: Strings = {
   // common (shared across pages)
-  'common.tool_call_failed': 'Werkzeugaufruf fehlgeschlagen: {error}',
-  'common.unreachable': 'nicht erreichbar: {error}',
+  'common.error_request':
+    'Etwas ist schiefgelaufen ({status}). Bitte erneut versuchen oder den Support kontaktieren.',
+  'common.error_unknown':
+    'Etwas ist schiefgelaufen. Bitte erneut versuchen oder den Support kontaktieren.',
+  'common.error_network':
+    'Dienst nicht erreichbar. Bitte Verbindung prüfen oder später erneut versuchen.',
   'common.entity_input': 'Name oder Alias der Entität',
   'common.limit': 'Limit',
   'common.from_ts': 'Von (ISO-Zeitstempel, optional)',
@@ -37,7 +41,6 @@ export const de: Strings = {
   'agent.tool_calls': 'Werkzeugaufrufe ({n})',
   'agent.trace_error_label': '— Fehler:',
   'agent.trace_results': ' — {count} Ergebnis(se)',
-  'agent.call_failed': 'Agentenaufruf fehlgeschlagen: {error}',
   'agent.no_answer': '(keine Antwort)',
   'agent.truncated':
     'Beim Werkzeugaufruf-Limit gestoppt, bevor eine endgültige Antwort erreicht wurde.',
@@ -91,7 +94,6 @@ export const de: Strings = {
   'graph.minimize': 'Graph verkleinern',
   'graph.expansion_capped':
     'Erweiterung begrenzt — die {limit} am stärksten vernetzten Nachbarn werden angezeigt.',
-  'graph.expand_failed': 'Erweiterung fehlgeschlagen: {error}',
   'graph.hint':
     'Scrollen zum Zoomen, Ziehen zum Verschieben, Klick zum Auswählen, Doppelklick zum Erweitern.',
   'graph.export_json': 'JSON exportieren',
@@ -134,6 +136,7 @@ export const de: Strings = {
   'ingest.migrations.applying': 'Migrationen werden angewendet…',
   'ingest.migrations.applied': 'Angewendet: {versions}',
   'ingest.migrations.uptodate': 'Schema ist aktuell.',
+  'ingest.migrations.busy': 'Ein anderer Migrationsjob läuft bereits.',
   'ingest.upload.header': 'Hochladen & importieren',
   'ingest.upload.help':
     'Dateinamen müssen einer bekannten Tabelle entsprechen: postings.csv, comments.csv, ' +
@@ -145,7 +148,7 @@ export const de: Strings = {
   'ingest.job.running':
     'Import läuft… diese Seite aktualisiert sich automatisch.',
   'ingest.job.done': 'Import abgeschlossen.',
-  'ingest.job.failed': 'Import fehlgeschlagen: {error}',
+  'ingest.job.failed': 'Import fehlgeschlagen.',
   'ingest.counts.header': 'Importierte Zeilen',
   'ingest.counts.dropped': 'Verworfene fehlerhafte Zeilen: {detail}',
   'ingest.counts.filtered':
@@ -156,9 +159,8 @@ export const de: Strings = {
   'ingest.resolve.running':
     'Auflösung läuft… diese Seite aktualisiert sich automatisch.',
   'ingest.resolve.done': 'Auflösung abgeschlossen.',
-  'ingest.resolve.failed': 'Auflösung fehlgeschlagen: {error}',
+  'ingest.resolve.failed': 'Auflösung fehlgeschlagen.',
   'ingest.resolve.summary': 'Zusammenfassung der Auflösung',
-  'ingest.error.request': 'Anfrage abgelehnt: {detail}',
   // sidebar nav group headings
   'nav.group.entities': 'Entitäten',
   'nav.group.authors': 'Autoren',

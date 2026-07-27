@@ -154,7 +154,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
       )}
       {explorer.expandError && (
         <Banner variant="danger">
-          {t('graph.expand_failed', { error: explorer.expandError })}
+          {t(explorer.expandError.key, explorer.expandError.vars)}
         </Banner>
       )}
 

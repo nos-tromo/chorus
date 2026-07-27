@@ -9,7 +9,7 @@ import type { Strings } from '../i18n'
 const ConfigContext = createContext<AppConfig | null>(null)
 
 export function ConfigProvider({ children }: { children: React.ReactNode }) {
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['config'],
     queryFn: fetchConfig,
     staleTime: Infinity,
@@ -24,11 +24,11 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   }
 
   if (isError) {
-    const message =
-      error instanceof Error ? error.message : 'Failed to load application config.'
+    // Renders before i18n boots (config load failed), so no catalog is
+    // available yet — a static bilingual literal, never error.message.
     return (
       <Banner variant="danger" className="m-4">
-        {message}
+        Service unreachable. / Dienst nicht erreichbar.
       </Banner>
     )
   }

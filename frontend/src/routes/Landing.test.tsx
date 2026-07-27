@@ -176,7 +176,7 @@ describe('Landing', () => {
     // The danger banner has role="alert" and contains the error message
     const banner = await screen.findByRole('alert')
     expect(banner).toBeTruthy()
-    expect(banner.textContent).toMatch(/connection refused/i)
+    expect(banner.textContent).toMatch(/something went wrong/i)
   })
 
   it('(c) ingestion-status: shows ingestion-on text when ingestion_enabled=true', async () => {
@@ -323,7 +323,7 @@ describe('Landing', () => {
 
     // At least one alert should appear (could be health or stats)
     const alerts = await screen.findAllByRole('alert')
-    const hasStatsError = alerts.some((a) => a.textContent?.match(/stats fetch failed/i))
+    const hasStatsError = alerts.some((a) => a.textContent?.match(/something went wrong/i))
     expect(hasStatsError).toBe(true)
   })
 

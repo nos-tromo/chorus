@@ -199,7 +199,7 @@ describe('Agent', () => {
     fireEvent.submit(input.closest('form')!)
 
     const banner = await screen.findByRole('alert')
-    expect(banner.textContent).toMatch(/connection refused/i)
+    expect(banner.textContent).toMatch(/something went wrong/i)
   })
 
   it('assistant markdown: bold and GFM table render as HTML elements', async () => {

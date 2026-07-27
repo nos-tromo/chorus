@@ -1,7 +1,10 @@
 export const en = {
   // common (shared across pages)
-  'common.tool_call_failed': 'tool call failed: {error}',
-  'common.unreachable': 'unreachable: {error}',
+  'common.error_request':
+    'Something went wrong ({status}). Please try again or contact support.',
+  'common.error_unknown': 'Something went wrong. Please try again or contact support.',
+  'common.error_network':
+    'Service unreachable. Please check your connection or try again later.',
   'common.entity_input': 'Entity name or alias',
   'common.limit': 'Limit',
   'common.from_ts': 'From (ISO timestamp, optional)',
@@ -32,7 +35,6 @@ export const en = {
   'agent.tool_calls': 'Tool calls ({n})',
   'agent.trace_error_label': '— error:',
   'agent.trace_results': ' — {count} result(s)',
-  'agent.call_failed': 'agent call failed: {error}',
   'agent.no_answer': '(no answer)',
   'agent.truncated':
     'Stopped at the tool-call limit before reaching a final answer.',
@@ -84,7 +86,6 @@ export const en = {
   'graph.minimize': 'Collapse graph',
   'graph.expansion_capped':
     'Expansion capped — the most connected {limit} neighbors are shown.',
-  'graph.expand_failed': 'Expansion failed: {error}',
   'graph.hint':
     'Scroll to zoom, drag to move, click to select, double-click to expand.',
   'graph.export_json': 'Export JSON',
@@ -125,6 +126,7 @@ export const en = {
   'ingest.migrations.applying': 'Applying migrations…',
   'ingest.migrations.applied': 'Applied: {versions}',
   'ingest.migrations.uptodate': 'Schema is up to date.',
+  'ingest.migrations.busy': 'Another migration job is already running.',
   'ingest.upload.header': 'Upload & ingest',
   'ingest.upload.help':
     'Filenames must match a known table: postings.csv, comments.csv, messages.csv, ' +
@@ -136,7 +138,7 @@ export const en = {
   'ingest.job.running':
     'Ingestion running… this page refreshes automatically.',
   'ingest.job.done': 'Ingestion complete.',
-  'ingest.job.failed': 'Ingestion failed: {error}',
+  'ingest.job.failed': 'Ingestion failed.',
   'ingest.counts.header': 'Rows ingested',
   'ingest.counts.dropped': 'Dropped malformed rows: {detail}',
   'ingest.counts.filtered':
@@ -147,9 +149,8 @@ export const en = {
   'ingest.resolve.running':
     'Resolution running… this page refreshes automatically.',
   'ingest.resolve.done': 'Resolution complete.',
-  'ingest.resolve.failed': 'Resolution failed: {error}',
+  'ingest.resolve.failed': 'Resolution failed.',
   'ingest.resolve.summary': 'Resolution summary',
-  'ingest.error.request': 'Request rejected: {detail}',
   // sidebar nav group headings
   'nav.group.entities': 'Entities',
   'nav.group.authors': 'Authors',
