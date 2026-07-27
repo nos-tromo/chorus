@@ -3,6 +3,7 @@ import { useHealth } from '../hooks/useHealth'
 import { useTools } from '../hooks/useTools'
 import { useStats } from '../hooks/useStats'
 import { useConfig, useT } from '../config/ConfigContext'
+import { describeError } from '../api/errorMessage'
 import { StatChart } from '../components/StatChart'
 
 /** Format an ISO timestamp to a human-readable local string, or return a dash. */
@@ -46,6 +47,10 @@ export function Landing() {
   const tools = useTools()
   const stats = useStats()
 
+  const healthError = health.isError ? describeError(health.error) : null
+  const toolsError = tools.isError ? describeError(tools.error) : null
+  const statsError = stats.isError ? describeError(stats.error) : null
+
   return (
     <div className="p-8 space-y-6">
       <div>
@@ -63,15 +68,8 @@ export function Landing() {
         <Card className="p-4 space-y-3">
           <h2 className="text-base font-medium">{t('landing.backend_health')}</h2>
           {health.isLoading && <Spinner label="…" />}
-          {health.isError && (
-            <Banner variant="danger">
-              {t('common.unreachable', {
-                error:
-                  health.error instanceof Error
-                    ? health.error.message
-                    : String(health.error),
-              })}
-            </Banner>
+          {healthError && (
+            <Banner variant="danger">{t(healthError.key, healthError.vars)}</Banner>
           )}
           {health.isSuccess && (
             <Badge variant="accent" data-testid="health-ok">
@@ -84,15 +82,8 @@ export function Landing() {
         <Card className="p-4 space-y-3">
           <h2 className="text-base font-medium">{t('landing.registered_tools')}</h2>
           {tools.isLoading && <Spinner label="…" />}
-          {tools.isError && (
-            <Banner variant="danger">
-              {t('common.unreachable', {
-                error:
-                  tools.error instanceof Error
-                    ? tools.error.message
-                    : String(tools.error),
-              })}
-            </Banner>
+          {toolsError && (
+            <Banner variant="danger">{t(toolsError.key, toolsError.vars)}</Banner>
           )}
           {tools.isSuccess && tools.data.length > 0 && (
             <ul className="space-y-2 text-sm">
@@ -119,15 +110,8 @@ export function Landing() {
           </div>
         )}
 
-        {stats.isError && (
-          <Banner variant="danger">
-            {t('common.unreachable', {
-              error:
-                stats.error instanceof Error
-                  ? stats.error.message
-                  : String(stats.error),
-            })}
-          </Banner>
+        {statsError && (
+          <Banner variant="danger">{t(statsError.key, statsError.vars)}</Banner>
         )}
 
         {stats.isSuccess && stats.data.counts.posts === 0 && (

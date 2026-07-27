@@ -95,7 +95,7 @@ describe('ToolTrace', () => {
     expect(screen.queryByText(/result/i)).toBeNull()
   })
 
-  it('renders error entry with tool name and error message', async () => {
+  it('renders error entry with tool name and the localized catalog message, never the raw field value', async () => {
     const trace: AgentTraceEntry[] = [
       {
         tool: 'topic_co_occurrence',
@@ -108,8 +108,10 @@ describe('ToolTrace', () => {
     render(<ToolTrace trace={trace} />, { wrapper: makeWrapper() })
     // tool name appears (in the <strong>)
     expect(await screen.findByText('topic_co_occurrence')).toBeTruthy()
-    // error text appears
-    expect(screen.getByText(/entity not found/)).toBeTruthy()
+    // the catalog string is shown ('agent.tool_call_failed' in en.ts: 'Tool call failed.')
+    expect(screen.getByText(/tool call failed\./i)).toBeTruthy()
+    // the raw backend error field is a flag only — its value is never rendered
+    expect(screen.queryByText(/entity not found/)).toBeNull()
   })
 
   it('renders serialised arguments as JSON', async () => {

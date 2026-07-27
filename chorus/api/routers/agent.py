@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from loguru import logger
 from pydantic import BaseModel
 
 from chorus.agent.loop import AgentInferenceError, run_agent
@@ -84,5 +85,6 @@ def agent_query(
             tool_message_max_chars=cfg.tool_message_max_chars,
         )
     except AgentInferenceError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        logger.exception("Agent query failed")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="Agent request failed.") from exc
     return result.model_dump(mode="json")

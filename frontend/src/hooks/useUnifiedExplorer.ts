@@ -10,6 +10,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { callTool } from '../api/tools'
+import { describeError, type ErrorDescriptor } from '../api/errorMessage'
 import { mergeGraph, type GraphState } from '../lib/graphExplorer'
 import { explorerEdgeKey, type ExplorerEdge, type ExplorerNode } from '../lib/explorerElements'
 import type {
@@ -25,10 +26,6 @@ interface Added {
   nodes: ExplorerNode[]
   edges: ExplorerEdge[]
   truncated: boolean
-}
-
-function errText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 function mapNetworkExpand(out: ExpandNetworkNodeOut): Added {
@@ -60,7 +57,7 @@ export function useUnifiedExplorer() {
   // fns share this flag — a topic expansion and a ties expansion never race).
   const [expandingId, setExpandingId] = useState<string | null>(null)
   const [expansionTruncated, setExpansionTruncated] = useState(false)
-  const [expandError, setExpandError] = useState<string | null>(null)
+  const [expandError, setExpandError] = useState<ErrorDescriptor | null>(null)
   // Mirrors expandingId for the guard in `runExpansion`, which reads it synchronously
   // from a useCallback closure — state alone can lag a double-click fired before React
   // re-renders.
@@ -127,7 +124,7 @@ export function useUnifiedExplorer() {
             return mergeGraph(g, added, explorerEdgeKey)
           })
         },
-        onError: (err) => setExpandError(errText(err)),
+        onError: (err) => setExpandError(describeError(err)),
         onSettled: () => {
           expandingRef.current = null
           setExpandingId(null)

@@ -8,6 +8,7 @@ orchestrators need to call it without a principal header.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
+from loguru import logger
 
 router = APIRouter(tags=["health"])
 
@@ -37,8 +38,9 @@ def health(request: Request) -> dict[str, str]:
         with driver.session() as s:
             s.run("RETURN 1").consume()
     except Exception as exc:
+        logger.error(f"neo4j unreachable: {exc}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"neo4j unreachable: {exc}",
+            detail="Database unreachable.",
         ) from exc
     return {"status": "ok"}

@@ -3,6 +3,7 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Banner, Button, CopyButton, Input, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
+import { describeError } from '../api/errorMessage'
 import { useAgentQuery } from '../hooks/useAgentQuery'
 import { ToolTrace } from '../components/ToolTrace'
 import { AgentGraphCard, GRAPH_TRACE_TOOLS } from '../components/AgentGraphCard'
@@ -77,12 +78,7 @@ export function Agent() {
     mutation.reset()
   }
 
-  const errorMessage =
-    mutation.error instanceof Error
-      ? mutation.error.message
-      : mutation.error
-        ? String(mutation.error)
-        : ''
+  const errorDescriptor = mutation.error ? describeError(mutation.error) : null
 
   return (
     <div className="p-8 space-y-6 max-w-3xl">
@@ -168,10 +164,8 @@ export function Agent() {
       )}
 
       {/* Error banner */}
-      {mutation.isError && (
-        <Banner variant="danger">
-          {t('agent.call_failed', { error: errorMessage })}
-        </Banner>
+      {errorDescriptor && (
+        <Banner variant="danger">{t(errorDescriptor.key, errorDescriptor.vars)}</Banner>
       )}
 
       {/* Input form */}

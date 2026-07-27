@@ -19,14 +19,14 @@ export function ToolTrace({ trace }: ToolTraceProps) {
         {trace.map((entry, idx) => (
           <li key={idx} className="space-y-1">
             {entry.error ? (
-              // Three safe text nodes — no dangerouslySetInnerHTML.
-              // entry.tool and entry.error are rendered as text, never as HTML.
+              // entry.error is a backend error flag, not user-facing text —
+              // render the catalog string, never the field value.
               <p className="text-destructive">
                 <strong>{entry.tool}</strong>
                 {' '}
                 {t('agent.trace_error_label')}
                 {' '}
-                {entry.error}
+                {t('agent.tool_call_failed')}
               </p>
             ) : (
               <p className="font-medium">

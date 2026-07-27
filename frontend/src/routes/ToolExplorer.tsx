@@ -21,6 +21,7 @@ import {
   toGraphML,
 } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
+import { describeError } from '../api/errorMessage'
 import { useToolCall } from '../hooks/useToolCall'
 import { useUnifiedExplorer } from '../hooks/useUnifiedExplorer'
 import { EntityInput } from '../components/form/EntityInput'
@@ -78,12 +79,7 @@ export function ToolExplorer() {
     }
   }
 
-  const errorMessage =
-    seededMutation?.error instanceof Error
-      ? seededMutation.error.message
-      : seededMutation?.error
-        ? String(seededMutation.error)
-        : ''
+  const errorDescriptor = seededMutation?.error ? describeError(seededMutation.error) : null
 
   const fg = useMemo(
     () => (explorer.graph ? toExplorerForceGraph(explorer.graph) : null),
@@ -174,10 +170,8 @@ export function ToolExplorer() {
       </form>
 
       {/* Error */}
-      {seededMutation?.isError && (
-        <Banner variant="danger">
-          {t('common.tool_call_failed', { error: errorMessage })}
-        </Banner>
+      {errorDescriptor && (
+        <Banner variant="danger">{t(errorDescriptor.key, errorDescriptor.vars)}</Banner>
       )}
 
       {/* Loading */}
@@ -256,7 +250,7 @@ export function ToolExplorer() {
             )}
             {explorer.expandError && (
               <Banner variant="danger">
-                {t('graph.expand_failed', { error: explorer.expandError })}
+                {t(explorer.expandError.key, explorer.expandError.vars)}
               </Banner>
             )}
             <ForceGraph

@@ -70,8 +70,9 @@ class TraceStep(BaseModel):
         arguments: Parsed arguments the model supplied.
         result_count: The tool's reported result count, or ``None`` when the
             call errored or the tool reports no count.
-        error: Error message when the call failed (unknown tool, invalid
-            arguments, or a tool exception); ``None`` on success.
+        error: Static, client-safe message when the call failed (unknown
+            tool, invalid arguments, or a tool exception); ``None`` on
+            success. The underlying detail is logged, not returned here.
         result: Full tool output for graph tools (node/edge payloads the SPA
             renders inline), when within the size cap; None otherwise.
     """
@@ -213,8 +214,10 @@ def _execute_tool_call(
     """Execute one model tool call, returning its trace step and tool message.
 
     Failures (unknown tool, invalid arguments, tool exception) become an
-    ``{"error": ...}`` tool message fed back to the model and a TraceStep with
-    ``error`` set; the loop then continues so the model can recover.
+    ``{"error": ...}`` tool message fed back to the model (full detail, so it
+    can self-correct) and a TraceStep with a static, client-safe ``error``
+    set; the loop then continues so the model can recover. The detailed
+    failure is logged in every case.
     """
     name = tc.function.name
     loaded: Any
@@ -226,25 +229,28 @@ def _execute_tool_call(
 
     spec = TOOLS.get(name)
     if spec is None:
-        error = f"unknown tool: {name}"
-        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(
-            tc, {"error": error}, max_items=max_items, max_chars=max_chars
+        detail = f"unknown tool: {name}"
+        logger.warning(f"agent: {detail}")
+        return TraceStep(tool=name, arguments=arguments, error="Tool call failed."), _tool_message(
+            tc, {"error": detail}, max_items=max_items, max_chars=max_chars
         )
 
     try:
         parsed = spec.input_model.model_validate(arguments)
     except ValidationError as exc:
-        error = f"invalid arguments: {exc.errors()}"
-        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(
-            tc, {"error": error}, max_items=max_items, max_chars=max_chars
+        detail = f"invalid arguments: {exc.errors()}"
+        logger.warning(f"agent: {detail}")
+        return TraceStep(tool=name, arguments=arguments, error="Tool call failed."), _tool_message(
+            tc, {"error": detail}, max_items=max_items, max_chars=max_chars
         )
 
     try:
         out = spec.run(driver, parsed, user=user, audit=audit)
     except Exception as exc:  # surface any tool failure back to the model
-        error = f"{type(exc).__name__}: {exc}"
-        return TraceStep(tool=name, arguments=arguments, error=error), _tool_message(
-            tc, {"error": error}, max_items=max_items, max_chars=max_chars
+        detail = f"{type(exc).__name__}: {exc}"
+        logger.opt(exception=exc).error(f"agent: tool {name!r} failed")
+        return TraceStep(tool=name, arguments=arguments, error="Tool call failed."), _tool_message(
+            tc, {"error": detail}, max_items=max_items, max_chars=max_chars
         )
 
     result = out.model_dump(mode="json")

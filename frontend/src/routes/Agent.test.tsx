@@ -85,7 +85,7 @@ describe('Agent', () => {
 
   it('renders title and chat input', async () => {
     render(<Agent />, { wrapper: makeWrapper() })
-    expect(await screen.findByText('chorus agent')).toBeTruthy()
+    expect(await screen.findByText('Chat')).toBeTruthy()
     expect(screen.getByTestId('agent-input')).toBeTruthy()
   })
 
@@ -93,7 +93,7 @@ describe('Agent', () => {
     vi.mocked(apiPost).mockResolvedValueOnce(SIMPLE_RESPONSE)
 
     render(<Agent />, { wrapper: makeWrapper() })
-    await screen.findByText('chorus agent')
+    await screen.findByText('Chat')
 
     const input = screen.getByTestId('agent-input')
     fireEvent.change(input, { target: { value: 'How active is Alice?' } })
@@ -109,7 +109,7 @@ describe('Agent', () => {
     vi.mocked(apiPost).mockResolvedValueOnce(SIMPLE_RESPONSE)
 
     render(<Agent />, { wrapper: makeWrapper() })
-    await screen.findByText('chorus agent')
+    await screen.findByText('Chat')
 
     const input = screen.getByTestId('agent-input')
     fireEvent.change(input, { target: { value: 'Summarise Alice' } })
@@ -130,7 +130,7 @@ describe('Agent', () => {
       .mockResolvedValueOnce(secondResponse)
 
     render(<Agent />, { wrapper: makeWrapper() })
-    await screen.findByText('chorus agent')
+    await screen.findByText('Chat')
 
     const input = screen.getByTestId('agent-input')
 
@@ -158,7 +158,7 @@ describe('Agent', () => {
     vi.mocked(apiPost).mockResolvedValueOnce(SIMPLE_RESPONSE)
 
     render(<Agent />, { wrapper: makeWrapper() })
-    await screen.findByText('chorus agent')
+    await screen.findByText('Chat')
 
     const input = screen.getByTestId('agent-input')
     fireEvent.change(input, { target: { value: 'Hello?' } })
@@ -177,7 +177,7 @@ describe('Agent', () => {
     vi.mocked(apiPost).mockResolvedValueOnce(TRUNCATED_RESPONSE)
 
     render(<Agent />, { wrapper: makeWrapper() })
-    await screen.findByText('chorus agent')
+    await screen.findByText('Chat')
 
     const input = screen.getByTestId('agent-input')
     fireEvent.change(input, { target: { value: 'Complex query' } })
@@ -192,21 +192,21 @@ describe('Agent', () => {
     vi.mocked(apiPost).mockRejectedValueOnce(new Error('connection refused'))
 
     render(<Agent />, { wrapper: makeWrapper() })
-    await screen.findByText('chorus agent')
+    await screen.findByText('Chat')
 
     const input = screen.getByTestId('agent-input')
     fireEvent.change(input, { target: { value: 'Will this fail?' } })
     fireEvent.submit(input.closest('form')!)
 
     const banner = await screen.findByRole('alert')
-    expect(banner.textContent).toMatch(/connection refused/i)
+    expect(banner.textContent).toMatch(/something went wrong/i)
   })
 
   it('assistant markdown: bold and GFM table render as HTML elements', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce(MARKDOWN_RESPONSE)
 
     const { container } = render(<Agent />, { wrapper: makeWrapper() })
-    await screen.findByText('chorus agent')
+    await screen.findByText('Chat')
 
     const input = screen.getByTestId('agent-input')
     fireEvent.change(input, { target: { value: 'Who posted about Berlin?' } })
@@ -227,7 +227,7 @@ describe('Agent', () => {
     vi.mocked(apiPost).mockResolvedValueOnce(SIMPLE_RESPONSE)
 
     render(<Agent />, { wrapper: makeWrapper() })
-    await screen.findByText('chorus agent')
+    await screen.findByText('Chat')
 
     const input = screen.getByTestId('agent-input')
     fireEvent.change(input, { target: { value: 'How active is Alice?' } })
@@ -244,7 +244,7 @@ describe('Agent', () => {
     vi.mocked(apiPost).mockResolvedValueOnce(SIMPLE_RESPONSE)
 
     render(<Agent />, { wrapper: makeWrapper() })
-    await screen.findByText('chorus agent')
+    await screen.findByText('Chat')
 
     const input = screen.getByTestId('agent-input')
     fireEvent.change(input, { target: { value: 'How active is Alice?' } })
@@ -266,7 +266,7 @@ describe('Agent', () => {
     vi.mocked(apiPost).mockImplementation(() => new Promise(() => {}))
 
     render(<Agent />, { wrapper: makeWrapper() })
-    await screen.findByText('chorus agent')
+    await screen.findByText('Chat')
 
     const input = screen.getByTestId('agent-input')
     fireEvent.change(input, { target: { value: 'Slow query' } })

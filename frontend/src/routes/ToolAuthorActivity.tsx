@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Banner, Card, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
+import { describeError } from '../api/errorMessage'
 import { useToolCall } from '../hooks/useToolCall'
 import { EntityInput } from '../components/form/EntityInput'
 import { TimeRangeInputs, type TimeRangeValue } from '../components/form/TimeRangeInputs'
@@ -77,12 +78,7 @@ export function ToolAuthorActivity() {
 
   const result = mutation.data ?? null
   const summaries = result?.summaries ?? null
-  const errorMessage =
-    mutation.error instanceof Error
-      ? mutation.error.message
-      : mutation.error
-        ? String(mutation.error)
-        : ''
+  const errorDescriptor = mutation.error ? describeError(mutation.error) : null
 
   return (
     <div className="p-8 space-y-6">
@@ -114,10 +110,8 @@ export function ToolAuthorActivity() {
       </form>
 
       {/* Error */}
-      {mutation.isError && (
-        <Banner variant="danger">
-          {t('common.tool_call_failed', { error: errorMessage })}
-        </Banner>
+      {errorDescriptor && (
+        <Banner variant="danger">{t(errorDescriptor.key, errorDescriptor.vars)}</Banner>
       )}
 
       {/* Loading */}

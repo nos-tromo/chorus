@@ -16,9 +16,12 @@ from typing import Any, cast
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from loguru import logger
 from neo4j import Driver
 
 from chorus.ingestion.jobs import Job, JobRegistry
+
+_MARKER = "MARKER-SECRET-1234"
 
 _POSTINGS_CSV = (
     b"UUID,Posting ID,Text Content,Timestamp,Crawled at,Author ID,Author,Network,Tags\r\n"
@@ -285,7 +288,7 @@ def test_ingest_rejects_unrecognized_filename(monkeypatch: pytest.MonkeyPatch) -
             headers={"X-Auth-User": "analyst"},
         )
         assert resp.status_code == 422
-        assert "data.csv" in resp.text
+        assert resp.json() == {"detail": "Invalid request."}
         assert jobs.get("job-1") is None
     finally:
         jobs.shutdown()
@@ -405,7 +408,7 @@ def test_ingest_error_marks_job_error_and_cleans_staging(
         assert resp.status_code == 202
         done = _await_job(client, resp.json()["job_id"])
         assert done["status"] == "error"
-        assert "disk full" in done["error"]
+        assert done["error"] == "Job failed."
 
         rows = [r for r in _audit_rows(in_memory_audit) if r["tool_name"] == "ingest"]
         assert len(rows) == 1
@@ -451,6 +454,48 @@ def test_ingest_then_resolve_chains_and_audits_twice(
         assert kinds.count("ingest") == 1
         assert kinds.count("resolve_all") == 1
     finally:
+        jobs.shutdown()
+
+
+def test_ingest_then_resolve_failure_is_generic_and_logged(
+    migrated_driver: Driver,
+    in_memory_audit: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resolve_all crash surfaces a static resolution_error; detail goes to logs only.
+
+    result is returned verbatim through JobStatusOut.result (GET
+    /ingestion/jobs/{id}), so it is client-visible state and must not carry
+    exception text.
+    """
+    from chorus.api.routers import ingestion as ing
+
+    monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
+
+    def _boom(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError(_MARKER)
+
+    monkeypatch.setattr(ing, "resolve_all", _boom)
+
+    records: list[str] = []
+    sink_id = logger.add(lambda m: records.append(str(m)), level="DEBUG")
+    jobs = JobRegistry()
+    try:
+        client = TestClient(_build_app(migrated_driver, in_memory_audit, jobs))
+        resp = client.post(
+            "/ingestion/ingest",
+            files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
+            data={"then_resolve": "true"},
+            headers={"X-Auth-User": "analyst"},
+        )
+        assert resp.status_code == 202, resp.text
+        done = _await_job(client, resp.json()["job_id"])
+        assert done["status"] == "done", done
+        assert done["result"]["resolution_error"] == "Resolution failed."
+        assert _MARKER not in str(done)
+        assert any(_MARKER in r for r in records)
+    finally:
+        logger.remove(sink_id)
         jobs.shutdown()
 
 

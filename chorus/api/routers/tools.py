@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from loguru import logger
 from pydantic import ValidationError
 
 from chorus.api.auth.principal import resolve_principal
@@ -70,7 +71,8 @@ def invoke_tool(
     try:
         parsed = spec.input_model.model_validate(payload)
     except ValidationError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, exc.errors()) from exc
+        logger.warning(f"Tool input validation failed: {exc.errors()}")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid request.") from exc
     out = spec.run(
         request.app.state.driver,
         parsed,

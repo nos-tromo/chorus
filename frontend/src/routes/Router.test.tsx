@@ -37,7 +37,7 @@ function Wrapper({ initialEntries }: { initialEntries: string[] }) {
 describe('AppRoutes', () => {
   it('renders Agent stub at /agent', async () => {
     render(<Wrapper initialEntries={['/agent']} />)
-    expect(await screen.findByRole('heading', { name: /agent/i })).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: /chat/i })).toBeTruthy()
   })
 
   it('redirects unknown path to / and renders the Landing page', async () => {

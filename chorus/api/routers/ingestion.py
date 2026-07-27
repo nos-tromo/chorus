@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from loguru import logger
 from pydantic import BaseModel
 
 from chorus.api.auth.principal import resolve_principal
@@ -266,17 +267,18 @@ def ingest(
         else:
             safe_names.append(base)
     if rejected:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+        logger.warning(
             f"unrecognized or unsafe filename(s): {rejected}; expected one of {list(TABLES)} "
-            "as '<table>.csv' or '*_<table>.csv'",
+            "as '<table>.csv' or '*_<table>.csv'"
         )
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid request.")
     since_dt: datetime | None = None
     if since:
         try:
             since_dt = datetime.fromisoformat(since)
         except ValueError as exc:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"invalid 'since' timestamp: {since!r}") from exc
+            logger.warning(f"invalid 'since' timestamp: {since!r}")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid request.") from exc
 
     _reject_if_busy(request)
 
@@ -313,7 +315,8 @@ def ingest(
                     summary = resolve_all(driver, load_resolution_env(), audit, user=user)
                     out = {**out, "resolution": summary.as_dict()}
                 except Exception as exc:  # keep ingest counts; surface the resolve failure
-                    out = {**out, "resolution_error": f"{type(exc).__name__}: {exc}"}
+                    logger.opt(exception=exc).error(f"Ingestion job {_job.id} resolution failed")
+                    out = {**out, "resolution_error": "Resolution failed."}
             return out
         finally:
             shutil.rmtree(staging, ignore_errors=True)

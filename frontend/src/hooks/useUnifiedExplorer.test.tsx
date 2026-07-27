@@ -272,7 +272,7 @@ describe('useUnifiedExplorer', () => {
     act(() => result.current.expandTies('author:auth-1'))
     await waitFor(() => expect(result.current.expandingId).toBeNull())
 
-    expect(result.current.expandError).toBe('boom')
+    expect(result.current.expandError).toEqual({ key: 'common.error_unknown' })
   })
 
   it('clears stale expand error on reseed from network', async () => {
@@ -284,7 +284,7 @@ describe('useUnifiedExplorer', () => {
     // Trigger an expansion that fails
     act(() => result.current.expandTies('author:auth-1'))
     await waitFor(() => expect(result.current.expandingId).toBeNull())
-    expect(result.current.expandError).toBe('expansion failed')
+    expect(result.current.expandError).toEqual({ key: 'common.error_unknown' })
 
     // Reseed with new payload — error should clear
     act(() => result.current.seedFromNetwork(networkSeed))
@@ -300,7 +300,7 @@ describe('useUnifiedExplorer', () => {
     // Trigger an expansion that fails
     act(() => result.current.expandTopics('topic:ent-1'))
     await waitFor(() => expect(result.current.expandingId).toBeNull())
-    expect(result.current.expandError).toBe('expansion failed')
+    expect(result.current.expandError).toEqual({ key: 'common.error_unknown' })
 
     // Reseed with new payload — error should clear
     act(() => result.current.seedFromSocial(socialSeed))
