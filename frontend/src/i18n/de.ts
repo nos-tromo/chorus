@@ -31,12 +31,12 @@ export const de: Strings = {
   // agent (00_agent.py)
   'agent.title': 'Chat',
   'agent.caption':
-    'Frage in natürlicher Sprache; der Agent wählt die passenden ' +
+    'Fragen Sie in natürlicher Sprache, der Agent wählt die passenden ' +
     'Tools. Themen werden nach einem Auflösungslauf nach kanonischer ' +
     'Entität gruppiert; auf nicht aufgelösten Daten erscheinen sie als ' +
     'Alias-Oberflächenformen.',
   'agent.clear': 'Unterhaltung löschen',
-  'agent.chat_input': 'Stelle eine Frage zum Netzwerk…',
+  'agent.chat_input': 'Stellen Sie eine Frage zum Netzwerk…',
   'agent.thinking': 'Denkt nach…',
   'agent.tool_calls': 'Tool-Calls ({n})',
   'agent.trace_error_label': '— Fehler:',
@@ -62,7 +62,7 @@ export const de: Strings = {
   // authors_connected_by_topic (04)
   'authors_connected.title': 'Über Themen verbundene Autoren',
   'authors_connected.caption':
-    'Nur 1 Hop. Themen werden nach einem Auflösungslauf nach kanonischer ' +
+    'Nur ein Hop. Themen werden nach einem Auflösungslauf nach kanonischer ' +
     'Entität gruppiert; auf nicht aufgelösten Daten erscheinen sie als ' +
     'Alias-Oberflächenformen.',
   'authors_connected.seed_author_input':
