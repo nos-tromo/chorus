@@ -58,7 +58,7 @@ describe('Sidebar', () => {
   it('renders the tool nav links', () => {
     renderSidebar()
     // Top-level agent link
-    expect(screen.getByRole('link', { name: /agent/i })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /chat/i })).toBeInTheDocument()
     // Entities group
     expect(
       screen.getByRole('link', { name: /posts mentioning/i }),

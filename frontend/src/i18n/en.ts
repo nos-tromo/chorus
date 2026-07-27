@@ -24,7 +24,7 @@ export const en = {
     'Data ingestion is enabled — see the Data ingestion page in the sidebar.',
   'landing.ingestion_off': 'Data ingestion is disabled.',
   // agent (00_agent.py)
-  'agent.title': 'chorus agent',
+  'agent.title': 'Chat',
   'agent.caption':
     'Ask in plain language; the agent picks the right tools. Topics ' +
     'cluster by canonical entity after a resolution pass; on un-resolved ' +

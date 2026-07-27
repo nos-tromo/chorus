@@ -22,29 +22,29 @@ export const de: Strings = {
   // landing (streamlit_app.py)
   'landing.caption': 'GraphRAG für die Analyse sozialer Netzwerke',
   'landing.backend_health': 'Backend-Status',
-  'landing.registered_tools': 'Registrierte Werkzeuge',
+  'landing.registered_tools': 'Registrierte Tools',
   'landing.pick_tool':
-    'Wähle links in der Seitenleiste ein Werkzeug, um den Graphen zu erkunden.',
+    'Wähle links in der Seitenleiste ein Tool, um den Graphen zu erkunden.',
   'landing.ingestion_on':
     'Datenimport ist aktiviert — siehe die Seite „Datenimport" in der Seitenleiste.',
   'landing.ingestion_off': 'Datenimport ist deaktiviert.',
   // agent (00_agent.py)
-  'agent.title': 'chorus Agent',
+  'agent.title': 'Chat',
   'agent.caption':
     'Frage in natürlicher Sprache; der Agent wählt die passenden ' +
-    'Werkzeuge. Themen werden nach einem Auflösungslauf nach kanonischer ' +
+    'Tools. Themen werden nach einem Auflösungslauf nach kanonischer ' +
     'Entität gruppiert; auf nicht aufgelösten Daten erscheinen sie als ' +
     'Alias-Oberflächenformen.',
   'agent.clear': 'Unterhaltung löschen',
   'agent.chat_input': 'Stelle eine Frage zum Netzwerk…',
   'agent.thinking': 'Denkt nach…',
-  'agent.tool_calls': 'Werkzeugaufrufe ({n})',
+  'agent.tool_calls': 'Tool-Calls ({n})',
   'agent.trace_error_label': '— Fehler:',
-  'agent.tool_call_failed': 'Tool-Aufruf fehlgeschlagen.',
+  'agent.tool_call_failed': 'Tool-Call fehlgeschlagen.',
   'agent.trace_results': ' — {count} Ergebnis(se)',
   'agent.no_answer': '(keine Antwort)',
   'agent.truncated':
-    'Beim Werkzeugaufruf-Limit gestoppt, bevor eine endgültige Antwort erreicht wurde.',
+    'Beim Tool-Call-Limit gestoppt, bevor eine endgültige Antwort erreicht wurde.',
   // posts_mentioning (01)
   'posts.title': 'Beiträge, die eine Entität erwähnen',
   'posts.no_hits': 'keine Treffer',
