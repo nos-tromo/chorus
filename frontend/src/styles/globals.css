@@ -4,7 +4,6 @@
 @plugin "@tailwindcss/typography";
 
 :root {
-  color-scheme: dark;
   --app-accent: hsl(262 83% 58%);
   --app-font: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--app-font);
@@ -29,8 +28,7 @@ option {
 }
 
 option {
-  background-color: rgb(9 9 11);
-  color: rgb(244 244 245);
+  @apply bg-background text-foreground;
 }
 
 * {
@@ -41,6 +39,6 @@ option {
   width: 10px;
   height: 10px;
 }
-::-webkit-scrollbar-track { @apply bg-zinc-900; }
-::-webkit-scrollbar-thumb { @apply bg-zinc-700 rounded-full; }
-::-webkit-scrollbar-thumb:hover { @apply bg-zinc-600; }
+::-webkit-scrollbar-track { @apply bg-muted; }
+::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-accent; }

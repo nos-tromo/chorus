@@ -153,11 +153,17 @@ export const en = {
   'ingest.resolve.failed': 'Resolution failed.',
   'ingest.resolve.summary': 'Resolution summary',
   // sidebar nav group headings
+  'nav.dashboard': 'Dashboard',
   'nav.group.entities': 'Entities',
   'nav.group.authors': 'Authors',
   'nav.group.topics': 'Topics',
   'nav.group.networks': 'Networks',
   'nav.explorer': 'graph explorer',
+  // AppHeader (portal link + theme toggle)
+  'app.header.home': 'Apps',
+  'app.header.theme.system': 'system',
+  'app.header.theme.light': 'light',
+  'app.header.theme.dark': 'dark',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph overview',
   'dashboard.nodes': 'Nodes',

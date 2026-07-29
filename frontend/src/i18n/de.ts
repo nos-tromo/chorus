@@ -163,11 +163,17 @@ export const de: Strings = {
   'ingest.resolve.failed': 'Auflösung fehlgeschlagen.',
   'ingest.resolve.summary': 'Zusammenfassung der Auflösung',
   // sidebar nav group headings
+  'nav.dashboard': 'Dashboard',
   'nav.group.entities': 'Entitäten',
   'nav.group.authors': 'Autoren',
   'nav.group.topics': 'Themen',
   'nav.group.networks': 'Netzwerke',
   'nav.explorer': 'Graph-Explorer',
+  // AppHeader (Portal-Link + Theme-Umschalter)
+  'app.header.home': 'Übersicht',
+  'app.header.theme.system': 'System',
+  'app.header.theme.light': 'Hell',
+  'app.header.theme.dark': 'Dunkel',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph-Übersicht',
   'dashboard.nodes': 'Knoten',

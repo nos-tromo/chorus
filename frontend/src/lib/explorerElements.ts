@@ -32,12 +32,16 @@ export interface ExplorerEdge {
 }
 
 /**
- * Node color palette, keyed by the `kind` value produced below.
+ * Node color palette, keyed by the `kind` value produced below. Darkened
+ * from the original dark-theme-only palette so labels stay AA-legible on
+ * the light theme's white background (>= 4.5:1); `author`'s separate
+ * lighter `labelColor` was dropped for the same reason — its own `color`
+ * already clears AA on both themes.
  */
 export const EXPLORER_NODE_STYLES: Record<string, ForceGraphNodeStyle> = {
-  seed: { color: '#fbbf24' },
-  author: { color: '#7c3aed', labelColor: '#a78bfa' },
-  topic: { color: '#4ade80' },
+  seed: { color: '#947005' },
+  author: { color: '#7c3aed' },
+  topic: { color: '#178740' },
 }
 
 /**
