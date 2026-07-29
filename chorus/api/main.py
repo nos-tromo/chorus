@@ -80,6 +80,7 @@ from chorus.api.routers import health as _health_router  # noqa: E402
 from chorus.api.routers import ingestion as _ingestion_router  # noqa: E402
 from chorus.api.routers import stats as _stats_router  # noqa: E402
 from chorus.api.routers import tools as _tools_router  # noqa: E402
+from chorus.api.routers import whoami as _whoami_router  # noqa: E402
 
 app.include_router(_agent_router.router)
 app.include_router(_config_router.router)
@@ -88,6 +89,7 @@ app.include_router(_ingestion_router.status_router)
 app.include_router(_ingestion_router.router)
 app.include_router(_stats_router.router)
 app.include_router(_tools_router.router)
+app.include_router(_whoami_router.router)
 
 # Prometheus metrics — aggregate request counters/latencies only, no user
 # data (§76 audit logging is a separate concern, see chorus/audit/logger.py).

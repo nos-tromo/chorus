@@ -292,10 +292,14 @@ class PrincipalConfig:
         default_identity: Identity to use when the header is absent.
             Intended for local development; ``None`` in production forces
             the header to be present.
+        display_name_header: Header carrying the gateway's decorative
+            display name (default ``X-Auth-Name``, Authelia's
+            ``displayname``). Never an identity key — UI display only.
     """
 
     header_name: str
     default_identity: str | None
+    display_name_header: str
 
 
 @dataclass(frozen=True)
@@ -578,6 +582,7 @@ def load_principal_env() -> PrincipalConfig:
     return PrincipalConfig(
         header_name=_env("CHORUS_AUTH_HEADER", "X-Auth-User") or "X-Auth-User",
         default_identity=_env("CHORUS_DEFAULT_IDENTITY"),
+        display_name_header=_env("CHORUS_DISPLAY_NAME_HEADER", "X-Auth-Name") or "X-Auth-Name",
     )
 
 
