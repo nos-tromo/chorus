@@ -53,7 +53,7 @@ the punch list.
 
 ## Prerequisites
 
-- **Python 3.11–3.13.** Development pins `3.12` via `.python-version`.
+- **Python 3.12.** `requires-python` in `pyproject.toml` pins the 3.12 line; `uv sync` picks (or downloads) a matching interpreter.
 - **[uv](https://docs.astral.sh/uv/)** for dependency and venv
   management. `uv.lock` is the source of truth — don't hand-edit
   `requirements.txt`.

@@ -67,9 +67,10 @@ Default is English; the variable lives in the repo-root `.env` so compose
 interpolates it into the backend service, which surfaces it to the SPA via
 `GET /config`.
 
-Python: `pyproject.toml` accepts `>=3.11,<3.14`; `.python-version`
-pins dev to `3.12`. CI tests 3.12 only — the interpreter the shipped
-image runs; the wider range stays declared. The ruff/pyrefly config
+Python: `pyproject.toml` requires `>=3.12,<3.13` (3.12 only) — the
+single source of truth for interpreter selection (no `.python-version`
+file). CI tests 3.12 — the interpreter the shipped image runs. The
+ruff/pyrefly config
 mirrors `nos-tromo/.github/configs/python-strict/`; drift fails CI.
 
 Not yet landed (tracked in `docs/decisions/` / open tickets):
@@ -147,7 +148,7 @@ redesign of the ingestion pipeline, not an incremental feature add.
 
 ## Tech stack
 
-- **Backend**: Python 3.11+ (3.12 in dev), FastAPI, Uvicorn
+- **Backend**: Python 3.12, FastAPI, Uvicorn
 - **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.6.0`), served by nginx which reverse-proxies the API same-origin (no CORS)
 - **Graph DB**: Neo4j Community Edition (5.11+ for native vector indexes)
 - **Metadata + audit**: SQLite
