@@ -22,7 +22,7 @@ jobs:
     uses: nos-tromo/.github/.github/workflows/python-app-ci.yml@v3
     with:
       # 3.12 only: requires-python is >=3.12,<3.13, and the shipped image
-      # (uv …-python3.12) and the dev pin (.python-version) both run 3.12.
+      # (uv …-python3.12) runs 3.12.
       python-versions: '["3.12"]'
       uv-sync-args: '--frozen'
       docker-build: true

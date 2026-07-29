@@ -67,9 +67,10 @@ Default is English; the variable lives in the repo-root `.env` so compose
 interpolates it into the backend service, which surfaces it to the SPA via
 `GET /config`.
 
-Python: `pyproject.toml` requires `>=3.12,<3.13` (3.12 only);
-`.python-version` pins dev to `3.12`. CI tests 3.12 — the interpreter
-the shipped image runs. The ruff/pyrefly config
+Python: `pyproject.toml` requires `>=3.12,<3.13` (3.12 only) — the
+single source of truth for interpreter selection (no `.python-version`
+file). CI tests 3.12 — the interpreter the shipped image runs. The
+ruff/pyrefly config
 mirrors `nos-tromo/.github/configs/python-strict/`; drift fails CI.
 
 Not yet landed (tracked in `docs/decisions/` / open tickets):
