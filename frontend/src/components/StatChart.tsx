@@ -39,7 +39,10 @@ export function StatChart({ data, noDataLabel = 'No platform data' }: StatChartP
             width={40}
           />
           <Tooltip />
-          <Bar dataKey="count" fill="#6d28d9" radius={[3, 3, 0, 0]} />
+          {/* #8b5cf6 clears the 3:1 non-text minimum against both the
+              light (4.23:1) and dark (4.35:1) backgrounds — #6d28d9 fell
+              to 2.59:1 on dark. */}
+          <Bar dataKey="count" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  EXPLORER_NODE_STYLES,
+  LIGHT_EXPLORER_NODE_STYLES,
+  DARK_EXPLORER_NODE_STYLES,
   EXPLORER_EDGE_STYLES,
   explorerEdgeKey,
   toExplorerForceGraph,
@@ -15,9 +16,17 @@ function makeState(
   return { nodes, edges }
 }
 
-describe('EXPLORER_NODE_STYLES / EXPLORER_EDGE_STYLES', () => {
-  it('defines exactly seed, author, topic with the fixed palette', () => {
-    expect(EXPLORER_NODE_STYLES).toEqual({
+describe('LIGHT/DARK_EXPLORER_NODE_STYLES / EXPLORER_EDGE_STYLES', () => {
+  it('defines exactly seed, author, topic in the light (AA-on-white) palette', () => {
+    expect(LIGHT_EXPLORER_NODE_STYLES).toEqual({
+      seed: { color: '#947005' },
+      author: { color: '#7c3aed' },
+      topic: { color: '#178740' },
+    })
+  })
+
+  it('defines exactly seed, author, topic in the dark (AA-on-dark) palette', () => {
+    expect(DARK_EXPLORER_NODE_STYLES).toEqual({
       seed: { color: '#fbbf24' },
       author: { color: '#7c3aed', labelColor: '#a78bfa' },
       topic: { color: '#4ade80' },

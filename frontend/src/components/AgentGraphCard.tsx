@@ -11,7 +11,8 @@ import { useEffect, useMemo } from 'react'
 import { Banner, ForceGraph } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { useUnifiedExplorer } from '../hooks/useUnifiedExplorer'
-import { EXPLORER_NODE_STYLES, EXPLORER_EDGE_STYLES, toExplorerForceGraph } from '../lib/explorerElements'
+import { useExplorerNodeStyles } from '../hooks/useExplorerNodeStyles'
+import { EXPLORER_EDGE_STYLES, toExplorerForceGraph } from '../lib/explorerElements'
 import { computeExpandActions, dispatchExpandAction } from '../lib/explorerActions'
 import type {
   AgentTraceEntry,
@@ -44,6 +45,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
   const isSocial = SOCIAL_TOOLS.has(entry.tool)
 
   const explorer = useUnifiedExplorer()
+  const nodeStyles = useExplorerNodeStyles()
 
   useEffect(() => {
     if (!entry.result) return
@@ -161,7 +163,7 @@ export function AgentGraphCard({ entry }: AgentGraphCardProps) {
       <ForceGraph
         nodes={fg.nodes}
         edges={fg.edges}
-        nodeStyles={EXPLORER_NODE_STYLES}
+        nodeStyles={nodeStyles}
         edgeStyles={EXPLORER_EDGE_STYLES}
         selectedIds={explorer.selectedIds}
         onSelectionChange={explorer.select}

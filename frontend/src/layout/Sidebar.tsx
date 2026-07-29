@@ -5,7 +5,7 @@ import type { Strings } from '../i18n'
 
 function navClass({ isActive }: { isActive: boolean }) {
   return [
-    'block rounded-md px-3 py-1.5 text-sm hover:bg-zinc-800 transition-colors',
+    'block rounded-md px-3 py-1.5 text-sm hover:bg-muted transition-colors',
     isActive ? 'bg-primary/15 text-primary' : 'text-foreground',
   ].join(' ')
 }
@@ -45,11 +45,14 @@ export function Sidebar() {
   const t = useT()
 
   return (
-    <aside className="w-64 shrink-0 border-r border-border flex flex-col gap-4 bg-zinc-950 p-4">
+    <aside className="w-64 shrink-0 border-r border-border flex flex-col gap-4 bg-muted p-4">
       <h2 className="text-lg font-semibold tracking-tight">chorus</h2>
 
       <nav className="flex flex-col gap-1">
-        {/* Top-level: Agent */}
+        {/* Top-level: Dashboard, Agent */}
+        <NavLink to="/" end className={navClass}>
+          {t('nav.dashboard')}
+        </NavLink>
         <NavLink to="/agent" className={navClass}>
           {t('agent.title')}
         </NavLink>

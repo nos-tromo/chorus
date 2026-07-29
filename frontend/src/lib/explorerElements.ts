@@ -32,9 +32,27 @@ export interface ExplorerEdge {
 }
 
 /**
- * Node color palette, keyed by the `kind` value produced below.
+ * Node color palette, keyed by the `kind` value produced below. Two
+ * variants, since `ForceGraph` renders colors as plain SVG `fill`
+ * attributes (not `style`/CSS custom properties), so a single static
+ * palette cannot satisfy AA (>= 4.5:1 for label text) in both themes —
+ * the app must pick the resolved-theme variant at render time (see
+ * `useExplorerNodeStyles`, `frontend/src/hooks/useExplorerNodeStyles.ts`).
+ *
+ * `LIGHT` is darkened for the white background (label text: `seed`
+ * 4.59:1, `author` via its own `color` — no separate `labelColor` needed
+ * — 5.70:1, `topic` 4.58:1). `DARK` is the original dark-theme-only
+ * palette (`seed` 11.02:1, `author.labelColor` 6.76:1, `topic` 10.56:1
+ * against the dark background) — kept verbatim so dark mode, still
+ * reachable via the theme toggle, does not regress.
  */
-export const EXPLORER_NODE_STYLES: Record<string, ForceGraphNodeStyle> = {
+export const LIGHT_EXPLORER_NODE_STYLES: Record<string, ForceGraphNodeStyle> = {
+  seed: { color: '#947005' },
+  author: { color: '#7c3aed' },
+  topic: { color: '#178740' },
+}
+
+export const DARK_EXPLORER_NODE_STYLES: Record<string, ForceGraphNodeStyle> = {
   seed: { color: '#fbbf24' },
   author: { color: '#7c3aed', labelColor: '#a78bfa' },
   topic: { color: '#4ade80' },

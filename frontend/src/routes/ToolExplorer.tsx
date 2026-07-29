@@ -24,10 +24,11 @@ import { useT } from '../config/ConfigContext'
 import { describeError } from '../api/errorMessage'
 import { useToolCall } from '../hooks/useToolCall'
 import { useUnifiedExplorer } from '../hooks/useUnifiedExplorer'
+import { useExplorerNodeStyles } from '../hooks/useExplorerNodeStyles'
 import { EntityInput } from '../components/form/EntityInput'
 import { LimitField } from '../components/form/LimitField'
 import { SubmitButton } from '../components/form/SubmitButton'
-import { EXPLORER_NODE_STYLES, EXPLORER_EDGE_STYLES, toExplorerForceGraph } from '../lib/explorerElements'
+import { EXPLORER_EDGE_STYLES, toExplorerForceGraph } from '../lib/explorerElements'
 import { computeExpandActions, dispatchExpandAction } from '../lib/explorerActions'
 import type { NetworkAroundOut, SocialNetworkAroundOut } from '../api/types'
 
@@ -40,6 +41,7 @@ export function ToolExplorer() {
   const networkMutation = useToolCall<NetworkAroundOut>('network_around')
   const socialMutation = useToolCall<SocialNetworkAroundOut>('social_network_around')
   const explorer = useUnifiedExplorer()
+  const nodeStyles = useExplorerNodeStyles()
   const apiRef = useRef<ForceGraphHandle | null>(null)
 
   const [seedType, setSeedType] = useState<SeedType>('entity')
@@ -227,7 +229,7 @@ export function ToolExplorer() {
                       nodes: fg.nodes,
                       edges: fg.edges,
                       positions: apiRef.current?.getPositions() ?? {},
-                      nodeStyles: EXPLORER_NODE_STYLES,
+                      nodeStyles,
                       edgeStyles: EXPLORER_EDGE_STYLES,
                       legend: [
                         { kind: 'seed', label: t('explorer.legend_seed') },
@@ -257,7 +259,7 @@ export function ToolExplorer() {
               apiRef={apiRef}
               nodes={fg.nodes}
               edges={fg.edges}
-              nodeStyles={EXPLORER_NODE_STYLES}
+              nodeStyles={nodeStyles}
               edgeStyles={EXPLORER_EDGE_STYLES}
               selectedIds={explorer.selectedIds}
               onSelectionChange={explorer.select}
