@@ -21,7 +21,10 @@ jobs:
     # nos-tromo/.github/configs/{python-strict,make-common,frontend-eslint}/.
     uses: nos-tromo/.github/.github/workflows/python-app-ci.yml@v3
     with:
-      python-versions: '["3.11","3.12","3.13"]'
+      # 3.12 only: the shipped image (uv …-python3.12) and the dev pin
+      # (.python-version) both run 3.12 — the wider requires-python range
+      # stays for flexibility, but CI tests what production executes.
+      python-versions: '["3.12"]'
       uv-sync-args: '--frozen'
       docker-build: true
       frontend-build: true

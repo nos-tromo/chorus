@@ -65,7 +65,8 @@ interpolates it into the backend service, which surfaces it to the SPA via
 `GET /config`.
 
 Python: `pyproject.toml` accepts `>=3.11,<3.14`; `.python-version`
-pins dev to `3.12`. CI runs 3.11/3.12/3.13. The ruff/pyrefly config
+pins dev to `3.12`. CI tests 3.12 only — the interpreter the shipped
+image runs; the wider range stays declared. The ruff/pyrefly config
 mirrors `nos-tromo/.github/configs/python-strict/`; drift fails CI.
 
 Not yet landed (tracked in `docs/decisions/` / open tickets):
@@ -806,7 +807,7 @@ chorus/                      # top-level repo
   before commit. Full pytest runs in CI, not in the hook.
 - **CI**: GitHub Actions. `.github/workflows/ci.yml` delegates to the
   shared `nos-tromo/.github` python-app-ci workflow (pinned tag):
-  ruff → pyrefly → pytest across 3.11/3.12/3.13 (`uv sync --frozen`) →
+  ruff → pyrefly → pytest on 3.12 (`uv sync --frozen`) →
   Docker build. The airgap delivery bundle is `make bundle` (versioned
   image tarballs via `scripts/bundle_images.sh`). No CI-driven deploy in
   v1; deploys are manual on the airgapped side via the data-plane and
