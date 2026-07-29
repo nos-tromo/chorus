@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
 import { AppHeader } from '@infra/ui'
 import { Sidebar } from './Sidebar'
-import { useT } from '../config/ConfigContext'
+import { useConfig, useT } from '../config/ConfigContext'
 
 export function Shell({ children }: { children: ReactNode }) {
+  const config = useConfig()
   const t = useT()
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
@@ -13,6 +14,9 @@ export function Shell({ children }: { children: ReactNode }) {
         // gateway injects server-side for the backend only, never surfaced
         // to the SPA — the header hides the user block when undefined.
         user={undefined}
+        // GET /config already carries the release version for i18n bootstrap;
+        // reuse it here rather than a second network round trip.
+        version={config.version}
         homeLabel={t('app.header.home')}
         themeLabels={{
           system: t('app.header.theme.system'),
