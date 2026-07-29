@@ -16,7 +16,7 @@ export function Shell({ children }: { children: ReactNode }) {
         user={undefined}
         // GET /config already carries the release version for i18n bootstrap;
         // reuse it here rather than a second network round trip.
-        version={config.version}
+        version={config.version ? `v${config.version}` : undefined}
         homeLabel={t('app.header.home')}
         themeLabels={{
           system: t('app.header.theme.system'),

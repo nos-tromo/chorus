@@ -33,7 +33,7 @@ function renderShell() {
 describe('Shell', () => {
   it('passes the config version through to AppHeader', async () => {
     renderShell()
-    expect(await screen.findByTestId('appheader-version')).toHaveTextContent('1.2.3')
+    expect(await screen.findByTestId('appheader-version')).toHaveTextContent('v1.2.3')
   })
 
   it('renders exactly one app-title header row', async () => {
