@@ -745,6 +745,10 @@ chorus/                      # top-level repo
     index.html
     package.json + pnpm-lock.yaml
     vite.config.ts           # dev proxy of API prefixes → :8000
+                             # NB: every NEW backend route must be added BOTH here
+                             # (API_PREFIXES) and to nginx/default.conf.template's
+                             # proxied-prefix regex, or the SPA fallback silently
+                             # serves index.html for it (bit us with /whoami)
     tsconfig.json / vitest.config.ts
     nginx/
       default.conf.template  # env-templated upload limit (CHORUS_CLIENT_MAX_BODY_SIZE)

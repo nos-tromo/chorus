@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 const BACKEND = process.env.CHORUS_BACKEND_ORIGIN ?? 'http://localhost:8000'
-const API_PREFIXES = ['health', 'config', 'tools', 'agent', 'ingestion', 'stats', 'version']
+const API_PREFIXES = ['health', 'config', 'tools', 'agent', 'ingestion', 'stats', 'version', 'whoami']
 const proxy = Object.fromEntries(
   API_PREFIXES.map((p) => [
     `/chorus/${p}`,
