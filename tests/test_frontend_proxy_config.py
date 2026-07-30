@@ -43,6 +43,11 @@ def test_frontend_spa_fallback_and_api_proxy() -> None:
     assert "try_files $uri /index.html" in conf
     for prefix in ("/config", "/tools", "/agent", "/ingestion", "/health"):
         assert prefix in conf
+    # whoami feeds the AppHeader's user display; missing it here means the
+    # SPA fallback silently serves index.html for the fetch (bit us once).
+    assert "whoami" in conf
+    vite = (REPO / "frontend" / "vite.config.ts").read_text()
+    assert "'whoami'" in vite
 
 
 def test_frontend_image_has_no_python_packages() -> None:
