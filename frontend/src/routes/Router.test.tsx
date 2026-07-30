@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { ConfigProvider } from '../config/ConfigContext'
 import { Shell } from '../layout/Shell'
 import { AppRoutes } from './Router'
-import type { AppConfig } from '../api/types'
+import type { AppConfig, Whoami } from '../api/types'
 
 vi.mock('../api/config', () => ({
   fetchConfig: vi.fn(
@@ -14,6 +14,8 @@ vi.mock('../api/config', () => ({
   ),
   // Shell renders Sidebar, which mounts VersionBadge — stub its fetch too.
   getVersion: vi.fn((): Promise<{ version: string }> => Promise.resolve({ version: '' })),
+  // Shell also mounts useWhoami — stub it so it doesn't hit the network.
+  getWhoami: vi.fn((): Promise<Whoami> => Promise.resolve({ username: 'alice', display_name: null })),
 }))
 
 function makeClient() {

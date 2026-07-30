@@ -4,6 +4,12 @@ export interface AppConfig {
   version: string
 }
 
+/** Response from the authenticated GET /whoami route. */
+export interface Whoami {
+  username: string
+  display_name: string | null
+}
+
 export interface ToolMeta {
   name: string
   description: string
