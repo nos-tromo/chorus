@@ -46,8 +46,7 @@ export function Sidebar() {
 
   return (
     <aside className="w-64 shrink-0 border-r border-border flex flex-col gap-4 bg-muted p-4">
-      <h2 className="text-lg font-semibold tracking-tight">chorus</h2>
-
+      {/* AppHeader in Shell already renders the app title — no second one here. */}
       <nav className="flex flex-col gap-1">
         {/* Top-level: Dashboard, Agent */}
         <NavLink to="/" end className={navClass}>
