@@ -2,7 +2,11 @@
 .github
 .venv
 .python-version
+.claire
+.claude
+.mypy_cache
 .remember
+.superpowers
 docs
 tests
 var
