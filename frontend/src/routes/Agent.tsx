@@ -81,22 +81,26 @@ export function Agent() {
   const errorDescriptor = mutation.error ? describeError(mutation.error) : null
 
   return (
-    <div className="w-full max-w-3xl p-8 space-y-6">
-      <PageHeader title={t('agent.title')} caption={t('agent.caption')} />
+    <div className="flex h-full w-full max-w-3xl flex-col p-8">
+      <PageHeader
+        title={t('agent.title')}
+        caption={t('agent.caption')}
+        className="mb-4"
+        actions={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={clearConversation}
+            disabled={turns.length === 0 && !mutation.isError}
+          >
+            {t('agent.clear')}
+          </Button>
+        }
+      />
 
-      {/* Clear button */}
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={clearConversation}
-        disabled={turns.length === 0 && !mutation.isError}
-      >
-        {t('agent.clear')}
-      </Button>
-
-      {/* Conversation */}
-      {turns.length > 0 && (
+      {/* Conversation — fills the page; the composer stays pinned below it */}
+      <div className="flex-1 overflow-auto pr-2">
         <div className="space-y-4">
           {turns.map((turn, idx) => (
             <div
@@ -150,22 +154,24 @@ export function Agent() {
           ))}
           <div ref={bottomRef} />
         </div>
-      )}
+      </div>
 
       {/* Thinking spinner */}
       {mutation.isPending && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner label={t('agent.thinking')} />
         </div>
       )}
 
       {/* Error banner */}
       {errorDescriptor && (
-        <Banner variant="danger">{t(errorDescriptor.key, errorDescriptor.vars)}</Banner>
+        <Banner variant="danger" className="mt-4">
+          {t(errorDescriptor.key, errorDescriptor.vars)}
+        </Banner>
       )}
 
       {/* Input form */}
-      <form onSubmit={handleSubmit} className="flex gap-2 items-center">
+      <form onSubmit={handleSubmit} className="mt-4 flex gap-2 items-center">
         <Input
           className="flex-1"
           placeholder={t('agent.chat_input')}
