@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Banner, Button, Card, Input, Spinner } from '@infra/ui'
+import { Banner, Button, Card, Input, PageHeader, Spinner } from '@infra/ui'
 import { DataTable } from '../components/DataTable'
 import { SubmitButton } from '../components/form/SubmitButton'
 import { useConfig, useT } from '../config/ConfigContext'
@@ -270,7 +270,7 @@ export function Ingestion() {
   if (!ingestion_enabled) {
     return (
       <div className="p-8 space-y-4">
-        <h1 className="text-2xl font-semibold">{t('ingest.title')}</h1>
+        <PageHeader title={t('ingest.title')} />
         <Banner variant="info">{t('ingest.disabled')}</Banner>
       </div>
     )
@@ -313,10 +313,7 @@ export function Ingestion() {
 
   return (
     <div className="p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">{t('ingest.title')}</h1>
-        <p className="text-sm text-muted-foreground mt-1">{t('ingest.caption')}</p>
-      </div>
+      <PageHeader title={t('ingest.title')} caption={t('ingest.caption')} />
 
       {/* ── Migrations ─────────────────────────────────────────────────────── */}
       <MigrationsSection busy={busy} />

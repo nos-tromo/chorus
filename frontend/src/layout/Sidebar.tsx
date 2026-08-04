@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
+import { SidebarGroup } from '@infra/ui'
 import { useConfig, useT } from '../config/ConfigContext'
-import { VersionBadge } from '../components/VersionBadge'
 import type { Strings } from '../i18n'
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -45,8 +45,8 @@ export function Sidebar() {
   const t = useT()
 
   return (
-    <aside className="w-64 shrink-0 border-r border-border flex flex-col gap-4 bg-muted p-4">
-      {/* AppHeader in Shell already renders the app title — no second one here. */}
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      {/* AppShell's header already renders the app title — no second one here. */}
       <nav className="flex flex-col gap-1">
         {/* Top-level: Dashboard, Agent */}
         <NavLink to="/" end className={navClass}>
@@ -59,16 +59,13 @@ export function Sidebar() {
 
       {/* Grouped tool links */}
       {NAV_GROUPS.map((group) => (
-        <nav key={group.groupKey} className="flex flex-col gap-1">
-          <p className="px-3 text-[11px] uppercase tracking-wider text-muted-foreground">
-            {t(group.groupKey)}
-          </p>
+        <SidebarGroup key={group.groupKey} label={t(group.groupKey)}>
           {group.items.map(({ labelKey, to }) => (
             <NavLink key={to} to={to} className={navClass}>
               {t(labelKey)}
             </NavLink>
           ))}
-        </nav>
+        </SidebarGroup>
       ))}
 
       {/* Conditional: Ingestion */}
@@ -79,10 +76,6 @@ export function Sidebar() {
           </NavLink>
         </nav>
       )}
-
-      <div className="mt-auto pt-4">
-        <VersionBadge />
-      </div>
-    </aside>
+    </div>
   )
 }

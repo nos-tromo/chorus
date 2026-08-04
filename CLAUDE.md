@@ -45,9 +45,9 @@ since been unified into a single `/tools/explorer` screen (`ToolExplorer.tsx`,
 Entity | Author seed selector and per-kind `expandActions`
 (`@infra/ui#v0.5.0`, ADR 0016 addendum); `AgentGraphCard`'s inline agent
 graphs render through the same mappers. The SPA now defaults to a
-light theme (OS-preference driven, toggled via a shared `AppHeader`
-portal link + tri-state theme switch) with an explicit dashboard nav
-entry (`@infra/ui#v0.6.0`).
+light theme (OS-preference driven, toggled via a shared `AppShell`
+user menu + tri-state theme switch) with an explicit dashboard nav
+entry (`@infra/ui#v0.9.1`).
 The SPA's Landing page is a graph-diagnostics dashboard backed by an
 authenticated, §76-audited `GET /stats` endpoint that reports node/edge
 counts, top entities and authors, alias-resolution coverage, latest
@@ -149,7 +149,7 @@ redesign of the ingestion pipeline, not an incremental feature add.
 ## Tech stack
 
 - **Backend**: Python 3.12, FastAPI, Uvicorn
-- **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.6.0`), served by nginx which reverse-proxies the API same-origin (no CORS)
+- **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.9.1`), served by nginx which reverse-proxies the API same-origin (no CORS)
 - **Graph DB**: Neo4j Community Edition (5.11+ for native vector indexes)
 - **Metadata + audit**: SQLite
 - **Entity extraction**: GLiNER, reached through the inference provider

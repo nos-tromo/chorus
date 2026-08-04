@@ -169,11 +169,12 @@ export const de: Strings = {
   'nav.group.topics': 'Themen',
   'nav.group.networks': 'Netzwerke',
   'nav.explorer': 'Graph-Explorer',
-  // AppHeader (Portal-Link + Theme-Umschalter)
+  // AppShell Benutzermenü (Theme-Umschalter)
   'app.header.home': 'Übersicht',
   'app.header.theme.system': 'System',
   'app.header.theme.light': 'Hell',
   'app.header.theme.dark': 'Dunkel',
+  'app.header.sign_out': 'Abmelden',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph-Übersicht',
   'dashboard.nodes': 'Knoten',

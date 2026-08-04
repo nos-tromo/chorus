@@ -12,9 +12,7 @@ vi.mock('../api/config', () => ({
     (): Promise<AppConfig> =>
       Promise.resolve({ language: 'en', ingestion_enabled: false, version: '0.1.0' }),
   ),
-  // Shell renders Sidebar, which mounts VersionBadge — stub its fetch too.
-  getVersion: vi.fn((): Promise<{ version: string }> => Promise.resolve({ version: '' })),
-  // Shell also mounts useWhoami — stub it so it doesn't hit the network.
+  // Shell mounts useWhoami — stub it so it doesn't hit the network.
   getWhoami: vi.fn((): Promise<Whoami> => Promise.resolve({ username: 'alice', display_name: null })),
 }))
 
@@ -44,6 +42,6 @@ describe('AppRoutes', () => {
 
   it('redirects unknown path to / and renders the Landing page', async () => {
     render(<Wrapper initialEntries={['/nope']} />)
-    expect(await screen.findByRole('heading', { name: /chorus/i, level: 1 })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: /dashboard/i, level: 1 })).toBeTruthy()
   })
 })

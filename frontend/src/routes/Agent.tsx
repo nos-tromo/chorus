@@ -1,7 +1,7 @@
 import { useState, useRef, type FormEvent, type KeyboardEvent } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Banner, Button, CopyButton, Input, Spinner } from '@infra/ui'
+import { Banner, Button, CopyButton, Input, PageHeader, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { describeError } from '../api/errorMessage'
 import { useAgentQuery } from '../hooks/useAgentQuery'
@@ -81,12 +81,8 @@ export function Agent() {
   const errorDescriptor = mutation.error ? describeError(mutation.error) : null
 
   return (
-    <div className="p-8 space-y-6 max-w-3xl">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold">{t('agent.title')}</h1>
-        <p className="text-sm text-muted-foreground mt-1">{t('agent.caption')}</p>
-      </div>
+    <div className="mx-auto w-full max-w-3xl p-8 space-y-6">
+      <PageHeader title={t('agent.title')} caption={t('agent.caption')} />
 
       {/* Clear button */}
       <Button

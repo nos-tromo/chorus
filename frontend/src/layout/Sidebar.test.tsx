@@ -24,10 +24,6 @@ vi.mock('../config/ConfigContext', () => ({
   ),
 }))
 
-// Sidebar mounts VersionBadge, which fetches its own version — mock it out too
-// so no Provider / real fetch is needed for that either.
-vi.mock('../api/config', () => ({ getVersion: vi.fn().mockResolvedValue({ version: '' }) }))
-
 import { useConfig, useT } from '../config/ConfigContext'
 
 // Helpers to re-stub both hooks together (keeps mockConfig in sync).

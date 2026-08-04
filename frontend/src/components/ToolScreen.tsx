@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Banner, Spinner } from '@infra/ui'
+import { Banner, PageHeader, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { describeError } from '../api/errorMessage'
 import { useToolCall } from '../hooks/useToolCall'
@@ -89,13 +89,10 @@ export function ToolScreen({ spec }: ToolScreenProps) {
 
   return (
     <div className="p-8 space-y-6">
-      {/* Title + optional caption */}
-      <div>
-        <h1 className="text-2xl font-semibold">{t(spec.titleKey)}</h1>
-        {spec.captionKey && (
-          <p className="text-sm text-muted-foreground mt-1">{t(spec.captionKey)}</p>
-        )}
-      </div>
+      <PageHeader
+        title={t(spec.titleKey)}
+        caption={spec.captionKey ? t(spec.captionKey) : undefined}
+      />
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
