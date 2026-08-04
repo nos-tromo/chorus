@@ -81,7 +81,7 @@ export function Agent() {
   const errorDescriptor = mutation.error ? describeError(mutation.error) : null
 
   return (
-    <div className="mx-auto w-full max-w-3xl p-8 space-y-6">
+    <div className="w-full max-w-3xl p-8 space-y-6">
       <PageHeader title={t('agent.title')} caption={t('agent.caption')} />
 
       {/* Clear button */}
