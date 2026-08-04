@@ -85,7 +85,7 @@ export function ToolAuthorActivity() {
       <PageHeader title={t('author_activity.title')} caption={t('common.resolution_note')} />
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <EntityInput
           label={t('author_activity.author_input')}
           value={author}
