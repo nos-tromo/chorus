@@ -81,7 +81,7 @@ export function Agent() {
   const errorDescriptor = mutation.error ? describeError(mutation.error) : null
 
   return (
-    <div className="flex h-full w-full max-w-3xl flex-col p-8">
+    <div className="flex h-full w-full flex-col p-8">
       <PageHeader
         title={t('agent.title')}
         caption={t('agent.caption')}

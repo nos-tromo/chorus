@@ -95,7 +95,7 @@ export function ToolScreen({ spec }: ToolScreenProps) {
       />
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
         {spec.fields.map((field, idx) => {
           if (field.kind === 'entity') {
             const label = field.labelKey ? t(field.labelKey) : t('common.entity_input')

@@ -102,7 +102,7 @@ export function ToolExplorer() {
       <PageHeader title={t('explorer.title')} caption={t('explorer.caption')} />
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div className="flex gap-2" role="group" aria-label={t('explorer.title')}>
           <Button
             type="button"

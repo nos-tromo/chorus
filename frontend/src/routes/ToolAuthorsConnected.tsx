@@ -67,7 +67,7 @@ export function ToolAuthorsConnected() {
       />
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <EntityInput
           label={t('authors_connected.seed_author_input')}
           value={seedAuthor}
