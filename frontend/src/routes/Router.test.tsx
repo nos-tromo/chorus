@@ -12,9 +12,7 @@ vi.mock('../api/config', () => ({
     (): Promise<AppConfig> =>
       Promise.resolve({ language: 'en', ingestion_enabled: false, version: '0.1.0' }),
   ),
-  // Shell renders Sidebar, which mounts VersionBadge — stub its fetch too.
-  getVersion: vi.fn((): Promise<{ version: string }> => Promise.resolve({ version: '' })),
-  // Shell also mounts useWhoami — stub it so it doesn't hit the network.
+  // Shell mounts useWhoami — stub it so it doesn't hit the network.
   getWhoami: vi.fn((): Promise<Whoami> => Promise.resolve({ username: 'alice', display_name: null })),
 }))
 

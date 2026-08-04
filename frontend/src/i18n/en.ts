@@ -159,7 +159,7 @@ export const en = {
   'nav.group.topics': 'Topics',
   'nav.group.networks': 'Networks',
   'nav.explorer': 'graph explorer',
-  // AppHeader (portal link + theme toggle)
+  // AppShell user menu (theme toggle)
   'app.header.home': 'Apps',
   'app.header.theme.system': 'system',
   'app.header.theme.light': 'light',

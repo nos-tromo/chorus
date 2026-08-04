@@ -2,7 +2,7 @@
  * Regression test for the in-tab reactivity bug fixed in @infra/ui v0.6.1:
  * before that fix, separate `useTheme()` call sites did not share state (no
  * shared store; only cross-tab `storage` events synced them), so toggling
- * the theme via `AppHeader` never re-rendered anything using
+ * the theme via `AppShell` never re-rendered anything using
  * `useExplorerNodeStyles` — it stayed frozen on the mount-time palette,
  * silently reproducing the AA violation on the toggle path.
  *
@@ -25,7 +25,7 @@ afterEach(() => {
 
 // Sibling consumer: a real useTheme() instance, independent of the one
 // useExplorerNodeStyles calls internally — exercises the toggle from a
-// different call site, same as AppHeader vs. ToolExplorer/AgentGraphCard.
+// different call site, same as AppShell vs. ToolExplorer/AgentGraphCard.
 function ThemeToggle() {
   const { cycle } = useTheme()
   return (
