@@ -9,6 +9,18 @@
   --font-mono: var(--app-font);
 }
 
+/* Dark palette needs a lighter accent for AA as text on the dark
+   background (the base 58% only clears ~3.1:1 there). Mirrors
+   theme.css's attribute/media cascade. */
+:root[data-theme='dark'] {
+  --app-accent: hsl(262 83% 70%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --app-accent: hsl(262 83% 70%);
+  }
+}
+
 html, body, #root {
   height: 100%;
 }
