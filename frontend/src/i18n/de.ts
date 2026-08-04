@@ -174,6 +174,7 @@ export const de: Strings = {
   'app.header.theme.system': 'System',
   'app.header.theme.light': 'Hell',
   'app.header.theme.dark': 'Dunkel',
+  'app.header.sign_out': 'Abmelden',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph-Übersicht',
   'dashboard.nodes': 'Knoten',

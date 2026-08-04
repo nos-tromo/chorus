@@ -164,6 +164,7 @@ export const en = {
   'app.header.theme.system': 'system',
   'app.header.theme.light': 'light',
   'app.header.theme.dark': 'dark',
+  'app.header.sign_out': 'Sign out',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph overview',
   'dashboard.nodes': 'Nodes',
