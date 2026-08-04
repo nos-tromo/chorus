@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Banner, Card, Spinner } from '@infra/ui'
+import { Banner, Card, PageHeader, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { describeError } from '../api/errorMessage'
 import { useToolCall } from '../hooks/useToolCall'
@@ -82,13 +82,7 @@ export function ToolAuthorActivity() {
 
   return (
     <div className="p-8 space-y-6">
-      {/* Title */}
-      <div>
-        <h1 className="text-2xl font-semibold">{t('author_activity.title')}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {t('common.resolution_note')}
-        </p>
-      </div>
+      <PageHeader title={t('author_activity.title')} caption={t('common.resolution_note')} />
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">

@@ -44,6 +44,6 @@ describe('AppRoutes', () => {
 
   it('redirects unknown path to / and renders the Landing page', async () => {
     render(<Wrapper initialEntries={['/nope']} />)
-    expect(await screen.findByRole('heading', { name: /chorus/i, level: 1 })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: /dashboard/i, level: 1 })).toBeTruthy()
   })
 })

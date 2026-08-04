@@ -13,6 +13,7 @@ import {
   Banner,
   Button,
   ForceGraph,
+  PageHeader,
   Spinner,
   type ForceGraphHandle,
   downloadText,
@@ -98,11 +99,7 @@ export function ToolExplorer() {
 
   return (
     <div className="p-8 space-y-6">
-      {/* Title + caption */}
-      <div>
-        <h1 className="text-2xl font-semibold">{t('explorer.title')}</h1>
-        <p className="text-sm text-muted-foreground mt-1">{t('explorer.caption')}</p>
-      </div>
+      <PageHeader title={t('explorer.title')} caption={t('explorer.caption')} />
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">

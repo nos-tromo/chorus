@@ -1,4 +1,4 @@
-import { Card, Banner, Spinner, Badge } from '@infra/ui'
+import { Card, Banner, PageHeader, Spinner, Badge } from '@infra/ui'
 import { useHealth } from '../hooks/useHealth'
 import { useTools } from '../hooks/useTools'
 import { useStats } from '../hooks/useStats'
@@ -53,10 +53,7 @@ export function Landing() {
 
   return (
     <div className="p-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">chorus</h1>
-        <p className="text-sm text-muted-foreground mt-1">{t('landing.caption')}</p>
-      </div>
+      <PageHeader title={t('nav.dashboard')} caption={t('landing.caption')} />
 
       {/* Ingestion status line */}
       <p className="text-sm">

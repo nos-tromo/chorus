@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Banner, Card, Spinner } from '@infra/ui'
+import { Banner, Card, PageHeader, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { describeError } from '../api/errorMessage'
 import { useToolCall } from '../hooks/useToolCall'
@@ -61,13 +61,10 @@ export function ToolAuthorsConnected() {
 
   return (
     <div className="p-8 space-y-6">
-      {/* Title */}
-      <div>
-        <h1 className="text-2xl font-semibold">{t('authors_connected.title')}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {t('authors_connected.caption')}
-        </p>
-      </div>
+      <PageHeader
+        title={t('authors_connected.title')}
+        caption={t('authors_connected.caption')}
+      />
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
