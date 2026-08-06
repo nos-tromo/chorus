@@ -24,7 +24,7 @@ jobs:
       # 3.12 only: requires-python is >=3.12,<3.13, and the shipped image
       # (uv …-python3.12) runs 3.12.
       python-versions: '["3.12"]'
-      uv-sync-args: '--frozen'
+      uv-sync-args: '--locked'
       docker-build: true
       frontend-build: true
       frontend-dir: 'frontend'
