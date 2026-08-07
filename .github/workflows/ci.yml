@@ -19,12 +19,12 @@ jobs:
     # drift-checks; nos-tromo style tuning: line-length=120, ANN401 ignored,
     # local pyrefly hook). Canonical configs at
     # nos-tromo/.github/configs/{python-strict,make-common,frontend-eslint}/.
-    uses: nos-tromo/.github/.github/workflows/python-app-ci.yml@589ea4656ecba00c278ea02b4dbf754727b18062 # v3.11
+    uses: nos-tromo/.github/.github/workflows/python-app-ci.yml@862094798ffb1a50433db7fa8759cca1f54c4dc4 # v3.12
     with:
       # 3.12 only: requires-python is >=3.12,<3.13, and the shipped image
       # (uv …-python3.12) runs 3.12.
       python-versions: '["3.12"]'
-      uv-sync-args: '--frozen'
+      uv-sync-args: '--locked'
       docker-build: true
       frontend-build: true
       frontend-dir: 'frontend'
