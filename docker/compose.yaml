@@ -20,13 +20,29 @@ x-logging: &default-logging
     max-file: "5"
     compress: "true"
 
+##########################################################
+# Shared hardening (deploy ADR 0001) — no privilege
+# escalation, no capabilities; both images run non-root
+# with read-only root filesystems. All backend writes go
+# to the chorus-state volume ($CHORUS_HOME).
+##########################################################
+x-hardened: &hardened
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
   backend:
+    <<: *hardened
     image: chorus-backend:${CHORUS_VERSION:-latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
     logging: *default-logging
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
     env_file:
       - path: ../.env
         required: false
@@ -63,11 +79,20 @@ services:
       start_period: 30s
 
   frontend:
+    <<: *hardened
     image: chorus-frontend:${CHORUS_VERSION:-latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
     logging: *default-logging
+    # nginx (unprivileged image) writes pid/temp under /tmp; the envsubst
+    # entrypoint renders the template into /etc/nginx/conf.d at startup.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+      # mode=1777: the tmpfs shadows the image dir root-owned; the envsubst
+      # entrypoint (uid 101) must be able to render the template into it.
+      - /etc/nginx/conf.d:size=1m,mode=1777
     environment:
       # nginx envsubst fills the upload body-size limit in the template.
       CHORUS_CLIENT_MAX_BODY_SIZE: ${CHORUS_CLIENT_MAX_BODY_SIZE:-512m}
@@ -82,7 +107,7 @@ services:
         aliases:
           - chorus-frontend
     expose:
-      - "80"
+      - "8080"
     restart: unless-stopped
 
 networks:
