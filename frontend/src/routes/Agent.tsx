@@ -1,7 +1,7 @@
 import { useState, useRef, type FormEvent, type KeyboardEvent } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Banner, Button, CopyButton, Input, PageHeader, Spinner } from '@infra/ui'
+import { Banner, Button, CopyButton, Input, PageHeader, RemoveButton, Spinner } from '@infra/ui'
 import { useT } from '../config/ConfigContext'
 import { describeError } from '../api/errorMessage'
 import { useAgentQuery } from '../hooks/useAgentQuery'
@@ -86,16 +86,14 @@ export function Agent() {
         title={t('agent.title')}
         caption={t('agent.caption')}
         className="mb-4"
+        // × not trash: this empties the transcript in the page. Nothing stored
+        // is destroyed, so it must not carry the trash icon.
         actions={
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
+          <RemoveButton
+            label={t('agent.clear')}
             onClick={clearConversation}
             disabled={turns.length === 0 && !mutation.isError}
-          >
-            {t('agent.clear')}
-          </Button>
+          />
         }
       />
 

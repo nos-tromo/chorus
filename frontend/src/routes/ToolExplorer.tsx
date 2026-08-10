@@ -12,6 +12,7 @@ import { useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Banner,
   Button,
+  DownloadButton,
   ForceGraph,
   PageHeader,
   Spinner,
@@ -189,9 +190,8 @@ export function ToolExplorer() {
                   edges: explorer.graph.edges.length,
                 })}
               </p>
-              <Button
-                type="button"
-                variant="secondary"
+              <DownloadButton
+                label={t('graph.export_json')}
                 onClick={() =>
                   downloadText(
                     'chorus-explorer.json',
@@ -200,11 +200,10 @@ export function ToolExplorer() {
                   )
                 }
               >
-                {t('graph.export_json')}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
+                {t('graph.format_json')}
+              </DownloadButton>
+              <DownloadButton
+                label={t('graph.export_graphml')}
                 onClick={() =>
                   downloadText(
                     'chorus-explorer.graphml',
@@ -213,11 +212,10 @@ export function ToolExplorer() {
                   )
                 }
               >
-                {t('graph.export_graphml')}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
+                {t('graph.format_graphml')}
+              </DownloadButton>
+              <DownloadButton
+                label={t('graph.export_html')}
                 onClick={() =>
                   downloadText(
                     'chorus-explorer.html',
@@ -238,8 +236,8 @@ export function ToolExplorer() {
                   )
                 }
               >
-                {t('graph.export_html')}
-              </Button>
+                {t('graph.format_html')}
+              </DownloadButton>
             </div>
             {seededMutation?.data?.truncated && <Banner variant="info">{t('explorer.capped')}</Banner>}
             {explorer.expansionTruncated && (

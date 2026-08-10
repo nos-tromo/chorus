@@ -97,9 +97,14 @@ export const de: Strings = {
     'Erweiterung begrenzt — die {limit} am stärksten vernetzten Nachbarn werden angezeigt.',
   'graph.hint':
     'Scrollen zum Zoomen, Ziehen zum Verschieben, Klick zum Auswählen, Doppelklick zum Erweitern.',
+  // Barrierefreie Namen der drei Download-Buttons; sichtbar steht neben jedem
+  // Icon nur das Format darunter.
   'graph.export_json': 'JSON exportieren',
   'graph.export_graphml': 'GraphML exportieren',
   'graph.export_html': 'HTML exportieren',
+  'graph.format_json': 'JSON',
+  'graph.format_graphml': 'GraphML',
+  'graph.format_html': 'HTML',
   'explorer.legend_seed': 'Ausgangspunkt',
   'explorer.legend_author': 'Autoren',
   'explorer.legend_topic': 'Themen',

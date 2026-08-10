@@ -89,9 +89,14 @@ export const en = {
     'Expansion capped — the most connected {limit} neighbors are shown.',
   'graph.hint':
     'Scroll to zoom, drag to move, click to select, double-click to expand.',
+  // Accessible names for the graph's three download buttons; the visible chip
+  // beside each icon is the bare format below.
   'graph.export_json': 'Export JSON',
   'graph.export_graphml': 'Export GraphML',
   'graph.export_html': 'Export HTML',
+  'graph.format_json': 'JSON',
+  'graph.format_graphml': 'GraphML',
+  'graph.format_html': 'HTML',
   'explorer.legend_seed': 'Seed',
   'explorer.legend_author': 'Authors',
   'explorer.legend_topic': 'Topics',
