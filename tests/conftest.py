@@ -23,6 +23,7 @@ _CHORUS_ENV_MODULES = (
     "chorus.utils.env_cfg",
     "chorus.utils.logger_cfg",
     "chorus.db.neo4j",
+    "chorus.db.registry",
     "chorus.audit.logger",
     "chorus.api.auth.principal",
     "chorus.api.routers.health",
