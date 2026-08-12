@@ -13,10 +13,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
   result_count INTEGER NOT NULL,
   duration_ms INTEGER NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('ok','denied','error')),
-  error_message TEXT
+  error_message TEXT,
+  project TEXT NOT NULL DEFAULT 'default'   -- ADR 0017 project attribution
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_ts        ON audit_log(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_project_ts ON audit_log(project, ts);
 CREATE INDEX IF NOT EXISTS idx_audit_user_ts   ON audit_log(user, ts);
 CREATE INDEX IF NOT EXISTS idx_audit_tool_ts   ON audit_log(tool_name, ts);
 CREATE INDEX IF NOT EXISTS idx_audit_status_ts ON audit_log(status, ts);
