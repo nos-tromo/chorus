@@ -26,8 +26,8 @@ def _build_app(driver: Driver, audit: Any) -> FastAPI:
 
     app = FastAPI()
     app.include_router(stats_router.router)
-    app.state.driver = driver
-    app.state.audit = audit
+    app.state.drivers = {"default": driver}
+    app.state.audits = {"default": audit}
     return app
 
 
@@ -177,6 +177,7 @@ def test_stats_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) 
     assert row["user"] == "analyst"
     assert row["tool_name"] == "stats"
     assert row["status"] == "ok"
+    assert row["project"] == "default"
 
 
 # ---------------------------------------------------------------------------
