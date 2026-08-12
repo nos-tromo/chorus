@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from pydantic import ValidationError
 
-from chorus.api.auth.principal import resolve_principal
+from chorus.api.deps import RequestContext, resolve_context
 from chorus.tools import TOOLS
 
 router = APIRouter(prefix="/tools", tags=["tools"])
@@ -40,23 +40,21 @@ def list_tools() -> list[dict[str, Any]]:
 def invoke_tool(
     name: str,
     payload: dict[str, Any],
-    request: Request,
-    user: str = Depends(resolve_principal),
+    ctx: RequestContext = Depends(resolve_context),  # noqa: B008 — FastAPI DI marker
 ) -> dict[str, Any]:
     """Invoke a registered tool by name and return its result as JSON.
 
     Validates the payload against the tool's input model, then dispatches
     into ``TOOLS[name].run`` (which is the ``@audited`` wrapper, so a
-    row is written to the audit log on every call).
+    row is written to the audit log on every call) against the active
+    project's driver and audit log (ADR 0017).
 
     Args:
         name: Registered tool name from :data:`chorus.tools.TOOLS`.
         payload: Caller-supplied parameters to validate against the
             tool's input model.
-        request: The active FastAPI request (used to access the shared
-            driver and audit logger on ``app.state``).
-        user: Resolved principal injected by
-            :func:`resolve_principal`.
+        ctx: Per-request context (principal, active project, that
+            project's driver + audit logger).
 
     Returns:
         The tool's output model serialized as a JSON-compatible dict.
@@ -74,9 +72,10 @@ def invoke_tool(
         logger.warning(f"Tool input validation failed: {exc.errors()}")
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid request.") from exc
     out = spec.run(
-        request.app.state.driver,
+        ctx.driver,
         parsed,
-        user=user,
-        audit=request.app.state.audit,
+        user=ctx.user,
+        audit=ctx.audit,
+        project=ctx.project,
     )
     return out.model_dump(mode="json")
