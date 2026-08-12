@@ -105,6 +105,7 @@ def run_agent(
     audit: AuditLogger,
     *,
     user: str,
+    project: str = "default",
     messages: list[dict[str, Any]],
     max_iterations: int = 6,
     model: str | None = None,
@@ -119,6 +120,9 @@ def run_agent(
         audit: Audit logger; the turn is recorded as a parent ``agent_query``
             row and each tool call writes its own row.
         user: Authenticated principal, attributed on every audit row.
+        project: Active project (ADR 0017), attributed on the parent
+            ``agent_query`` audit row and every per-tool row. The driver
+            must already be bound to this project's instance.
         messages: Prior visible conversation turns (role/content); the last
             should be the new user message.
         max_iterations: Maximum model-tool rounds before giving up.
@@ -136,7 +140,7 @@ def run_agent(
     convo: list[dict[str, Any]] = [{"role": "system", "content": get_system_prompt(language)}, *messages]
     tools = tool_definitions()
     trace: list[TraceStep] = []
-    with audit.time_tool(user, "agent_query", {"messages": messages}) as slot:
+    with audit.time_tool(user, "agent_query", {"messages": messages}, project=project) as slot:
         for _ in range(max_iterations):
             try:
                 msg = provider.chat_message(convo, model=model, tools=tools, tool_choice="auto")
@@ -177,6 +181,7 @@ def run_agent(
                     driver,
                     audit,
                     user=user,
+                    project=project,
                     max_items=tool_message_max_items,
                     max_chars=tool_message_max_chars,
                 )
@@ -208,6 +213,7 @@ def _execute_tool_call(
     audit: AuditLogger,
     *,
     user: str,
+    project: str = "default",
     max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
     max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
 ) -> tuple[TraceStep, dict[str, Any]]:
@@ -245,7 +251,7 @@ def _execute_tool_call(
         )
 
     try:
-        out = spec.run(driver, parsed, user=user, audit=audit)
+        out = spec.run(driver, parsed, user=user, audit=audit, project=project)
     except Exception as exc:  # surface any tool failure back to the model
         detail = f"{type(exc).__name__}: {exc}"
         logger.opt(exception=exc).error(f"agent: tool {name!r} failed")

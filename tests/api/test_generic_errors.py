@@ -94,8 +94,8 @@ def _build_agent_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     app = FastAPI()
     install_error_handlers(app)
     app.include_router(agent_router.router)
-    app.state.driver = object()
-    app.state.audit = object()
+    app.state.drivers = {"default": object()}
+    app.state.audits = {"default": object()}
     return app
 
 

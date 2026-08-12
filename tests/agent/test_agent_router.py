@@ -56,8 +56,8 @@ def test_agent_query_endpoint_returns_answer_and_trace(
 
     app = FastAPI()
     app.include_router(agent_router.router)
-    app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.drivers = {"default": migrated_driver}
+    app.state.audits = {"default": in_memory_audit}
 
     client = TestClient(app)
     resp = client.post(
@@ -88,8 +88,8 @@ def test_unsupported_model_returns_502(
 
     app = FastAPI()
     app.include_router(agent_router.router)
-    app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.drivers = {"default": migrated_driver}
+    app.state.audits = {"default": in_memory_audit}
 
     resp = TestClient(app).post(
         "/agent/query",
@@ -116,8 +116,8 @@ def test_inference_unreachable_returns_502(
 
     app = FastAPI()
     app.include_router(agent_router.router)
-    app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.drivers = {"default": migrated_driver}
+    app.state.audits = {"default": in_memory_audit}
 
     resp = TestClient(app).post(
         "/agent/query",
@@ -144,8 +144,8 @@ def test_context_window_exceeded_returns_502(
 
     app = FastAPI()
     app.include_router(agent_router.router)
-    app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.drivers = {"default": migrated_driver}
+    app.state.audits = {"default": in_memory_audit}
 
     resp = TestClient(app).post(
         "/agent/query",
@@ -174,8 +174,8 @@ def test_response_language_de_uses_german_prompt(
     monkeypatch.setattr(provider, "chat_message", _capture)
     app = FastAPI()
     app.include_router(agent_router.router)
-    app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.drivers = {"default": migrated_driver}
+    app.state.audits = {"default": in_memory_audit}
     resp = TestClient(app).post(
         "/agent/query",
         json={"messages": [{"role": "user", "content": "hallo"}]},
@@ -203,8 +203,8 @@ def test_default_response_language_uses_english_prompt(
     monkeypatch.setattr(provider, "chat_message", _capture)
     app = FastAPI()
     app.include_router(agent_router.router)
-    app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.drivers = {"default": migrated_driver}
+    app.state.audits = {"default": in_memory_audit}
     resp = TestClient(app).post(
         "/agent/query",
         json={"messages": [{"role": "user", "content": "hi"}]},

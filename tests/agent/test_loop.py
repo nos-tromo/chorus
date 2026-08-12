@@ -521,7 +521,7 @@ def test_trace_carries_graph_tool_result(
         edges=[NetworkEdge(source="author:a1", target="topic:berlin", weight=1)],
         truncated=False,
     )
-    _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, user, audit: fake_out)
+    _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, user, audit, **kwargs: fake_out)
     _script(
         monkeypatch,
         [
@@ -587,7 +587,7 @@ def test_trace_omits_oversized_graph_result(
         NetworkNode(id=f"author:a{i}", kind="author", label=f"a{i}", entity_id=None, is_seed=False) for i in range(501)
     ]
     fake_out = NetworkAroundOut(seed="Berlin", seed_node_id="topic:berlin", nodes=nodes, edges=[], truncated=True)
-    _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, user, audit: fake_out)
+    _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, user, audit, **kwargs: fake_out)
     _script(
         monkeypatch,
         [
