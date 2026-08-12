@@ -13,6 +13,7 @@ boot against any of the three supported backends.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -259,6 +260,30 @@ class NERClientConfig:
     threshold: float
     timeout: float
     model_version: str
+
+
+_PROJECT_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+
+
+@dataclass(frozen=True)
+class ProjectsConfig:
+    """The set of configured projects (ADR 0017).
+
+    Each project maps to its own Neo4j instance and its own state
+    subtree under ``$CHORUS_HOME/projects/<name>``. When
+    ``CHORUS_PROJECTS`` is unset, chorus runs in single-project
+    backward-compat mode with one implicit project ``"default"`` that
+    uses the legacy flat env vars (``NEO4J_URI`` etc.).
+
+    Attributes:
+        names: Configured project names, order preserved from
+            ``CHORUS_PROJECTS``; ``("default",)`` in compat mode.
+        explicit: ``False`` when ``CHORUS_PROJECTS`` is unset/empty
+            (compat mode), ``True`` when projects were configured.
+    """
+
+    names: tuple[str, ...]
+    explicit: bool
 
 
 @dataclass(frozen=True)
@@ -553,6 +578,36 @@ def load_ner_client_env(
         timeout=_env_float("NER_TIMEOUT", default_timeout),
         model_version=_env("NER_MODEL_VERSION", default_model_version) or default_model_version,
     )
+
+
+def load_projects_env() -> ProjectsConfig:
+    """Load the configured project set from ``CHORUS_PROJECTS``.
+
+    The value is a comma-separated list of project names matching
+    ``^[a-z][a-z0-9-]{0,31}$`` (names feed env-var suffixes, filesystem
+    paths, and HTTP headers). Empty segments are dropped; order is
+    preserved. Unset/empty means single-project compat mode.
+
+    Returns:
+        A populated :class:`ProjectsConfig`.
+
+    Raises:
+        RuntimeError: If a name violates the grammar or appears twice —
+            both are deployment mistakes that must fail at startup, not
+            surface later as a wrong-instance query.
+    """
+    raw = _env("CHORUS_PROJECTS")
+    if raw is None:
+        return ProjectsConfig(names=("default",), explicit=False)
+    names = [part.strip() for part in raw.split(",") if part.strip()]
+    if not names:
+        return ProjectsConfig(names=("default",), explicit=False)
+    for name in names:
+        if not _PROJECT_NAME_RE.match(name):
+            raise RuntimeError(f"Invalid project name {name!r} in CHORUS_PROJECTS; expected ^[a-z][a-z0-9-]{{0,31}}$")
+    if len(set(names)) != len(names):
+        raise RuntimeError(f"CHORUS_PROJECTS contains duplicate project names: {raw!r}")
+    return ProjectsConfig(names=tuple(names), explicit=True)
 
 
 def load_neo4j_env() -> Neo4jConfig:
