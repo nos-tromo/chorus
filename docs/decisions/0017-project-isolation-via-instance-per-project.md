@@ -1,6 +1,6 @@
 # 0017 — Project isolation via one Neo4j instance per project
 
-Status: proposed
+Status: accepted
 Date: 2026-08-12
 
 ## Context
