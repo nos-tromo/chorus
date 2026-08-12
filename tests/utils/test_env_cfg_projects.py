@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 
@@ -124,3 +126,59 @@ def test_neo4j_env_per_project_overrides_win(monkeypatch: pytest.MonkeyPatch) ->
     cfg = load_neo4j_env("alpha-two")
     assert cfg.uri == "bolt://neo4j-alpha-two:7687"
     assert cfg.user == "own-user"
+
+
+def test_project_paths_layout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Per-project state lives under ``$CHORUS_HOME/projects/<name>/``."""
+    monkeypatch.setenv("CHORUS_HOME", str(tmp_path))
+    monkeypatch.setenv("CHORUS_PROJECTS", "alpha")
+    for key in ("AUDIT_DB_PATH", "RAW_STORE_PATH", "INGESTION_SOURCE_DIR"):
+        monkeypatch.delenv(key, raising=False)
+
+    from chorus.utils.env_cfg import load_project_paths_env
+
+    paths = load_project_paths_env("alpha")
+    root = tmp_path / "projects" / "alpha"
+    assert paths.root == root
+    assert paths.audit_db == root / "audit.sqlite"
+    assert paths.raw_store == root / "raw.sqlite"
+    assert paths.uploads == root / "uploads"
+    assert paths.ingest_source == root / "ingest"
+
+
+def test_project_paths_compat_honors_overrides(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """In compat mode the legacy path overrides still win for ``default``."""
+    monkeypatch.setenv("CHORUS_HOME", str(tmp_path))
+    monkeypatch.delenv("CHORUS_PROJECTS", raising=False)
+    monkeypatch.setenv("AUDIT_DB_PATH", str(tmp_path / "custom-audit.sqlite"))
+    monkeypatch.setenv("RAW_STORE_PATH", str(tmp_path / "custom-raw.sqlite"))
+    monkeypatch.setenv("INGESTION_SOURCE_DIR", str(tmp_path / "drops"))
+
+    from chorus.utils.env_cfg import load_project_paths_env
+
+    paths = load_project_paths_env("default")
+    assert paths.audit_db == tmp_path / "custom-audit.sqlite"
+    assert paths.raw_store == tmp_path / "custom-raw.sqlite"
+    assert paths.ingest_source == tmp_path / "drops"
+    assert paths.uploads == tmp_path / "projects" / "default" / "uploads"
+
+
+def test_project_paths_explicit_ignores_overrides(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """In explicit multi-project mode the single-path overrides are ignored.
+
+    A single override path cannot be partitioned per project; honoring it
+    would merge state across projects.
+    """
+    monkeypatch.setenv("CHORUS_HOME", str(tmp_path))
+    monkeypatch.setenv("CHORUS_PROJECTS", "alpha,beta")
+    monkeypatch.setenv("AUDIT_DB_PATH", str(tmp_path / "custom-audit.sqlite"))
+    monkeypatch.setenv("RAW_STORE_PATH", str(tmp_path / "custom-raw.sqlite"))
+    monkeypatch.setenv("INGESTION_SOURCE_DIR", str(tmp_path / "drops"))
+
+    from chorus.utils.env_cfg import load_project_paths_env
+
+    paths = load_project_paths_env("beta")
+    root = tmp_path / "projects" / "beta"
+    assert paths.audit_db == root / "audit.sqlite"
+    assert paths.raw_store == root / "raw.sqlite"
+    assert paths.ingest_source == root / "ingest"

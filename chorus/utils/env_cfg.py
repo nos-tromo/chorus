@@ -464,6 +464,29 @@ class PathConfig:
     raw_store: Path
 
 
+@dataclass(frozen=True)
+class ProjectPaths:
+    """Per-project state layout under ``$CHORUS_HOME/projects/<name>`` (ADR 0017).
+
+    Each project keeps its own audit log, raw store, upload staging, and
+    ingest drop point, so project state can be backed up, retained, and
+    erased independently — mirroring the per-project Neo4j instances.
+
+    Attributes:
+        root: The project's state root, ``$CHORUS_HOME/projects/<name>``.
+        audit_db: §76 BDSG audit SQLite database for this project.
+        raw_store: Raw-store SQLite database for this project.
+        uploads: Upload staging directory for the UI ingestion path.
+        ingest_source: Default CSV drop directory for CLI ingestion.
+    """
+
+    root: Path
+    audit_db: Path
+    raw_store: Path
+    uploads: Path
+    ingest_source: Path
+
+
 def load_inference_env() -> InferenceConfig:
     """Load and validate inference configuration from the environment.
 
@@ -781,4 +804,35 @@ def load_path_env() -> PathConfig:
         queries=pkg_root / "queries",
         migrations=pkg_root / "migrations",
         raw_store=raw_store,
+    )
+
+
+def load_project_paths_env(project: str) -> ProjectPaths:
+    """Resolve one project's state paths under ``$CHORUS_HOME/projects/<name>``.
+
+    The legacy single-path overrides (``AUDIT_DB_PATH``, ``RAW_STORE_PATH``,
+    ``INGESTION_SOURCE_DIR``) are honored only in single-project compat
+    mode (``CHORUS_PROJECTS`` unset, project ``"default"``) — a single
+    override path cannot be partitioned, and honoring it in explicit
+    multi-project mode would merge state across projects.
+
+    Args:
+        project: Project name from :func:`load_projects_env`.
+
+    Returns:
+        A populated :class:`ProjectPaths` with absolute paths.
+    """
+    home = load_path_env().chorus_home
+    root = home / "projects" / project
+    compat = project == "default" and not load_projects_env().explicit
+
+    audit_raw = _env("AUDIT_DB_PATH") if compat else None
+    raw_store_raw = _env("RAW_STORE_PATH") if compat else None
+    ingest_raw = _env("INGESTION_SOURCE_DIR") if compat else None
+    return ProjectPaths(
+        root=root,
+        audit_db=Path(audit_raw) if audit_raw else root / "audit.sqlite",
+        raw_store=Path(raw_store_raw) if raw_store_raw else root / "raw.sqlite",
+        uploads=root / "uploads",
+        ingest_source=Path(ingest_raw).expanduser() if ingest_raw else root / "ingest",
     )
