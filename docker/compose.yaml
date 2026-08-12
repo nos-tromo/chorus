@@ -20,13 +20,59 @@ x-logging: &default-logging
     max-file: "5"
     compress: "true"
 
+##########################################################
+# Shared hardening (deploy ADR 0001) — no privilege
+# escalation, no capabilities; both images run non-root
+# with read-only root filesystems. All backend writes go
+# to the chorus-state volume ($CHORUS_HOME).
+##########################################################
+x-hardened: &hardened
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
+  ##########################################################
+  # Volume ownership (deploy ADR 0001, self-healing)
+  #
+  # The backend runs as uid 10001 with a read-only rootfs, but external
+  # volumes keep whatever ownership they were created with (root, on a
+  # fresh `docker volume create`). This one-shot root container fixes
+  # ownership before the backend starts; it reuses the backend image so
+  # the airgap bundle needs no extra image. The find form only touches
+  # wrong-owner entries. Canonical shape: docint/docker/compose.yaml.
+  ##########################################################
+  volume-permissions:
+    image: chorus-backend:${CHORUS_VERSION:-latest}
+    logging: *default-logging
+    user: "0:0"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    network_mode: none
+    # Root is the mountpoint itself — its parent dirs live on the
+    # read-only image rootfs and must not (and cannot) be chowned.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        find /var/lib/chorus
+        -xdev ! -user 10001 -exec chown -h 10001:10001 {} +
+    volumes:
+      - chorus-state:/var/lib/chorus
+    restart: "no"
+
   backend:
+    <<: *hardened
     image: chorus-backend:${CHORUS_VERSION:-latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
     logging: *default-logging
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
     env_file:
       - path: ../.env
         required: false
@@ -61,13 +107,25 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    depends_on:
+      volume-permissions:
+        condition: service_completed_successfully
 
   frontend:
+    <<: *hardened
     image: chorus-frontend:${CHORUS_VERSION:-latest}
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
     logging: *default-logging
+    # nginx (unprivileged image) writes pid/temp under /tmp; the envsubst
+    # entrypoint renders the template into /etc/nginx/conf.d at startup.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+      # mode=1777: the tmpfs shadows the image dir root-owned; the envsubst
+      # entrypoint (uid 101) must be able to render the template into it.
+      - /etc/nginx/conf.d:size=1m,mode=1777
     environment:
       # nginx envsubst fills the upload body-size limit in the template.
       CHORUS_CLIENT_MAX_BODY_SIZE: ${CHORUS_CLIENT_MAX_BODY_SIZE:-512m}
@@ -82,7 +140,7 @@ services:
         aliases:
           - chorus-frontend
     expose:
-      - "80"
+      - "8080"
     restart: unless-stopped
 
 networks:

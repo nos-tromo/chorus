@@ -33,8 +33,18 @@ ENV PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:${PATH}" \
     UV_PROJECT_ENVIRONMENT=/app/.venv
 
+# Non-root runtime user (deploy ADR 0001). /app stays root-owned and
+# read-only to the app user; all runtime writes land under CHORUS_HOME
+# (the chorus-state volume).
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --create-home --home-dir /home/app \
+       --shell /usr/sbin/nologin app
+ENV HOME=/home/app
+
 WORKDIR /app
 COPY --from=builder /app /app
+
+USER 10001:10001
 
 EXPOSE 8000
 

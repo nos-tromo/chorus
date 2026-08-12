@@ -768,7 +768,7 @@ chorus/                      # top-level repo
   docker/
     Dockerfile.backend / Dockerfile.frontend   # both base images pinned by @sha256: digest
     compose.yaml             # app services only — the lone volume (chorus-state) is external
-    compose.override.yaml    # dev overlay: publishes backend + frontend (nginx:80) host ports
+    compose.override.yaml    # dev overlay: publishes backend + frontend (nginx:8080) host ports
   docs/
     architecture.md / retention.md / compliance.md / airgap.md
     decisions/               # ADRs, one file per significant decision
@@ -778,6 +778,17 @@ chorus/                      # top-level repo
   .pre-commit-config.yaml
   .github/workflows/ci.yml   # delegates to the shared nos-tromo python-app-ci workflow; frontend job: lint + typecheck + test
 ```
+
+### Container hardening (deploy ADR 0001)
+
+Both containers run non-root with read-only root filesystems: the backend as
+uid `10001` (`app`, `HOME=/home/app`) — every runtime write must land under
+`$CHORUS_HOME` (the `chorus-state` volume) or `/tmp` (tmpfs) — and the
+frontend on `nginxinc/nginx-unprivileged` as uid `101` listening on **:8080**
+(the edge gateway's `chorus-frontend` upstream must match). Compose applies
+`no-new-privileges` + `cap_drop: ALL` via the `x-hardened` anchor. On existing
+hosts the `chorus-state` volume needs a one-time `chown -R 10001:10001`
+(runbook in the `deploy` repo).
 
 ### Rules of thumb
 

@@ -24,4 +24,4 @@ services:
       - ${INGEST_HOST_DIR:-${HOME}/chorus/ingest}:/var/lib/chorus/ingest:ro
   frontend:
     ports:
-      - "${CHORUS_FRONTEND_HOST_PORT:-8501}:80"
+      - "${CHORUS_FRONTEND_HOST_PORT:-8501}:8080"
