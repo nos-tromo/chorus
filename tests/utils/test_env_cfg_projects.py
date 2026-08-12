@@ -63,3 +63,64 @@ def test_projects_rejects_duplicates(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(RuntimeError, match="duplicate"):
         load_projects_env()
+
+
+def test_neo4j_env_default_project_uses_legacy_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``load_neo4j_env()`` and ``load_neo4j_env("default")`` read the flat vars."""
+    monkeypatch.delenv("CHORUS_PROJECTS", raising=False)
+    monkeypatch.setenv("NEO4J_URI", "bolt://legacy:7687")
+    monkeypatch.setenv("NEO4J_USER", "u")
+    monkeypatch.setenv("NEO4J_PASSWORD", "p")
+
+    from chorus.utils.env_cfg import load_neo4j_env
+
+    for cfg in (load_neo4j_env(), load_neo4j_env("default")):
+        assert cfg.uri == "bolt://legacy:7687"
+        assert cfg.user == "u"
+        assert cfg.password == "p"
+
+
+def test_neo4j_env_per_project_uri_required(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-default project without ``NEO4J_URI_<SUFFIX>`` fails fast.
+
+    Falling back to the shared URI would silently point two projects at
+    the same instance — the exact cross-contamination ADR 0017 forbids.
+    """
+    monkeypatch.setenv("CHORUS_PROJECTS", "alpha")
+    monkeypatch.delenv("NEO4J_URI_ALPHA", raising=False)
+
+    from chorus.utils.env_cfg import load_neo4j_env
+
+    with pytest.raises(RuntimeError, match="NEO4J_URI_ALPHA"):
+        load_neo4j_env("alpha")
+
+
+def test_neo4j_env_per_project_credentials_fall_back_to_shared(monkeypatch: pytest.MonkeyPatch) -> None:
+    """User/password/database inherit the shared vars unless overridden."""
+    monkeypatch.setenv("CHORUS_PROJECTS", "alpha")
+    monkeypatch.setenv("NEO4J_URI_ALPHA", "bolt://neo4j-alpha:7687")
+    monkeypatch.setenv("NEO4J_USER", "shared-user")
+    monkeypatch.setenv("NEO4J_PASSWORD", "shared-pass")
+    monkeypatch.delenv("NEO4J_USER_ALPHA", raising=False)
+    monkeypatch.delenv("NEO4J_PASSWORD_ALPHA", raising=False)
+
+    from chorus.utils.env_cfg import load_neo4j_env
+
+    cfg = load_neo4j_env("alpha")
+    assert cfg.uri == "bolt://neo4j-alpha:7687"
+    assert cfg.user == "shared-user"
+    assert cfg.password == "shared-pass"
+
+
+def test_neo4j_env_per_project_overrides_win(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Per-project credential vars beat the shared ones; hyphens map to underscores."""
+    monkeypatch.setenv("CHORUS_PROJECTS", "alpha-two")
+    monkeypatch.setenv("NEO4J_URI_ALPHA_TWO", "bolt://neo4j-alpha-two:7687")
+    monkeypatch.setenv("NEO4J_USER_ALPHA_TWO", "own-user")
+    monkeypatch.setenv("NEO4J_USER", "shared-user")
+
+    from chorus.utils.env_cfg import load_neo4j_env
+
+    cfg = load_neo4j_env("alpha-two")
+    assert cfg.uri == "bolt://neo4j-alpha-two:7687"
+    assert cfg.user == "own-user"

@@ -610,19 +610,51 @@ def load_projects_env() -> ProjectsConfig:
     return ProjectsConfig(names=tuple(names), explicit=True)
 
 
-def load_neo4j_env() -> Neo4jConfig:
-    """Load Neo4j connection parameters from the environment.
+def _project_env_suffix(project: str) -> str:
+    """Map a project name to its env-var suffix (``alpha-two`` → ``ALPHA_TWO``)."""
+    return project.replace("-", "_").upper()
+
+
+def load_neo4j_env(project: str | None = None) -> Neo4jConfig:
+    """Load Neo4j connection parameters for one project's instance.
+
+    With ``project`` omitted or ``"default"``, the legacy flat vars apply
+    (``NEO4J_URI`` etc.) — single-project compat mode. For any other
+    project, ``NEO4J_URI_<SUFFIX>`` is **required**: falling back to the
+    shared URI would silently point two projects at the same instance,
+    the cross-contamination ADR 0017 exists to prevent. Credentials and
+    database name fall back to the shared vars unless a per-project
+    override is set.
+
+    Args:
+        project: Project name from :func:`load_projects_env`, or ``None``
+            for the implicit default project.
 
     Returns:
-        A populated :class:`Neo4jConfig`. Falls back to the in-cluster
-        default (``bolt://localhost:7687``, ``neo4j``/``neo4j``) suitable
-        for development.
+        A populated :class:`Neo4jConfig` for that project's instance.
+
+    Raises:
+        RuntimeError: If a non-default project has no ``NEO4J_URI_<SUFFIX>``.
     """
+    if project is None or project == "default":
+        return Neo4jConfig(
+            uri=_env("NEO4J_URI", "bolt://localhost:7687") or "bolt://localhost:7687",
+            user=_env("NEO4J_USER", "neo4j") or "neo4j",
+            password=_env("NEO4J_PASSWORD", "neo4j") or "neo4j",
+            database=_env("NEO4J_DATABASE", "neo4j") or "neo4j",
+        )
+    suffix = _project_env_suffix(project)
+    uri = _env(f"NEO4J_URI_{suffix}")
+    if uri is None:
+        raise RuntimeError(f"Project {project!r} is configured but NEO4J_URI_{suffix} is not set")
+    shared_user = _env("NEO4J_USER", "neo4j") or "neo4j"
+    shared_password = _env("NEO4J_PASSWORD", "neo4j") or "neo4j"
+    shared_database = _env("NEO4J_DATABASE", "neo4j") or "neo4j"
     return Neo4jConfig(
-        uri=_env("NEO4J_URI", "bolt://localhost:7687") or "bolt://localhost:7687",
-        user=_env("NEO4J_USER", "neo4j") or "neo4j",
-        password=_env("NEO4J_PASSWORD", "neo4j") or "neo4j",
-        database=_env("NEO4J_DATABASE", "neo4j") or "neo4j",
+        uri=uri,
+        user=_env(f"NEO4J_USER_{suffix}", shared_user) or shared_user,
+        password=_env(f"NEO4J_PASSWORD_{suffix}", shared_password) or shared_password,
+        database=_env(f"NEO4J_DATABASE_{suffix}", shared_database) or shared_database,
     )
 
 
