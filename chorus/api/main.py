@@ -2,9 +2,9 @@
 
 Lifespan order matters:
   1. init_logger — so anything that logs during startup is captured
-  2. open Neo4j driver
-  3. apply pending migrations
-  4. init audit log schema
+  2. open one Neo4j driver per configured project (ADR 0017)
+  3. apply pending migrations to every project instance
+  4. init each project's audit log schema
   5. register tool registry (imports the package; tools self-register)
 
 Tool routes are wired up in `chorus.api.routers.tools` and import the
@@ -22,10 +22,10 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from chorus.api.errors import install_error_handlers
 from chorus.audit.logger import AuditLogger
-from chorus.db.neo4j import close_driver, get_driver
+from chorus.db.registry import close_all_drivers, get_driver
 from chorus.ingestion.jobs import JobRegistry
 from chorus.migrations.runner import apply_all
-from chorus.utils.env_cfg import load_audit_env, load_metrics_env
+from chorus.utils.env_cfg import load_metrics_env, load_project_paths_env, load_projects_env
 from chorus.utils.logger_cfg import init_logger
 
 
@@ -34,12 +34,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan handler: bring up dependencies, then tear them down.
 
     Startup order is intentional and load-bearing — see the module
-    docstring. State that downstream handlers need (Neo4j driver,
-    audit logger) is stashed on ``app.state``.
+    docstring. Per-project state (Neo4j drivers, audit loggers) is
+    stashed on ``app.state`` keyed by project name; a bad per-project
+    URI fails startup here rather than surfacing on first query.
 
     Args:
         app: The FastAPI application; ``app.state`` is populated with
-            ``driver`` and ``audit`` for downstream handlers.
+            ``projects``, ``drivers``, and ``audits`` for downstream
+            handlers (plus transitional single-project ``driver`` /
+            ``audit`` aliases until every router is converted).
 
     Yields:
         Nothing — control returns to FastAPI for the lifetime of the
@@ -48,26 +51,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_logger()
     logger.info("chorus starting")
 
-    driver = get_driver()
-    newly = apply_all(driver)
-    if newly:
-        logger.info("applied migrations: {}", newly)
-    else:
-        logger.info("migrations up to date")
+    projects = load_projects_env().names
+    drivers = {p: get_driver(p) for p in projects}
+    for p in projects:
+        newly = apply_all(drivers[p])
+        if newly:
+            logger.info("[{}] applied migrations: {}", p, newly)
+        else:
+            logger.info("[{}] migrations up to date", p)
 
-    audit = AuditLogger(load_audit_env().db_path)
-    audit.init_schema()
+    audits: dict[str, AuditLogger] = {}
+    for p in projects:
+        audits[p] = AuditLogger(load_project_paths_env(p).audit_db)
+        audits[p].init_schema()
 
-    app.state.driver = driver
-    app.state.audit = audit
+    app.state.projects = projects
+    app.state.drivers = drivers
+    app.state.audits = audits
+    # Transitional aliases — removed once every router resolves per-project.
+    app.state.driver = drivers[projects[0]]
+    app.state.audit = audits[projects[0]]
     app.state.jobs = JobRegistry()
-    logger.info("chorus ready")
+    logger.info("chorus ready ({} project(s))", len(projects))
     try:
         yield
     finally:
         logger.info("chorus shutting down")
         app.state.jobs.shutdown()
-        close_driver()
+        close_all_drivers()
 
 
 app = FastAPI(title="chorus", lifespan=lifespan)
