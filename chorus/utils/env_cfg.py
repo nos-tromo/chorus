@@ -320,11 +320,25 @@ class PrincipalConfig:
         display_name_header: Header carrying the gateway's decorative
             display name (default ``X-Auth-Name``, Authelia's
             ``displayname``). Never an identity key — UI display only.
+        projects_header: Header carrying the gateway-asserted,
+            comma-separated list of projects the principal may access
+            (default ``X-Auth-Projects``). Like the identity header, it
+            is trusted — the edge gateway must strip client-supplied
+            values (ADR 0017).
+        project_header: Header carrying the caller's active-project
+            selection (default ``X-Chorus-Project``), set by the SPA and
+            validated against the asserted claim.
+        default_project: Project claim + selection to use when the
+            headers are absent. Dev-only, mirrors ``default_identity``;
+            ``None`` in production forces the claim header.
     """
 
     header_name: str
     default_identity: str | None
     display_name_header: str
+    projects_header: str
+    project_header: str
+    default_project: str | None
 
 
 @dataclass(frozen=True)
@@ -693,6 +707,9 @@ def load_principal_env() -> PrincipalConfig:
         header_name=_env("CHORUS_AUTH_HEADER", "X-Auth-User") or "X-Auth-User",
         default_identity=_env("CHORUS_DEFAULT_IDENTITY"),
         display_name_header=_env("CHORUS_DISPLAY_NAME_HEADER", "X-Auth-Name") or "X-Auth-Name",
+        projects_header=_env("CHORUS_PROJECTS_HEADER", "X-Auth-Projects") or "X-Auth-Projects",
+        project_header=_env("CHORUS_PROJECT_HEADER", "X-Chorus-Project") or "X-Chorus-Project",
+        default_project=_env("CHORUS_DEFAULT_PROJECT"),
     )
 
 
