@@ -131,3 +131,28 @@ def resolve_project(request: Request) -> str:
             detail=f"Project {selected!r} is not in the caller's project claim.",
         )
     return selected
+
+
+def resolve_project_lenient(request: Request) -> str | None:
+    """Return the active project, or ``None`` when it cannot be resolved.
+
+    Only ``/whoami`` uses this. It is the SPA's sole source for the
+    project list, so it has to answer before a project has been selected
+    — and again when a remembered selection has gone stale. Every route
+    that serves project data keeps strict ``resolve_project``.
+
+    Authentication is unaffected: the 401 comes from ``resolve_principal``,
+    a separate dependency, so only the 400/403 project verdicts are
+    softened here.
+
+    Args:
+        request: The active FastAPI request.
+
+    Returns:
+        The active project name, or ``None`` when the selection is absent,
+        ambiguous, or outside the caller's claim.
+    """
+    try:
+        return resolve_project(request)
+    except HTTPException:
+        return None
