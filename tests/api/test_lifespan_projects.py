@@ -23,10 +23,6 @@ def test_lifespan_populates_per_project_state(chorus_env: Path) -> None:
         assert set(app.state.drivers) == {"default"}
         assert set(app.state.audits) == {"default"}
         assert app.state.audits["default"].db_path == chorus_env / "projects" / "default" / "audit.sqlite"
-        # Transitional single-driver aliases still present until every
-        # router is converted.
-        assert app.state.driver is app.state.drivers["default"]
-        assert app.state.audit is app.state.audits["default"]
     assert (chorus_env / "projects" / "default" / "audit.sqlite").exists()
 
 

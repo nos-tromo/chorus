@@ -41,8 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     Args:
         app: The FastAPI application; ``app.state`` is populated with
             ``projects``, ``drivers``, and ``audits`` for downstream
-            handlers (plus transitional single-project ``driver`` /
-            ``audit`` aliases until every router is converted).
+            handlers.
 
     Yields:
         Nothing — control returns to FastAPI for the lifetime of the
@@ -68,9 +67,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.projects = projects
     app.state.drivers = drivers
     app.state.audits = audits
-    # Transitional aliases — removed once every router resolves per-project.
-    app.state.driver = drivers[projects[0]]
-    app.state.audit = audits[projects[0]]
     app.state.jobs = JobRegistry()
     logger.info("chorus ready ({} project(s))", len(projects))
     try:

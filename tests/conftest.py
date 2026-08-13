@@ -22,8 +22,8 @@ from testcontainers.neo4j import Neo4jContainer
 _CHORUS_ENV_MODULES = (
     "chorus.utils.env_cfg",
     "chorus.utils.logger_cfg",
-    "chorus.db.neo4j",
     "chorus.db.registry",
+    "chorus.api.deps",
     "chorus.audit.logger",
     "chorus.api.auth.principal",
     "chorus.api.routers.health",
@@ -138,9 +138,9 @@ def driver(chorus_env: Path) -> Iterator[Driver]:
     Yields:
         An open :class:`neo4j.Driver` against the cleaned database.
     """
-    from chorus.db.neo4j import close_driver, get_driver
+    from chorus.db.registry import close_all_drivers, get_driver
 
-    d = get_driver()
+    d = get_driver("default")
     # Wipe data + drop user-defined indexes/constraints so each test starts
     # from a clean slate.
     with d.session() as s:
@@ -150,7 +150,7 @@ def driver(chorus_env: Path) -> Iterator[Driver]:
         for record in s.run("SHOW INDEXES YIELD name, type WHERE type <> 'LOOKUP'").data():
             s.run(f"DROP INDEX {record['name']} IF EXISTS").consume()
     yield d
-    close_driver()
+    close_all_drivers()
 
 
 @pytest.fixture
@@ -217,6 +217,7 @@ def in_memory_audit(chorus_env: Path) -> Any:
     """
     from chorus.audit.logger import AuditLogger
 
-    a = AuditLogger(chorus_env / "audit.sqlite")
+    # Same location the app itself uses in compat mode (ADR 0017).
+    a = AuditLogger(chorus_env / "projects" / "default" / "audit.sqlite")
     a.init_schema()
     return a
