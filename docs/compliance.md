@@ -28,3 +28,9 @@ audit row (user, config, entities touched, result count; failures recorded
 with `status="error"`) via the same `AuditLogger`. See
 [ADR 0010](decisions/0010-resolution-audit-logging.md). The remaining
 ingestion writes (the `run` pass) are not yet audited — a noted follow-up.
+
+Since [ADR 0017](decisions/0017-project-isolation-via-instance-per-project.md),
+every audit row also records the project it ran against, and each project
+keeps its own append-only audit database under its project state directory
+— audit trails are separable per processing purpose, matching the
+per-project DSFA boundary.

@@ -61,6 +61,17 @@ migrate/ingest/resolve as background jobs from the React SPA ingestion screen
 `INGESTION_UI_ENABLED` (default off); `make ingest` remains for
 bulk/server-side loads. See *Repository conventions* below for the live layout.
 
+Project isolation (ADR 0017) is implemented: `CHORUS_PROJECTS` configures
+one Neo4j instance per project (`NEO4J_URI_<NAME>` each, no shared-URI
+fallback), resolved per request through `chorus/db/registry.py` and the
+`RequestContext` dependency in `chorus/api/deps.py`. The gateway asserts a
+user's allowed projects via `X-Auth-Projects`; the caller selects the
+active project via `X-Chorus-Project`; every audit row records the project;
+`$CHORUS_HOME` state (audit log, raw store, ingestion uploads, job state)
+lives under `projects/<name>/`. With `CHORUS_PROJECTS` unset the app runs
+single-project compat mode (one implicit project `default` on the flat
+`NEO4J_*` vars). `make migrate/ingest/resolve` accept `PROJECT=name`.
+
 `RESPONSE_LANGUAGE=de` flips the whole app to German — agent answers,
 entity-query article stripping, and React SPA UI captions (ADR 0013; ADR 0015).
 Default is English; the variable lives in the repo-root `.env` so compose
@@ -196,13 +207,14 @@ vllm-service/             # existing, owns the LiteLLM router + vLLM backends
   compose.yaml            # inference endpoints on `inference-net` (alias `vllm-router`)
 
 data-plane/               # owns Neo4j (chorus) and Qdrant (docint) + their volumes
-  compose.yaml            # Neo4j reachable as `neo4j` on `data-net`
+  compose.yaml            # one Neo4j per project on `data-net` (alias `neo4j-<project>`;
+                          # single-project compat alias `neo4j`) — ADR 0017
   backup/                 # backup + restore runbooks live next to the data
 
 chorus/                   # this repo — app only
   docker/compose.yaml
     services:
-      backend:            # joins inference-net + data-net; bolt://neo4j:7687
+      backend:            # joins inference-net + data-net; bolt://neo4j-<project>:7687 per project
       frontend:           # nginx SPA; chorus-net + edge-net (alias chorus-frontend); reverse-proxies API prefixes → backend:8000
     volumes:
       chorus-state:       # external — audit log, raw store, op logs ($CHORUS_HOME)
@@ -700,17 +712,20 @@ chorus/                      # top-level repo
       openai_tools.py        # TOOLS registry → OpenAI tool schemas
       prompts.py
     api/
-      main.py                # FastAPI entrypoint (lifespan: logger → driver → migrations → audit);
+      main.py                # FastAPI entrypoint (lifespan: logger → per-project drivers →
+                              # migrations → audit loggers, ADR 0017);
                               # also wires GET /metrics (Prometheus, unauthenticated, aggregate-only
                               # request counters/latencies, no user data), gated by METRICS_ENABLED
                               # (default on)
-      auth/principal.py      # trusted-header principal seam (OIDC swap-in)
+      auth/principal.py      # trusted-header principal seam (OIDC swap-in) + project claim
+                              # (allowed-projects header, ADR 0017)
+      deps.py                # RequestContext dependency: principal + active project → driver/audit
       routers/               # health.py, config.py, tools.py, agent.py, ingestion.py
     audit/
       logger.py              # §76 BDSG audit log (SQLite, append-only, trigger-enforced)
       schema.sql
     db/
-      neo4j.py               # driver factory + session() context manager
+      registry.py            # per-project driver registry: project id → bolt URI (ADR 0017)
     inference/
       provider.py            # OpenAI client; chat/embed/rerank by `model` field
       ner_client.py          # GLiNER /gliner HTTP client (decoupled from `provider`)

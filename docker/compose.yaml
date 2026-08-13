@@ -77,6 +77,9 @@ services:
       - path: ../.env
         required: false
     environment:
+      # Single-project compat default. Multi-project setups (ADR 0017) set
+      # CHORUS_PROJECTS + NEO4J_URI_<NAME> in the repo-root .env, which the
+      # env_file above forwards verbatim — no per-project compose edits.
       NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
       OPENAI_API_BASE: ${OPENAI_API_BASE:-http://vllm-router:4000/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
