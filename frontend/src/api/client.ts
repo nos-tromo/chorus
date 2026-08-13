@@ -21,6 +21,23 @@ export function url(path: string): string {
   return `${BASE}${path}`
 }
 
+/** Caller-selected project header (ADR 0017).
+ *  Must match the backend's CHORUS_PROJECT_HEADER default — a deployment
+ *  that overrides that env var has to rebuild the SPA to match. */
+export const PROJECT_HEADER = 'X-Chorus-Project'
+
+let activeProject: string | null = null
+
+/** Set the project every subsequent request selects; null sends nothing.
+ *  Owned by ProjectProvider — nothing else should call this. */
+export function setActiveProjectHeader(project: string | null): void {
+  activeProject = project
+}
+
+function projectHeaders(): Record<string, string> {
+  return activeProject ? { [PROJECT_HEADER]: activeProject } : {}
+}
+
 async function handle<T>(res: Response): Promise<T> {
   const text = await res.text()
   let body: unknown = text
@@ -52,11 +69,11 @@ export async function apiGet<T>(
           .map(([k, v]) => [k, String(v)]),
       ).toString()
     : ''
-  return handle<T>(await fetch(url(path + qs), { signal }))
+  return handle<T>(await fetch(url(path + qs), { headers: projectHeaders(), signal }))
 }
 
 export async function apiPost<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = projectHeaders()
   let payload: BodyInit | undefined
   if (body instanceof FormData) {
     payload = body

@@ -72,6 +72,19 @@ lives under `projects/<name>/`. With `CHORUS_PROJECTS` unset the app runs
 single-project compat mode (one implicit project `default` on the flat
 `NEO4J_*` vars). `make migrate/ingest/resolve` accept `PROJECT=name`.
 
+The SPA carries its share of that: `frontend/src/project/ProjectContext.tsx`
+bootstraps from `GET /whoami`, sends `X-Chorus-Project` on every request
+(the header constant in `api/client.ts` must match the backend's
+`CHORUS_PROJECT_HEADER` default), and remembers the choice in
+`localStorage` under `chorus.activeProject`. When more than one project is
+allowed the sidebar grows a switcher; when none can be resolved the app
+prompts before rendering. Switching drops every project-scoped query from
+the cache and remounts the routes via `<ProjectScoped>`, so no graph,
+conversation, or job state outlives its project. `/whoami` is the one
+endpoint that resolves the project leniently (`active_project` is
+nullable) — it has to answer before a project is chosen. Every route that
+serves project data still fails closed.
+
 `RESPONSE_LANGUAGE=de` flips the whole app to German — agent answers,
 entity-query article stripping, and React SPA UI captions (ADR 0013; ADR 0015).
 Default is English; the variable lives in the repo-root `.env` so compose
@@ -769,10 +782,11 @@ chorus/                      # top-level repo
       default.conf.template  # env-templated upload limit (CHORUS_CLIENT_MAX_BODY_SIZE)
       security-headers.conf  # hardened CSP
     src/
-      api/                   # client.ts (no identity header — proxy sets X-Auth-User), queryClient.ts, types.ts, per-domain modules
+      api/                   # client.ts (identity comes from the proxy's X-Auth-User; the client adds only X-Chorus-Project), queryClient.ts, types.ts, per-domain modules
       config/                # ConfigProvider — boots GET /config (language + ingestion_enabled)
+      project/               # ProjectProvider — boots GET /whoami, owns the active project + ProjectScoped remount boundary (ADR 0017)
       i18n/                  # typed en/de catalog (~160 keys) + useT() hook; parity test
-      layout/                # Shell.tsx, Sidebar.tsx
+      layout/                # Shell.tsx, Sidebar.tsx (hosts the project switcher)
       routes/                # Router.tsx + one screen per route (Agent, Ingestion, tool screens)
       components/            # DataTable, AgentGraphCard (inline ForceGraph), ToolTrace, ToolScreen, ...
       hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, useUnifiedExplorer, ingestion hooks

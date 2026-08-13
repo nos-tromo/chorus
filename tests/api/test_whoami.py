@@ -90,3 +90,67 @@ def test_whoami_lists_allowed_intersect_configured(monkeypatch: pytest.MonkeyPat
     body = resp.json()
     assert body["projects"] == ["alpha", "beta"]
     assert body["active_project"] == "beta"
+
+
+def test_whoami_null_active_when_selection_ambiguous(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Several allowed projects and no selection reports ``None``, not 400.
+
+    /whoami is the SPA's only source for the project list, so it must
+    answer before a project has been chosen — otherwise the switcher can
+    never learn what there is to switch between.
+    """
+    monkeypatch.setenv("CHORUS_PROJECTS", "alpha,beta")
+    monkeypatch.delenv("CHORUS_DEFAULT_PROJECT", raising=False)
+    client = TestClient(_build_app())
+    resp = client.get("/whoami", headers={"X-Auth-User": "alice", "X-Auth-Projects": "alpha,beta"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["projects"] == ["alpha", "beta"]
+    assert body["active_project"] is None
+
+
+def test_whoami_null_active_on_stale_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A selection outside the claim reports ``None`` rather than 403.
+
+    The SPA replays a remembered project on boot; a claim that has since
+    changed must not lock the user out of the picker.
+    """
+    monkeypatch.setenv("CHORUS_PROJECTS", "alpha,beta")
+    monkeypatch.delenv("CHORUS_DEFAULT_PROJECT", raising=False)
+    client = TestClient(_build_app())
+    resp = client.get(
+        "/whoami",
+        headers={
+            "X-Auth-User": "alice",
+            "X-Auth-Projects": "alpha,beta",
+            "X-Chorus-Project": "ghost",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["projects"] == ["alpha", "beta"]
+    assert body["active_project"] is None
+
+
+def test_whoami_null_active_without_project_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A principal with no usable claim gets an empty list, not a 403."""
+    monkeypatch.setenv("CHORUS_PROJECTS", "alpha,beta")
+    monkeypatch.delenv("CHORUS_DEFAULT_PROJECT", raising=False)
+    client = TestClient(_build_app())
+    resp = client.get("/whoami", headers={"X-Auth-User": "alice", "X-Auth-Projects": "ghost"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["projects"] == []
+    assert body["active_project"] is None
+
+
+def test_whoami_lenient_project_does_not_soften_authentication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lenient project resolution must not swallow the 401 from the principal seam."""
+    monkeypatch.setenv("CHORUS_PROJECTS", "alpha,beta")
+    monkeypatch.delenv("CHORUS_DEFAULT_IDENTITY", raising=False)
+    monkeypatch.delenv("CHORUS_DEFAULT_PROJECT", raising=False)
+    client = TestClient(_build_app())
+    resp = client.get("/whoami", headers={"X-Auth-Projects": "alpha,beta"})
+    assert resp.status_code == 401

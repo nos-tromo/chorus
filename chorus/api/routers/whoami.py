@@ -13,7 +13,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from chorus.api.auth.principal import allowed_projects, resolve_principal, resolve_project
+from chorus.api.auth.principal import (
+    allowed_projects,
+    resolve_principal,
+    resolve_project_lenient,
+)
 from chorus.utils.env_cfg import load_principal_env
 
 router = APIRouter(tags=["whoami"])
@@ -32,20 +36,23 @@ class WhoamiOut(BaseModel):
             claim intersected with the configured set (ADR 0017);
             ``["default"]`` in single-project compat mode.
         active_project: The project this request resolved to; the SPA's
-            project switcher initializes from it.
+            project switcher initializes from it. ``None`` when nothing
+            could be resolved — several projects allowed with no
+            selection, or a selection that has gone stale — which is the
+            SPA's cue to prompt for one.
     """
 
     username: str
     display_name: str | None
     projects: list[str]
-    active_project: str
+    active_project: str | None
 
 
 @router.get("/whoami", response_model=WhoamiOut)
 def get_whoami(
     request: Request,
     principal: str = Depends(resolve_principal),
-    active_project: str = Depends(resolve_project),
+    active_project: str | None = Depends(resolve_project_lenient),
 ) -> WhoamiOut:
     """Return the resolved calling identity, for the SPA's AppHeader.
 
@@ -57,7 +64,10 @@ def get_whoami(
     Args:
         request: The active FastAPI request.
         principal: The resolved request principal (401s closed).
-        active_project: The validated active project (403s closed).
+        active_project: The validated active project, or ``None`` when it
+            could not be resolved. This one endpoint resolves the project
+            leniently so the SPA can bootstrap its switcher; the routes
+            that serve project data all fail closed.
 
     Returns:
         WhoamiOut: The caller's username, display name, allowed

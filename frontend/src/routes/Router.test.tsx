@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { ConfigProvider } from '../config/ConfigContext'
 import { Shell } from '../layout/Shell'
+import { ProjectProvider } from '../project/ProjectContext'
 import { AppRoutes } from './Router'
 import type { AppConfig, Whoami } from '../api/types'
 
@@ -13,7 +14,15 @@ vi.mock('../api/config', () => ({
       Promise.resolve({ language: 'en', ingestion_enabled: false, version: '0.1.0' }),
   ),
   // Shell mounts useWhoami — stub it so it doesn't hit the network.
-  getWhoami: vi.fn((): Promise<Whoami> => Promise.resolve({ username: 'alice', display_name: null })),
+  getWhoami: vi.fn(
+    (): Promise<Whoami> =>
+      Promise.resolve({
+        username: 'alice',
+        display_name: null,
+        projects: ['default'],
+        active_project: 'default',
+      }),
+  ),
 }))
 
 function makeClient() {
@@ -24,11 +33,13 @@ function Wrapper({ initialEntries }: { initialEntries: string[] }) {
   return (
     <QueryClientProvider client={makeClient()}>
       <ConfigProvider>
-        <MemoryRouter initialEntries={initialEntries}>
-          <Shell>
-            <AppRoutes />
-          </Shell>
-        </MemoryRouter>
+        <ProjectProvider>
+          <MemoryRouter initialEntries={initialEntries}>
+            <Shell>
+              <AppRoutes />
+            </Shell>
+          </MemoryRouter>
+        </ProjectProvider>
       </ConfigProvider>
     </QueryClientProvider>
   )

@@ -8,6 +8,8 @@ export const de: Strings = {
     'Etwas ist schiefgelaufen – Bitte versuchen Sie es erneut oder kontaktieren Sie den Support.',
   'common.error_network':
     'Dienst nicht erreichbar – Bitte prüfen Sie Ihre Verbindung oder versuchen Sie es später erneut.',
+  'common.error_forbidden':
+    'Zugriff verweigert ({status}) – Möglicherweise haben Sie keinen Zugriff auf dieses Projekt.',
   'common.entity_input': 'Name oder Alias der Entität',
   'common.limit': 'Limit',
   'common.from_ts': 'Von (ISO-Zeitstempel, optional)',
@@ -180,6 +182,12 @@ export const de: Strings = {
   'app.header.theme.light': 'Hell',
   'app.header.theme.dark': 'Dunkel',
   'app.header.sign_out': 'Abmelden',
+  // Projektauswahl (ADR 0017)
+  'project.switcher_label': 'Projekt',
+  'project.loading': 'Projekte werden geladen…',
+  'project.pick_title': 'Projekt auswählen',
+  'project.pick_hint': 'Ihr Konto hat Zugriff auf mehrere Projekte.',
+  'project.no_access': 'Kein Projektzugriff – Bitte wenden Sie sich an Ihre Administration.',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph-Übersicht',
   'dashboard.nodes': 'Knoten',
