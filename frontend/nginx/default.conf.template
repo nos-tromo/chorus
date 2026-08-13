@@ -56,6 +56,11 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         # X-Auth-User injected by the outer OIDC proxy — pass through unchanged.
         proxy_set_header X-Auth-User $http_x_auth_user;
+        # ADR 0017: X-Auth-Projects is the gateway's project claim, X-Chorus-Project
+        # the SPA's selection within it. Both would pass through implicitly; naming
+        # them keeps the contract visible next to the header it is built on.
+        proxy_set_header X-Auth-Projects $http_x_auth_projects;
+        proxy_set_header X-Chorus-Project $http_x_chorus_project;
         # Filled by envsubst at container start (Task 22 Dockerfile sets the env var).
         client_max_body_size ${CHORUS_CLIENT_MAX_BODY_SIZE};
         proxy_http_version 1.1;
@@ -79,6 +84,9 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         # X-Auth-User injected by the outer OIDC proxy — pass through unchanged.
         proxy_set_header X-Auth-User $http_x_auth_user;
+        # ADR 0017 project headers — see the /ingestion location above.
+        proxy_set_header X-Auth-Projects $http_x_auth_projects;
+        proxy_set_header X-Chorus-Project $http_x_chorus_project;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         include /etc/nginx/security-headers.conf;

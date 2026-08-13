@@ -29,6 +29,29 @@ nginx forwards that header unchanged to the backend. The backend's
 `CHORUS_DEFAULT_IDENTITY` when absent (dev only). This ensures the §76 BDSG
 audit log records the real per-user OIDC principal on every tool invocation.
 
+### Project selection seam (ADR 0017)
+
+Identity and project travel separately. The gateway asserts which projects a
+user may reach (`X-Auth-Projects`); the SPA picks one of them and sends it as
+`X-Chorus-Project` on every request. Both are forwarded by the chorus nginx
+alongside `X-Auth-User`. The selection is a *choice within* the claim, never a
+grant: `resolve_project` re-derives the allow-list server-side and rejects
+anything outside it, so a tampered header can only ever narrow access.
+
+The SPA learns the list from `GET /whoami` at boot. That one endpoint resolves
+the project leniently — `active_project` is null rather than a 400/403 when the
+selection is absent, ambiguous, or stale — because it is the SPA's only source
+for the list and so has to answer before a project has been chosen. Everything
+that serves project data keeps failing closed.
+
+`ProjectProvider` (`frontend/src/project/`) holds the selection, persists it in
+`localStorage`, and blocks rendering until one exists, so no request can go out
+unscoped. Switching projects evicts every project-scoped react-query entry
+(identity and app config survive) and remounts the routes through
+`<ProjectScoped>`, so accumulated explorer graphs, agent conversations, and job
+polls cannot leak across the boundary. The sidebar shows a switcher only when
+the claim covers more than one project; single-project deployments never see it.
+
 ### Ingestion upload limit
 
 Nginx's `client_max_body_size` is env-templated (`CHORUS_CLIENT_MAX_BODY_SIZE`,
