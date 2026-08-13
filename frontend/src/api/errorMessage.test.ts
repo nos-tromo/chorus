@@ -9,6 +9,12 @@ describe('describeError', () => {
       vars: { status: 502 },
     })
   })
+  it('maps 403 to the forbidden key, which names the project as a likely cause', () => {
+    expect(describeError(new ApiError(403, "Project 'ghost' is not in the caller's claim."))).toEqual({
+      key: 'common.error_forbidden',
+      vars: { status: 403 },
+    })
+  })
   it('maps network TypeError to the network key', () => {
     expect(describeError(new TypeError('Failed to fetch'))).toEqual({
       key: 'common.error_network',

@@ -8,6 +8,11 @@ export interface AppConfig {
 export interface Whoami {
   username: string
   display_name: string | null
+  /** Projects the caller may access — the gateway claim ∩ configured set (ADR 0017). */
+  projects: string[]
+  /** What the server resolved this request to, or null when it could not
+   *  (several allowed with no selection, or a stale one) — the cue to prompt. */
+  active_project: string | null
 }
 
 export interface ToolMeta {

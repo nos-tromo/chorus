@@ -1,6 +1,10 @@
 import { ApiError } from './client'
 
-export type ErrorKey = 'common.error_request' | 'common.error_unknown' | 'common.error_network'
+export type ErrorKey =
+  | 'common.error_request'
+  | 'common.error_unknown'
+  | 'common.error_network'
+  | 'common.error_forbidden'
 
 export type ErrorDescriptor = {
   key: ErrorKey
@@ -13,6 +17,11 @@ export function describeError(err: unknown): ErrorDescriptor {
   if (err instanceof ApiError) {
     // Dev-only visibility; the body is generic post-backend-fix anyway.
     console.debug('API error detail', err.status, err.detail)
+    if (err.status === 403) {
+      // Since ADR 0017 a 403 is nearly always the project claim — either
+      // the selection fell outside it or the claim itself went away.
+      return { key: 'common.error_forbidden', vars: { status: err.status } }
+    }
     return { key: 'common.error_request', vars: { status: err.status } }
   }
   if (err instanceof TypeError) {

@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
-import { SidebarGroup } from '@infra/ui'
+import { Select, SidebarGroup } from '@infra/ui'
 import { useConfig, useT } from '../config/ConfigContext'
+import { useProject } from '../project/ProjectContext'
 import type { Strings } from '../i18n'
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -43,10 +44,36 @@ const NAV_GROUPS: NavGroup[] = [
 export function Sidebar() {
   const config = useConfig()
   const t = useT()
+  const { projects, active, setActive } = useProject()
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       {/* AppShell's header already renders the app title — no second one here. */}
+
+      {/* Only worth the space when there is somewhere to switch to; a
+          single-project deployment never sees it (ADR 0017). */}
+      {projects.length > 1 && (
+        <div className="flex flex-col gap-1 border-b border-border pb-4">
+          <label
+            htmlFor="project-switcher"
+            className="text-xs font-medium text-muted-foreground"
+          >
+            {t('project.switcher_label')}
+          </label>
+          <Select
+            id="project-switcher"
+            value={active}
+            onChange={(e) => setActive(e.target.value)}
+          >
+            {projects.map((project) => (
+              <option key={project} value={project}>
+                {project}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+
       <nav className="flex flex-col gap-1">
         {/* Top-level: Dashboard, Agent */}
         <NavLink to="/" end className={navClass}>

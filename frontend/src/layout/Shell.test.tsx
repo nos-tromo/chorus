@@ -6,7 +6,14 @@ import { ConfigProvider } from '../config/ConfigContext'
 import { Shell } from './Shell'
 import type { AppConfig, Whoami } from '../api/types'
 
-const getWhoami = vi.fn((): Promise<Whoami> => Promise.resolve({ username: 'alice', display_name: null }))
+const whoami: Whoami = {
+  username: 'alice',
+  display_name: null,
+  projects: ['default'],
+  active_project: 'default',
+}
+
+const getWhoami = vi.fn((): Promise<Whoami> => Promise.resolve(whoami))
 
 vi.mock('../api/config', () => ({
   fetchConfig: vi.fn(
@@ -14,6 +21,14 @@ vi.mock('../api/config', () => ({
       Promise.resolve({ language: 'en', ingestion_enabled: false, version: '1.2.3' }),
   ),
   getWhoami: (...args: []) => getWhoami(...args),
+}))
+
+// Shell is exercised on its own here, including the case where whoami fails
+// — which ProjectProvider would otherwise intercept before Shell renders.
+// Provider integration is covered in Sidebar.test.tsx.
+vi.mock('../project/ProjectContext', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../project/ProjectContext')>()),
+  useProject: () => ({ projects: ['default'], active: 'default', setActive: vi.fn() }),
 }))
 
 function renderShell() {
@@ -50,7 +65,7 @@ describe('Shell', () => {
   })
 
   it('prefers display_name over username when the gateway sends X-Auth-Name', async () => {
-    getWhoami.mockResolvedValueOnce({ username: 'alice', display_name: 'Alice Example' })
+    getWhoami.mockResolvedValueOnce({ ...whoami, display_name: 'Alice Example' })
     renderShell()
     expect(await screen.findByRole('button', { name: /Alice Example/i })).toBeInTheDocument()
   })

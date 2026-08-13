@@ -5,6 +5,8 @@ export const en = {
   'common.error_unknown': 'Something went wrong. Please try again or contact support.',
   'common.error_network':
     'Service unreachable. Please check your connection or try again later.',
+  'common.error_forbidden':
+    'Access denied ({status}). You may not have access to this project.',
   'common.entity_input': 'Entity name or alias',
   'common.limit': 'Limit',
   'common.from_ts': 'From (ISO timestamp, optional)',
@@ -170,6 +172,12 @@ export const en = {
   'app.header.theme.light': 'light',
   'app.header.theme.dark': 'dark',
   'app.header.sign_out': 'Sign out',
+  // project switcher (ADR 0017)
+  'project.switcher_label': 'Project',
+  'project.loading': 'Loading projects…',
+  'project.pick_title': 'Select a project',
+  'project.pick_hint': 'Your account has access to several projects.',
+  'project.no_access': 'No project access. Please contact your administrator.',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph overview',
   'dashboard.nodes': 'Nodes',

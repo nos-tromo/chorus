@@ -1,7 +1,16 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { apiBase, apiGet, apiPost } from './client'
+import { apiBase, apiGet, apiPost, setActiveProjectHeader } from './client'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  setActiveProjectHeader(null)
+})
+
+/** Headers of the nth fetch call, as a case-insensitive Headers object. */
+function sentHeaders(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>, call = 0): Headers {
+  const init = fetchMock.mock.calls[call]?.[1] ?? {}
+  return new Headers(init.headers as HeadersInit | undefined)
+}
 
 describe('api client', () => {
   it('GET parses JSON and sends no identity header', async () => {
@@ -30,6 +39,54 @@ describe('api client', () => {
     const init = fetchMock.mock.calls[0]![1]!
     expect(init.body).toBeInstanceOf(FormData)
     expect((init.headers as Record<string, string>)['content-type']).toBeUndefined()
+  })
+})
+
+describe('active project header', () => {
+  it('is absent until a project is selected', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await apiGet('/stats')
+    await apiPost('/agent/query', { question: 'hi' })
+    expect(sentHeaders(fetchMock, 0).has('x-chorus-project')).toBe(false)
+    expect(sentHeaders(fetchMock, 1).has('x-chorus-project')).toBe(false)
+  })
+
+  it('rides along on GET once selected', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    setActiveProjectHeader('alpha')
+    await apiGet('/stats', { limit: 5 })
+    expect(sentHeaders(fetchMock).get('x-chorus-project')).toBe('alpha')
+  })
+
+  it('rides along on JSON POST alongside content-type', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    setActiveProjectHeader('beta')
+    await apiPost('/agent/query', { question: 'hi' })
+    const headers = sentHeaders(fetchMock)
+    expect(headers.get('x-chorus-project')).toBe('beta')
+    expect(headers.get('content-type')).toBe('application/json')
+  })
+
+  it('rides along on FormData POST without forcing content-type', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 202 }))
+    vi.stubGlobal('fetch', fetchMock)
+    setActiveProjectHeader('beta')
+    await apiPost('/ingestion/ingest', new FormData())
+    const init = fetchMock.mock.calls[0]![1]!
+    expect((init.headers as Record<string, string>)['content-type']).toBeUndefined()
+    expect(sentHeaders(fetchMock).get('x-chorus-project')).toBe('beta')
+  })
+
+  it('clears back to absent when deselected', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    setActiveProjectHeader('alpha')
+    setActiveProjectHeader(null)
+    await apiGet('/stats')
+    expect(sentHeaders(fetchMock).has('x-chorus-project')).toBe(false)
   })
 })
 
