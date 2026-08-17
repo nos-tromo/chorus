@@ -31,7 +31,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from loguru import logger
 from pydantic import BaseModel
 
-from chorus.api.auth.principal import resolve_principal
+from chorus.api.auth.principal import resolve_principal, resolve_project
+from chorus.api.deps import RequestContext, resolve_context
 from chorus.ingestion.jobs import Job, JobBusyError, JobKind, JobStatus
 from chorus.ingestion.orchestrator import run_once
 from chorus.ingestion.raw_store import RawStore
@@ -40,7 +41,7 @@ from chorus.ingestion.upstream import TABLES, FileUpstreamAdapter, table_for_fil
 from chorus.migrations.runner import applied_versions, apply_all, pending_versions
 from chorus.utils.env_cfg import (
     load_ingestion_ui_env,
-    load_path_env,
+    load_project_paths_env,
     load_resolution_env,
     load_retention_env,
 )
@@ -137,6 +138,8 @@ class JobStatusOut(BaseModel):
         result: Job output when ``status == "done"`` (ingest counts and,
             when chained, a ``resolution`` summary).
         error: Type-prefixed message when ``status == "error"``.
+        project: Project the job runs against (ADR 0017); ``""`` for jobs
+            predating the field.
     """
 
     id: str
@@ -147,6 +150,7 @@ class JobStatusOut(BaseModel):
     finished_at: str | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    project: str = ""
 
 
 status_router = APIRouter(prefix="/ingestion", tags=["ingestion"])
@@ -174,16 +178,17 @@ def feature(_user: str = Depends(resolve_principal)) -> FeatureStatus:
 
 
 @router.get("/migrations")
-def migrations_status(request: Request) -> MigrationStatus:
-    """Return applied and pending Neo4j migrations.
+def migrations_status(request: Request, project: str = Depends(resolve_project)) -> MigrationStatus:
+    """Return applied and pending Neo4j migrations for the active project.
 
     Args:
-        request: Active request, for the shared driver on ``app.state``.
+        request: Active request, for the per-project drivers on ``app.state``.
+        project: Validated active project (ADR 0017).
 
     Returns:
         A :class:`MigrationStatus`.
     """
-    driver = request.app.state.driver
+    driver = request.app.state.drivers[project]
     return MigrationStatus(
         applied=sorted(applied_versions(driver)),
         pending=pending_versions(driver),
@@ -191,17 +196,20 @@ def migrations_status(request: Request) -> MigrationStatus:
 
 
 @router.post("/migrate")
-def migrate(request: Request, user: str = Depends(resolve_principal)) -> MigrateResult:
-    """Apply pending Neo4j migrations (synchronous, idempotent).
+def migrate(
+    request: Request,
+    ctx: RequestContext = Depends(resolve_context),  # noqa: B008 — FastAPI DI marker
+) -> MigrateResult:
+    """Apply pending Neo4j migrations to the active project (synchronous, idempotent).
 
     Rejected with ``409`` while a background job is active so its DDL
     cannot interleave an in-flight ingest. The call is recorded as one
-    ``migrate`` audit row.
+    ``migrate`` audit row in the active project's audit log.
 
     Args:
-        request: Active request, for the shared driver, audit logger, and
-            job registry on ``app.state``.
-        user: Resolved principal, attributed on the audit row.
+        request: Active request, for the job registry on ``app.state``.
+        ctx: Per-request context (principal, active project, that
+            project's driver + audit logger).
 
     Returns:
         A :class:`MigrateResult` listing versions applied on this call.
@@ -210,10 +218,8 @@ def migrate(request: Request, user: str = Depends(resolve_principal)) -> Migrate
         HTTPException: ``409 Conflict`` when a job is already running.
     """
     _reject_if_busy(request)
-    driver = request.app.state.driver
-    audit = request.app.state.audit
-    with audit.time_tool(user, "migrate", {}) as slot:
-        newly = apply_all(driver)
+    with ctx.audit.time_tool(ctx.user, "migrate", {}, project=ctx.project) as slot:
+        newly = apply_all(ctx.driver)
         slot.result_count = len(newly)
     return MigrateResult(applied=newly)
 
@@ -224,7 +230,7 @@ def ingest(
     files: list[UploadFile] = File(...),  # noqa: B008 — FastAPI reads this marker from the default
     since: str | None = Form(default=None),
     then_resolve: bool = Form(default=False),
-    user: str = Depends(resolve_principal),
+    ctx: RequestContext = Depends(resolve_context),  # noqa: B008 — FastAPI DI marker
 ) -> JobAccepted:
     """Accept uploaded CSV table dumps and run one ingestion pass as a job.
 
@@ -241,7 +247,8 @@ def ingest(
         since: Optional ISO-8601 cutoff; only rows newer than this are pulled.
         then_resolve: When true, run alias→entity resolution in the same job
             after ingestion succeeds (the common end-to-end path).
-        user: Resolved principal, attributed on the ingest audit row.
+        ctx: Per-request context (principal, active project, that
+            project's driver + audit logger).
 
     Returns:
         A :class:`JobAccepted` with the new job id.
@@ -282,7 +289,7 @@ def ingest(
 
     _reject_if_busy(request)
 
-    uploads_root = load_path_env().chorus_home / "uploads"
+    uploads_root = load_project_paths_env(ctx.project).uploads
     uploads_root.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix="chorus-upload-", dir=uploads_root))
     try:
@@ -293,17 +300,21 @@ def ingest(
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    driver = request.app.state.driver
-    audit = request.app.state.audit
+    # Bind everything the worker thread needs at request time — the closure
+    # must not re-resolve the project from request state it no longer has.
+    driver = ctx.driver
+    audit = ctx.audit
+    user = ctx.user
+    project = ctx.project
 
     def _ingest_job(_job: Job) -> dict[str, Any]:
         """Run one ingestion pass over the staged files; clean up on exit."""
         try:
             adapter = FileUpstreamAdapter(staging)
-            raw = RawStore(load_path_env().raw_store)
+            raw = RawStore(load_project_paths_env(project).raw_store)
             raw.init_schema()
             params = {"since": since, "files": sorted(safe_names)}
-            with audit.time_tool(user, "ingest", params) as slot:
+            with audit.time_tool(user, "ingest", params, project=project) as slot:
                 out = run_once(adapter, driver, raw, load_retention_env(), since=since_dt)
                 slot.result_count = sum(out["counts"].values())
             if then_resolve:
@@ -312,7 +323,7 @@ def ingest(
                 # resolution failure must not discard the (successful) ingest
                 # counts — record it alongside them instead.
                 try:
-                    summary = resolve_all(driver, load_resolution_env(), audit, user=user)
+                    summary = resolve_all(driver, load_resolution_env(), audit, user=user, project=project)
                     out = {**out, "resolution": summary.as_dict()}
                 except Exception as exc:  # keep ingest counts; surface the resolve failure
                     logger.opt(exception=exc).error(f"Ingestion job {_job.id} resolution failed")
@@ -322,7 +333,7 @@ def ingest(
             shutil.rmtree(staging, ignore_errors=True)
 
     try:
-        job = request.app.state.jobs.submit("ingest", _ingest_job, created_by=user)
+        job = request.app.state.jobs.submit("ingest", _ingest_job, created_by=user, project=project)
     except JobBusyError as exc:
         shutil.rmtree(staging, ignore_errors=True)
         raise HTTPException(
@@ -332,7 +343,10 @@ def ingest(
 
 
 @router.post("/resolve", status_code=status.HTTP_202_ACCEPTED)
-def resolve(request: Request, user: str = Depends(resolve_principal)) -> JobAccepted:
+def resolve(
+    request: Request,
+    ctx: RequestContext = Depends(resolve_context),  # noqa: B008 — FastAPI DI marker
+) -> JobAccepted:
     """Run alias→entity resolution over the graph as a background job.
 
     Returns ``202`` with a job id; poll ``GET /ingestion/jobs/{job_id}`` for the
@@ -341,9 +355,9 @@ def resolve(request: Request, user: str = Depends(resolve_principal)) -> JobAcce
     wrapper audit row.
 
     Args:
-        request: Active request, for the shared driver, audit logger, and job
-            registry on ``app.state``.
-        user: Resolved principal, attributed on the resolution audit row.
+        request: Active request, for the job registry on ``app.state``.
+        ctx: Per-request context (principal, active project, that
+            project's driver + audit logger).
 
     Returns:
         A :class:`JobAccepted` with the new job id.
@@ -352,15 +366,17 @@ def resolve(request: Request, user: str = Depends(resolve_principal)) -> JobAcce
         HTTPException: ``409`` when a job is already running.
     """
     _reject_if_busy(request)
-    driver = request.app.state.driver
-    audit = request.app.state.audit
+    driver = ctx.driver
+    audit = ctx.audit
+    user = ctx.user
+    project = ctx.project
 
     def _resolve_job(_job: Job) -> dict[str, Any]:
-        summary = resolve_all(driver, load_resolution_env(), audit, user=user)
+        summary = resolve_all(driver, load_resolution_env(), audit, user=user, project=project)
         return {"resolution": summary.as_dict()}
 
     try:
-        job = request.app.state.jobs.submit("resolve", _resolve_job, created_by=user)
+        job = request.app.state.jobs.submit("resolve", _resolve_job, created_by=user, project=project)
     except JobBusyError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "An ingestion job is already running; wait for it to finish."
@@ -398,4 +414,5 @@ def job_status(job_id: str, request: Request) -> JobStatusOut:
         finished_at=job.finished_at,
         result=job.result,
         error=job.error,
+        project=job.project,
     )

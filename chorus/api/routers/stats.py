@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from chorus.api.auth.principal import resolve_principal
-from chorus.audit.logger import AuditLogger, AuditRecord
+from chorus.api.deps import RequestContext, resolve_context
+from chorus.audit.logger import AuditRecord
 from chorus.tools._template_loader import load_template
 
 router = APIRouter(tags=["stats"])
@@ -147,28 +147,25 @@ class StatsOut(BaseModel):
 
 @router.get("/stats", response_model=StatsOut)
 def get_stats(
-    request: Request,
-    principal: str = Depends(resolve_principal),
+    ctx: RequestContext = Depends(resolve_context),  # noqa: B008 — FastAPI DI marker
 ) -> StatsOut:
     """Return a graph-diagnostics snapshot for the authenticated principal.
 
     Runs a single parameterless Cypher statement that uses independent
     ``CALL {}`` subqueries — each isolated so that an empty graph returns
-    zeros rather than raising.  Writes one §76 BDSG audit row (principal +
-    ``"stats"`` action) via the shared :class:`~chorus.audit.logger.AuditLogger`
-    on ``app.state``.
+    zeros rather than raising. Runs against the active project's instance
+    and writes one §76 BDSG audit row (principal + project + ``"stats"``
+    action) into that project's audit log (ADR 0017).
 
     Args:
-        request: The active FastAPI request (provides driver + audit logger
-            from ``app.state``).
-        principal: Authenticated identity resolved from the trusted-header
-            or ``CHORUS_DEFAULT_IDENTITY`` fallback.
+        ctx: Per-request context (principal, active project, that
+            project's driver + audit logger).
 
     Returns:
         A populated :class:`StatsOut`; never raises on an empty graph.
     """
-    driver = request.app.state.driver
-    audit: AuditLogger = request.app.state.audit
+    driver = ctx.driver
+    audit = ctx.audit
 
     cypher = load_template("stats")
 
@@ -245,12 +242,13 @@ def get_stats(
     # result counts (this is an aggregate view, not a targeted lookup).
     audit.record(
         AuditRecord(
-            user=principal,
+            user=ctx.user,
             tool_name="stats",
             params={"action": "diagnostics"},
             entities_touched=[],
             result_count=0,
             status="ok",
+            project=ctx.project,
         )
     )
 

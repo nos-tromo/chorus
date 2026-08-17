@@ -73,8 +73,18 @@ def audited(fn: Callable[..., OutT]) -> Callable[..., OutT]:
     """
 
     @wraps(fn)
-    def _wrapped(driver: Any, params: BaseModel, *, user: str, audit: AuditLogger) -> OutT:
-        with audit.time_tool(user, fn.__name__, params.model_dump(mode="json")) as slot:
+    def _wrapped(
+        driver: Any,
+        params: BaseModel,
+        *,
+        user: str,
+        audit: AuditLogger,
+        project: str = "default",
+    ) -> OutT:
+        # ``project`` feeds the audit row only (ADR 0017); tool functions
+        # are project-agnostic — the driver they receive is already bound
+        # to the active project's instance.
+        with audit.time_tool(user, fn.__name__, params.model_dump(mode="json"), project=project) as slot:
             result = fn(driver, params, user=user, audit=audit)
             if isinstance(result, BaseModel) and hasattr(result, "audit_entities"):
                 slot.entities_touched = result.audit_entities()

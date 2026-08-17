@@ -38,16 +38,22 @@ reverse-proxy limit on the chorus vhost if they have a lower global default.
 
 ## Data-plane integration contract
 
-chorus expects the data-plane Compose project to publish a Neo4j service on
-`data-net`:
+chorus expects the data-plane Compose project to publish one Neo4j instance
+per configured project on `data-net` (ADR 0017):
 
-- service name: `neo4j-chorus`
+- `data-net` alias: `neo4j-<project>` (single-project compat mode: `neo4j`)
 - bolt port: `7687`
 - HTTP port: `7474`
 
-chorus reads `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`
-from its env. The chorus repo does not declare any persistent volumes; all
-graph state lives in the data-plane project's named volumes.
+With `CHORUS_PROJECTS` set, chorus reads `NEO4J_URI_<NAME>` (plus optional
+`NEO4J_USER_<NAME>` / `NEO4J_PASSWORD_<NAME>` / `NEO4J_DATABASE_<NAME>`
+overrides) per project; a configured project without its URI fails at
+startup — there is no fallback to a shared instance. With `CHORUS_PROJECTS`
+unset, the flat `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`,
+`NEO4J_DATABASE` drive the single implicit `default` project. The chorus
+repo does not declare any graph volumes; all graph state lives in the
+data-plane project's per-project named volumes, and ending a project means
+dropping its container and volume.
 
 ## Inference contract
 

@@ -13,6 +13,7 @@ boot against any of the three supported backends.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -261,6 +262,30 @@ class NERClientConfig:
     model_version: str
 
 
+_PROJECT_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+
+
+@dataclass(frozen=True)
+class ProjectsConfig:
+    """The set of configured projects (ADR 0017).
+
+    Each project maps to its own Neo4j instance and its own state
+    subtree under ``$CHORUS_HOME/projects/<name>``. When
+    ``CHORUS_PROJECTS`` is unset, chorus runs in single-project
+    backward-compat mode with one implicit project ``"default"`` that
+    uses the legacy flat env vars (``NEO4J_URI`` etc.).
+
+    Attributes:
+        names: Configured project names, order preserved from
+            ``CHORUS_PROJECTS``; ``("default",)`` in compat mode.
+        explicit: ``False`` when ``CHORUS_PROJECTS`` is unset/empty
+            (compat mode), ``True`` when projects were configured.
+    """
+
+    names: tuple[str, ...]
+    explicit: bool
+
+
 @dataclass(frozen=True)
 class Neo4jConfig:
     """Neo4j connection parameters.
@@ -295,11 +320,25 @@ class PrincipalConfig:
         display_name_header: Header carrying the gateway's decorative
             display name (default ``X-Auth-Name``, Authelia's
             ``displayname``). Never an identity key — UI display only.
+        projects_header: Header carrying the gateway-asserted,
+            comma-separated list of projects the principal may access
+            (default ``X-Auth-Projects``). Like the identity header, it
+            is trusted — the edge gateway must strip client-supplied
+            values (ADR 0017).
+        project_header: Header carrying the caller's active-project
+            selection (default ``X-Chorus-Project``), set by the SPA and
+            validated against the asserted claim.
+        default_project: Project claim + selection to use when the
+            headers are absent. Dev-only, mirrors ``default_identity``;
+            ``None`` in production forces the claim header.
     """
 
     header_name: str
     default_identity: str | None
     display_name_header: str
+    projects_header: str
+    project_header: str
+    default_project: str | None
 
 
 @dataclass(frozen=True)
@@ -439,6 +478,29 @@ class PathConfig:
     raw_store: Path
 
 
+@dataclass(frozen=True)
+class ProjectPaths:
+    """Per-project state layout under ``$CHORUS_HOME/projects/<name>`` (ADR 0017).
+
+    Each project keeps its own audit log, raw store, upload staging, and
+    ingest drop point, so project state can be backed up, retained, and
+    erased independently — mirroring the per-project Neo4j instances.
+
+    Attributes:
+        root: The project's state root, ``$CHORUS_HOME/projects/<name>``.
+        audit_db: §76 BDSG audit SQLite database for this project.
+        raw_store: Raw-store SQLite database for this project.
+        uploads: Upload staging directory for the UI ingestion path.
+        ingest_source: Default CSV drop directory for CLI ingestion.
+    """
+
+    root: Path
+    audit_db: Path
+    raw_store: Path
+    uploads: Path
+    ingest_source: Path
+
+
 def load_inference_env() -> InferenceConfig:
     """Load and validate inference configuration from the environment.
 
@@ -555,19 +617,81 @@ def load_ner_client_env(
     )
 
 
-def load_neo4j_env() -> Neo4jConfig:
-    """Load Neo4j connection parameters from the environment.
+def load_projects_env() -> ProjectsConfig:
+    """Load the configured project set from ``CHORUS_PROJECTS``.
+
+    The value is a comma-separated list of project names matching
+    ``^[a-z][a-z0-9-]{0,31}$`` (names feed env-var suffixes, filesystem
+    paths, and HTTP headers). Empty segments are dropped; order is
+    preserved. Unset/empty means single-project compat mode.
 
     Returns:
-        A populated :class:`Neo4jConfig`. Falls back to the in-cluster
-        default (``bolt://localhost:7687``, ``neo4j``/``neo4j``) suitable
-        for development.
+        A populated :class:`ProjectsConfig`.
+
+    Raises:
+        RuntimeError: If a name violates the grammar or appears twice —
+            both are deployment mistakes that must fail at startup, not
+            surface later as a wrong-instance query.
     """
+    raw = _env("CHORUS_PROJECTS")
+    if raw is None:
+        return ProjectsConfig(names=("default",), explicit=False)
+    names = [part.strip() for part in raw.split(",") if part.strip()]
+    if not names:
+        return ProjectsConfig(names=("default",), explicit=False)
+    for name in names:
+        if not _PROJECT_NAME_RE.match(name):
+            raise RuntimeError(f"Invalid project name {name!r} in CHORUS_PROJECTS; expected ^[a-z][a-z0-9-]{{0,31}}$")
+    if len(set(names)) != len(names):
+        raise RuntimeError(f"CHORUS_PROJECTS contains duplicate project names: {raw!r}")
+    return ProjectsConfig(names=tuple(names), explicit=True)
+
+
+def _project_env_suffix(project: str) -> str:
+    """Map a project name to its env-var suffix (``alpha-two`` → ``ALPHA_TWO``)."""
+    return project.replace("-", "_").upper()
+
+
+def load_neo4j_env(project: str | None = None) -> Neo4jConfig:
+    """Load Neo4j connection parameters for one project's instance.
+
+    With ``project`` omitted or ``"default"``, the legacy flat vars apply
+    (``NEO4J_URI`` etc.) — single-project compat mode. For any other
+    project, ``NEO4J_URI_<SUFFIX>`` is **required**: falling back to the
+    shared URI would silently point two projects at the same instance,
+    the cross-contamination ADR 0017 exists to prevent. Credentials and
+    database name fall back to the shared vars unless a per-project
+    override is set.
+
+    Args:
+        project: Project name from :func:`load_projects_env`, or ``None``
+            for the implicit default project.
+
+    Returns:
+        A populated :class:`Neo4jConfig` for that project's instance.
+
+    Raises:
+        RuntimeError: If a non-default project has no ``NEO4J_URI_<SUFFIX>``.
+    """
+    if project is None or project == "default":
+        return Neo4jConfig(
+            uri=_env("NEO4J_URI", "bolt://localhost:7687") or "bolt://localhost:7687",
+            user=_env("NEO4J_USER", "neo4j") or "neo4j",
+            password=_env("NEO4J_PASSWORD", "neo4j") or "neo4j",
+            database=_env("NEO4J_DATABASE", "neo4j") or "neo4j",
+        )
+    suffix = _project_env_suffix(project)
+    uri = _env(f"NEO4J_URI_{suffix}")
+    if uri is None:
+        raise RuntimeError(f"Project {project!r} is configured but NEO4J_URI_{suffix} is not set")
+    shared_user = _env("NEO4J_USER", "neo4j") or "neo4j"
+    shared_password = _env("NEO4J_PASSWORD", "neo4j") or "neo4j"
+    shared_database = _env("NEO4J_DATABASE", "neo4j") or "neo4j"
     return Neo4jConfig(
-        uri=_env("NEO4J_URI", "bolt://localhost:7687") or "bolt://localhost:7687",
-        user=_env("NEO4J_USER", "neo4j") or "neo4j",
-        password=_env("NEO4J_PASSWORD", "neo4j") or "neo4j",
-        database=_env("NEO4J_DATABASE", "neo4j") or "neo4j",
+        uri=uri,
+        user=_env(f"NEO4J_USER_{suffix}", shared_user) or shared_user,
+        password=_env(f"NEO4J_PASSWORD_{suffix}", shared_password) or shared_password,
+        database=_env(f"NEO4J_DATABASE_{suffix}", shared_database) or shared_database,
     )
 
 
@@ -583,6 +707,9 @@ def load_principal_env() -> PrincipalConfig:
         header_name=_env("CHORUS_AUTH_HEADER", "X-Auth-User") or "X-Auth-User",
         default_identity=_env("CHORUS_DEFAULT_IDENTITY"),
         display_name_header=_env("CHORUS_DISPLAY_NAME_HEADER", "X-Auth-Name") or "X-Auth-Name",
+        projects_header=_env("CHORUS_PROJECTS_HEADER", "X-Auth-Projects") or "X-Auth-Projects",
+        project_header=_env("CHORUS_PROJECT_HEADER", "X-Chorus-Project") or "X-Chorus-Project",
+        default_project=_env("CHORUS_DEFAULT_PROJECT"),
     )
 
 
@@ -694,4 +821,35 @@ def load_path_env() -> PathConfig:
         queries=pkg_root / "queries",
         migrations=pkg_root / "migrations",
         raw_store=raw_store,
+    )
+
+
+def load_project_paths_env(project: str) -> ProjectPaths:
+    """Resolve one project's state paths under ``$CHORUS_HOME/projects/<name>``.
+
+    The legacy single-path overrides (``AUDIT_DB_PATH``, ``RAW_STORE_PATH``,
+    ``INGESTION_SOURCE_DIR``) are honored only in single-project compat
+    mode (``CHORUS_PROJECTS`` unset, project ``"default"``) — a single
+    override path cannot be partitioned, and honoring it in explicit
+    multi-project mode would merge state across projects.
+
+    Args:
+        project: Project name from :func:`load_projects_env`.
+
+    Returns:
+        A populated :class:`ProjectPaths` with absolute paths.
+    """
+    home = load_path_env().chorus_home
+    root = home / "projects" / project
+    compat = project == "default" and not load_projects_env().explicit
+
+    audit_raw = _env("AUDIT_DB_PATH") if compat else None
+    raw_store_raw = _env("RAW_STORE_PATH") if compat else None
+    ingest_raw = _env("INGESTION_SOURCE_DIR") if compat else None
+    return ProjectPaths(
+        root=root,
+        audit_db=Path(audit_raw) if audit_raw else root / "audit.sqlite",
+        raw_store=Path(raw_store_raw) if raw_store_raw else root / "raw.sqlite",
+        uploads=root / "uploads",
+        ingest_source=Path(ingest_raw).expanduser() if ingest_raw else root / "ingest",
     )

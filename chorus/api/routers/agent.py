@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from pydantic import BaseModel
 
 from chorus.agent.loop import AgentInferenceError, run_agent
-from chorus.api.auth.principal import resolve_principal
+from chorus.api.deps import RequestContext, resolve_context
 from chorus.utils.env_cfg import load_agent_env, load_language_env
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -46,21 +46,19 @@ class AgentQueryIn(BaseModel):
 @router.post("/query")
 def agent_query(
     body: AgentQueryIn,
-    request: Request,
-    user: str = Depends(resolve_principal),
+    ctx: RequestContext = Depends(resolve_context),  # noqa: B008 — FastAPI DI marker
 ) -> dict[str, Any]:
     """Run the agent over the conversation and return its answer and trace.
 
     Validates the body, then dispatches into
-    :func:`chorus.agent.loop.run_agent` with the shared driver and audit
-    logger from ``app.state``. The turn is recorded as a parent
+    :func:`chorus.agent.loop.run_agent` with the active project's driver
+    and audit logger (ADR 0017). The turn is recorded as a parent
     ``agent_query`` audit row; each tool the agent calls writes its own row.
 
     Args:
         body: The visible conversation turns (server is stateless).
-        request: Active request; supplies ``app.state.driver`` and
-            ``app.state.audit``.
-        user: Resolved principal, attributed on every audit row.
+        ctx: Per-request context (principal, active project, that
+            project's driver + audit logger).
 
     Returns:
         The agent result serialized as JSON: ``answer``, ``trace``, and
@@ -74,9 +72,10 @@ def agent_query(
     cfg = load_agent_env()
     try:
         result = run_agent(
-            request.app.state.driver,
-            request.app.state.audit,
-            user=user,
+            ctx.driver,
+            ctx.audit,
+            user=ctx.user,
+            project=ctx.project,
             messages=[m.model_dump() for m in body.messages],
             max_iterations=cfg.max_tool_iterations,
             model=cfg.model,

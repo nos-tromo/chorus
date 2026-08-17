@@ -31,25 +31,30 @@ help:
 	@echo "  make dev        build backend + frontend, then up-dev"
 	@echo "  make stop       stop containers (keep them)"
 	@echo "  make down       stop + remove containers (never touches data-plane)"
-	@echo "  make migrate    apply pending Neo4j migrations"
-	@echo "  make ingest     run one ingestion pass from INGESTION_SOURCE_DIR"
-	@echo "  make resolve    resolve aliases to canonical entities"
+	@echo "  make migrate    apply pending Neo4j migrations (all projects; PROJECT=name to target one)"
+	@echo "  make ingest     run one ingestion pass (PROJECT=name with multiple projects configured)"
+	@echo "  make resolve    resolve aliases to canonical entities (PROJECT=name as above)"
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
 	@echo "  make pre-commit run pre-commit hooks (ruff + pyrefly)"
 	@echo "  make verify     pre-push gate: pre-commit + frontend lint/build; mirrors CI's lint gate"
 	@echo "  make test       run pytest"
 
-# Apply pending Neo4j migrations against the configured NEO4J_URI.
-migrate:
-	$(COMPOSE) run --rm backend python -m chorus.migrations.cli apply
+# Optional per-project targeting for the app CLIs (ADR 0017). Without
+# PROJECT, migrate iterates every configured project and ingest/resolve
+# require a sole configured project.
+PROJECT_FLAG = $(if $(PROJECT),--project $(PROJECT))
 
-# Run one ingestion pass against the configured INGESTION_SOURCE_DIR.
+# Apply pending Neo4j migrations (every configured project by default).
+migrate:
+	$(COMPOSE) run --rm backend python -m chorus.migrations.cli apply $(PROJECT_FLAG)
+
+# Run one ingestion pass against the project's ingestion source dir.
 ingest:
-	$(COMPOSE_DEV) run --rm backend python -m chorus.ingestion.cli run
+	$(COMPOSE_DEV) run --rm backend python -m chorus.ingestion.cli run $(PROJECT_FLAG)
 
 # Resolve unresolved :Alias nodes onto canonical :Entity nodes.
 resolve:
-	$(COMPOSE) run --rm backend python -m chorus.ingestion.cli resolve
+	$(COMPOSE) run --rm backend python -m chorus.ingestion.cli resolve $(PROJECT_FLAG)
 
 # Wait for data-plane to be healthy, then bring the app up.
 bootstrap: network volumes

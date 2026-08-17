@@ -45,6 +45,8 @@ class AuditRecord(BaseModel):
             ``"error"``).
         error_message: Type-prefixed exception message when ``status``
             is ``"error"``; ``None`` otherwise.
+        project: Project the call ran against (ADR 0017). ``"default"``
+            in single-project compat mode.
     """
 
     user: str
@@ -55,6 +57,7 @@ class AuditRecord(BaseModel):
     duration_ms: int = 0
     status: Status = "ok"
     error_message: str | None = None
+    project: str = "default"
 
 
 @dataclass
@@ -116,10 +119,18 @@ class AuditLogger:
         """Apply ``schema.sql`` to the audit database.
 
         Idempotent: ``schema.sql`` uses ``CREATE ... IF NOT EXISTS`` for
-        the table and its triggers, so repeated calls are safe.
+        the table and its triggers, so repeated calls are safe. A legacy
+        (pre-ADR-0017) table is upgraded in place with the ``project``
+        column — ``CREATE IF NOT EXISTS`` alone would leave it behind and
+        every subsequent insert would fail.
         """
         ddl = _SCHEMA_PATH.read_text(encoding="utf-8")
         with self._connect() as conn:
+            # Upgrade a legacy table first: schema.sql indexes (project, ts),
+            # which would fail against a table that predates the column.
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(audit_log)")}
+            if columns and "project" not in columns:
+                conn.execute("ALTER TABLE audit_log ADD COLUMN project TEXT NOT NULL DEFAULT 'default'")
             conn.executescript(ddl)
 
     def record(self, r: AuditRecord) -> int:
@@ -139,8 +150,8 @@ class AuditLogger:
                 """
                 INSERT INTO audit_log
                     (ts, user, tool_name, params_json, entities_touched_json,
-                     result_count, duration_ms, status, error_message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     result_count, duration_ms, status, error_message, project)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     datetime.now(UTC).isoformat(timespec="milliseconds"),
@@ -155,6 +166,7 @@ class AuditLogger:
                     r.duration_ms,
                     r.status,
                     r.error_message,
+                    r.project,
                 ),
             )
             row_id = cur.lastrowid
@@ -167,6 +179,8 @@ class AuditLogger:
         user: str,
         tool_name: str,
         params: dict[str, Any],
+        *,
+        project: str = "default",
     ) -> Iterator[_Slot]:
         """Time a tool invocation and write the audit row at exit.
 
@@ -180,6 +194,7 @@ class AuditLogger:
             user: Authenticated identity invoking the tool.
             tool_name: Registered tool name to record.
             params: Caller-supplied parameters; serialized to JSON.
+            project: Project the call runs against (ADR 0017).
 
         Yields:
             The :class:`_Slot` the wrapped block should populate before
@@ -209,5 +224,6 @@ class AuditLogger:
                     duration_ms=duration_ms,
                     status=slot.status,
                     error_message=slot.error_message,
+                    project=project,
                 )
             )

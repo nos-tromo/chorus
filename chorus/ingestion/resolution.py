@@ -544,6 +544,7 @@ def resolve_all(
     audit: AuditLogger,
     *,
     user: str,
+    project: str = "default",
     page_size: int = _PAGE_SIZE,
 ) -> ResolutionSummary:
     """Resolve every unresolved :Alias to a canonical :Entity (batch, idempotent).
@@ -569,6 +570,7 @@ def resolve_all(
             ``entities_touched``, and the aliases processed as the result
             count. A failed run is recorded with ``status="error"``.
         user: Authenticated principal attributed on the audit row.
+        project: Active project attributed on the audit row (ADR 0017).
         page_size: Aliases fetched and embedded per iteration. Default 500.
 
     Returns:
@@ -591,7 +593,7 @@ def resolve_all(
         "vector_k": cfg.vector_k,
         "embed_model": embed_model,
     }
-    with audit.time_tool(user, "resolve_all", params) as slot:
+    with audit.time_tool(user, "resolve_all", params, project=project) as slot:
         counts = dict.fromkeys(_METHOD_FIELD.values(), 0)
         counts["processed"] = 0
         # Cache key is (normalized surface, label): two case/whitespace variants

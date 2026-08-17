@@ -1,46 +1,52 @@
 """Health endpoints.
 
-`/health` is a liveness check — it answers 200 if the process is up and the
-Neo4j driver is reachable. It does not authenticate; reverse proxies and
-orchestrators need to call it without a principal header.
+`/health` is a liveness check — it answers 200 if the process is up and
+every project's Neo4j instance is reachable (ADR 0017). It does not
+authenticate; reverse proxies and orchestrators need to call it without a
+principal header. Project names are server configuration, not user data,
+so listing them here is acceptable behind the gateway.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Request, status
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-def health(request: Request) -> dict[str, str]:
-    """Liveness check that verifies Neo4j is reachable.
+def health(request: Request) -> JSONResponse:
+    """Liveness check that verifies every project's Neo4j is reachable.
 
     Reverse proxies and orchestrators call this without an
     authenticated principal, so no auth dependency is attached. The
-    handler issues a trivial ``RETURN 1`` against the configured Neo4j
-    database; any driver failure is surfaced as ``503``.
+    handler issues a trivial ``RETURN 1`` against each configured
+    instance; any failure degrades the overall status to ``503`` while
+    the body still reports per-project results so operators can see
+    which instance is down.
 
     Args:
         request: The active FastAPI request (used to access the
-            shared driver on ``app.state``).
+            per-project drivers on ``app.state``).
 
     Returns:
-        ``{"status": "ok"}`` when Neo4j is reachable.
-
-    Raises:
-        HTTPException: ``503 Service Unavailable`` with the underlying
-            driver error when Neo4j cannot be queried.
+        ``{"status": "ok", "projects": {...}}`` with ``200`` when every
+        instance answers; ``{"status": "degraded", ...}`` with ``503``
+        when at least one does not.
     """
-    driver = request.app.state.driver
-    try:
-        with driver.session() as s:
-            s.run("RETURN 1").consume()
-    except Exception as exc:
-        logger.error(f"neo4j unreachable: {exc}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database unreachable.",
-        ) from exc
-    return {"status": "ok"}
+    results: dict[str, str] = {}
+    for project, driver in request.app.state.drivers.items():
+        try:
+            with driver.session() as s:
+                s.run("RETURN 1").consume()
+            results[project] = "ok"
+        except Exception as exc:
+            logger.error(f"[{project}] neo4j unreachable: {exc}")
+            results[project] = "unreachable"
+    healthy = all(v == "ok" for v in results.values())
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"status": "ok" if healthy else "degraded", "projects": results},
+    )

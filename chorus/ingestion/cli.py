@@ -5,9 +5,10 @@ delegate to a runner, close the driver in ``finally``. The CLI itself
 does no business logic; everything load-bearing lives in
 :func:`chorus.ingestion.orchestrator.run_once`.
 
-The source directory is configured via ``INGESTION_SOURCE_DIR`` and is
-not overridable on the command line — matching the migrations CLI's
-env-only target convention.
+Per ADR 0017 every subcommand targets exactly one project's instance and
+state tree (``--project``; defaults to the sole configured project). The
+source directory is the project's ingest drop point, overridable via
+``INGESTION_SOURCE_DIR`` in single-project compat mode only.
 """
 
 from __future__ import annotations
@@ -18,18 +19,42 @@ import sys
 from datetime import datetime
 
 from chorus.audit.logger import AuditLogger
-from chorus.db.neo4j import close_driver, get_driver
+from chorus.db.registry import close_all_drivers, get_driver
 from chorus.ingestion.orchestrator import run_once
 from chorus.ingestion.raw_store import RawStore
 from chorus.ingestion.resolution import backfill_norm_keys, resolve_all
 from chorus.ingestion.upstream import FileUpstreamAdapter
 from chorus.utils.env_cfg import (
-    load_audit_env,
-    load_ingestion_env,
-    load_path_env,
+    load_project_paths_env,
+    load_projects_env,
     load_resolution_env,
     load_retention_env,
 )
+
+
+def _resolve_target_project(flag: str | None) -> str | None:
+    """Pick the project a subcommand targets.
+
+    Args:
+        flag: The ``--project`` value, or ``None`` when omitted.
+
+    Returns:
+        The validated project name, or ``None`` after printing an error
+        (unknown project, or ambiguous default with several configured).
+    """
+    configured = load_projects_env().names
+    if flag is None:
+        if len(configured) == 1:
+            return configured[0]
+        print(
+            f"multiple projects configured ({', '.join(configured)}); pass --project NAME",
+            file=sys.stderr,
+        )
+        return None
+    if flag not in configured:
+        print(f"unknown project: {flag}; configured: {', '.join(configured)}", file=sys.stderr)
+        return None
+    return flag
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -46,12 +71,16 @@ def main(argv: list[str] | None = None) -> int:
         - ``backfill-norm-keys``: stamp ``:Alias.norm_key`` on resolved
           aliases that predate the durable-key change (idempotent).
 
+    Every subcommand accepts ``--project NAME``; with exactly one project
+    configured it may be omitted.
+
     Args:
         argv: Argument vector to parse. ``None`` (the default) reads
             from ``sys.argv``.
 
     Returns:
-        Process exit code (``0`` on success, ``2`` on unknown command).
+        Process exit code (``0`` on success, ``2`` on unknown command,
+        unknown project, or ambiguous project selection).
     """
     p = argparse.ArgumentParser(prog="chorus-ingest")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -67,27 +96,36 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="principal recorded in the §76 audit log (default: CHORUS_DEFAULT_IDENTITY or 'cli')",
     )
-    sub.add_parser(
+    backfill_p = sub.add_parser(
         "backfill-norm-keys",
         help="stamp :Alias.norm_key on resolved aliases that predate the durable-key change",
     )
+    for cmd in (run_p, resolve_p, backfill_p):
+        cmd.add_argument(
+            "--project",
+            default=None,
+            metavar="NAME",
+            help="project to target (default: the sole configured project)",
+        )
     args = p.parse_args(argv)
+
+    project = _resolve_target_project(args.project)
+    if project is None:
+        return 2
+    paths = load_project_paths_env(project)
 
     if args.cmd == "run":
         since = datetime.fromisoformat(args.since) if args.since else None
-        ingest_cfg = load_ingestion_env()
         retention = load_retention_env()
-        paths = load_path_env()
 
-        adapter = FileUpstreamAdapter(ingest_cfg.source_dir)
+        adapter = FileUpstreamAdapter(paths.ingest_source)
         raw = RawStore(paths.raw_store)
         raw.init_schema()
 
-        driver = get_driver()
         try:
-            result = run_once(adapter, driver, raw, retention, since=since)
+            result = run_once(adapter, get_driver(project), raw, retention, since=since)
         finally:
-            close_driver()
+            close_all_drivers()
 
         for stage, count in result["counts"].items():
             print(f"{stage}: {count}")
@@ -103,23 +141,21 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "resolve":
         principal = args.user or os.environ.get("CHORUS_DEFAULT_IDENTITY") or "cli"
-        audit = AuditLogger(load_audit_env().db_path)
+        audit = AuditLogger(paths.audit_db)
         audit.init_schema()
-        driver = get_driver()
         try:
-            summary = resolve_all(driver, load_resolution_env(), audit, user=principal)
+            summary = resolve_all(get_driver(project), load_resolution_env(), audit, user=principal, project=project)
         finally:
-            close_driver()
+            close_all_drivers()
         for field, count in summary.as_dict().items():
             print(f"{field}: {count}")
         return 0
 
     if args.cmd == "backfill-norm-keys":
-        driver = get_driver()
         try:
-            stamped = backfill_norm_keys(driver, load_resolution_env())
+            stamped = backfill_norm_keys(get_driver(project), load_resolution_env())
         finally:
-            close_driver()
+            close_all_drivers()
         print(f"backfilled: {stamped}")
         return 0
 

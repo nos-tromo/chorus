@@ -61,6 +61,9 @@ class Job:
         created_by: Authenticated principal that submitted the job.
         created_at: ISO-8601 submission time.
         finished_at: ISO-8601 completion time; ``None`` until terminal.
+        project: Project the job runs against (ADR 0017); ``""`` for jobs
+            submitted before the field existed. Display/attribution only —
+            the registry still serializes jobs globally across projects.
     """
 
     id: str
@@ -71,6 +74,7 @@ class Job:
     created_by: str = ""
     created_at: str = field(default_factory=_now_iso)
     finished_at: str | None = None
+    project: str = ""
 
 
 class JobRegistry:
@@ -98,6 +102,7 @@ class JobRegistry:
         fn: Callable[[Job], dict[str, Any]],
         *,
         created_by: str = "",
+        project: str = "",
     ) -> Job:
         """Register a job and schedule ``fn`` on the worker thread.
 
@@ -107,6 +112,7 @@ class JobRegistry:
                 dict becomes ``job.result``. Exceptions are captured, not
                 propagated (the job ends ``error``).
             created_by: Authenticated principal, recorded on the job.
+            project: Active project, recorded on the job (ADR 0017).
 
         Returns:
             The freshly-created :class:`Job` (status ``queued``).
@@ -119,7 +125,7 @@ class JobRegistry:
             if self._active_count_locked() >= 1:
                 raise JobBusyError("another ingestion job is already running")
             self._counter += 1
-            job = Job(id=f"job-{self._counter}", kind=kind, created_by=created_by)
+            job = Job(id=f"job-{self._counter}", kind=kind, created_by=created_by, project=project)
             self._jobs[job.id] = job
             self._order.append(job.id)
             self._evict_locked()

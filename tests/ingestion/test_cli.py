@@ -120,10 +120,11 @@ def test_resolve_writes_audit_row_with_principal(
     assert "processed: 1" in out
     assert "minted: 1" in out
 
-    from chorus.utils.env_cfg import load_audit_env
+    from chorus.utils.env_cfg import load_project_paths_env
 
-    rows = sqlite3.connect(load_audit_env().db_path).execute("SELECT user, tool_name FROM audit_log").fetchall()
-    assert ("operator-1", "resolve_all") in rows
+    audit_db = load_project_paths_env("default").audit_db
+    rows = sqlite3.connect(audit_db).execute("SELECT user, tool_name, project FROM audit_log").fetchall()
+    assert ("operator-1", "resolve_all", "default") in rows
 
 
 def test_backfill_norm_keys_cli(
