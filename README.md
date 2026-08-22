@@ -318,17 +318,16 @@ data-plane compose project up first (see *Orchestration topology*
 in `CLAUDE.md`), then:
 
 ```bash
-make network    # create the shared inference-net + data-net (idempotent)
-make volumes    # create the external chorus-state volume (idempotent)
-make build      # build backend + frontend images
-make up         # start backend + frontend nginx (detached, production shape, no host ports, no build)
-make up-dev     # like 'up', but publishes backend:8000 + frontend:${CHORUS_FRONTEND_HOST_PORT:-8501} (no build)
-make dev        # build backend + frontend, then up-dev
-make migrate    # apply Neo4j migrations from inside the api container
-make ingest     # run one ingestion pass from INGESTION_SOURCE_DIR
-make resolve    # resolve aliases to canonical entities
-make down       # stop + remove containers (never touches graph data)
+make help       # every target with a one-line description
 ```
+
+The day-to-day path is `make network` / `volumes` / `build` / `up-dev`
+(or `make dev`, which builds then brings the dev shape up), plus
+`make migrate` / `ingest` / `resolve` for the data stages and `make down`
+to stop (it never touches graph data). `make bootstrap` waits for
+data-plane health first, `make bundle` / `bundle-dev` produce the airgap
+image tarballs, and `make stop` / `logs` round out the lifecycle — see
+`make help` for the full list rather than a copy of it here.
 
 ## Further reading
 
