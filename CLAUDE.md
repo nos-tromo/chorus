@@ -773,7 +773,7 @@ chorus/                      # top-level repo
     architecture.md / retention.md / compliance.md / airgap.md
     decisions/               # ADRs, one file per significant decision
   scripts/                   # bundle_images.sh, check_dataplane_health.sh
-  Makefile                   # network / volumes / build / up / bundle / migrate / ingest / resolve / bootstrap / frontend-lint / frontend-test
+  Makefile                   # network / volumes / build / up / bundle / migrate / ingest / resolve / bootstrap / frontend-lint
   pyproject.toml + uv.lock + pytest.ini
   .pre-commit-config.yaml
   .github/workflows/ci.yml   # delegates to the shared nos-tromo python-app-ci workflow; frontend job: lint + typecheck + test
