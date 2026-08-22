@@ -152,8 +152,9 @@ make build      # build backend + frontend (nginx) images
 make up-dev     # start backend (port 8000) + frontend (port ${CHORUS_FRONTEND_HOST_PORT:-8501})
 ```
 
-The frontend is served by nginx at port 80 inside the container; `make up-dev`
-publishes it on `${CHORUS_FRONTEND_HOST_PORT:-8501}` on the host. Set
+The frontend is served by nginx (the unprivileged image, uid 101) on port
+8080 inside the container; `make up-dev` publishes it on
+`${CHORUS_FRONTEND_HOST_PORT:-8501}` on the host. Set
 `INGESTION_UI_ENABLED=true` on the backend service to expose the ingestion
 screen (the nav item and route are hidden by default).
 
