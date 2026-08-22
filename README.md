@@ -108,20 +108,7 @@ Vite proxies `/health`, `/config`, `/tools`, `/agent`, and `/ingestion` to
 set in your `.env` — the dev server sends no identity header, and the backend
 falls back to that value when `X-Auth-User` is absent.
 
-To run the full compose stack (nginx-served SPA + backend):
-
-```bash
-make network    # create shared Docker networks (idempotent)
-make volumes    # create the external chorus-state volume (idempotent)
-make build      # build backend + frontend (nginx) images
-make up-dev     # start backend (port 8000) + frontend (port ${CHORUS_FRONTEND_HOST_PORT:-8501})
-```
-
-The frontend is served by nginx (the unprivileged image, uid 101) on port
-8080 inside the container; `make up-dev` publishes it on
-`${CHORUS_FRONTEND_HOST_PORT:-8501}` on the host. Set
-`INGESTION_UI_ENABLED=true` on the backend service to expose the ingestion
-screen (the nav item and route are hidden by default).
+For the nginx-served SPA instead of the Vite dev server, see *Operating*.
 
 ## Smoke test
 
@@ -137,63 +124,53 @@ From there, [tutorial-first-queries.md](docs/tutorial-first-queries.md)
 walks the surface end-to-end: the tool registry, seeding a row into the
 empty graph, invoking a tool, and asking the agent the same question.
 
-## Running the test suite
+## Operating
 
-Unit tests stub the inference provider and run without external
-services. Integration tests spin up an ephemeral Neo4j via
+The Makefile wraps both halves of the workflow; `make help` lists every
+target with a one-line description.
+
+```bash
+make verify     # pre-push gate: pre-commit (ruff + pyrefly) + frontend lint/build
+make test       # pytest + vitest (test-backend / test-frontend for one half)
+make dev        # build backend + frontend images, then bring the dev shape up
+```
+
+Integration tests spin up an ephemeral `neo4j:5.26.26-community` via
 `testcontainers`, so Docker must be reachable from the shell running
-pytest:
+pytest; the first run pulls the image. Unit tests stub the inference
+provider and need no services (`uv run pytest tests/inference`).
+Pre-commit runs ruff and pyrefly on changed files; the full pytest suite
+runs in CI, not in the hook.
 
-```bash
-uv run pytest                 # everything
-uv run pytest tests/inference # unit tests only — no Docker needed
-uv run pytest tests/integration -k posts_mentioning   # a single case
-```
-
-The first integration-test run pulls `neo4j:5.26.26-community`, which
-takes a minute. Subsequent runs reuse the image.
-
-## Lint, format, type check
-
-```bash
-uv run ruff check .
-uv run ruff format .
-uv run pyrefly check
-uv run pre-commit run --all-files
-```
-
-Pre-commit runs ruff and pyrefly on changed files; the full pytest
-suite runs in CI, not in the hook.
-
-## Bringing up the app via compose (optional)
-
-The app's compose project lives in `docker/` and is wired up via the
-top-level Makefile. It assumes Neo4j is already reachable on the
-shared `data-net` Docker network as `neo4j:7687` — bring the
-data-plane compose project up first (see *Orchestration topology*
-in `CLAUDE.md`), then:
-
-```bash
-make help       # every target with a one-line description
-```
-
-The day-to-day path is `make network` / `volumes` / `build` / `up-dev`
-(or `make dev`, which builds then brings the dev shape up), plus
-`make migrate` / `ingest` / `resolve` for the data stages and `make down`
-to stop (it never touches graph data). `make bootstrap` waits for
-data-plane health first, `make bundle` / `bundle-dev` produce the airgap
-image tarballs, and `make stop` / `logs` round out the lifecycle — see
-`make help` for the full list rather than a copy of it here.
+The compose project lives in `docker/` and assumes Neo4j is already
+reachable on the shared `data-net` Docker network as `neo4j:7687` — bring
+the data-plane compose project up first (see *Orchestration topology* in
+[`CLAUDE.md`](CLAUDE.md)), or let `make bootstrap` wait for its health.
+The frontend is nginx (the unprivileged image, uid 101) on port 8080
+inside the container, published on `${CHORUS_FRONTEND_HOST_PORT:-8501}` by
+`make up-dev`; `make down` never touches graph data. Set
+`INGESTION_UI_ENABLED=true` on the backend service to expose the ingestion
+screen (the nav item and route are hidden by default).
 
 ## Further reading
 
+- [`docs/README.md`](docs/README.md) — index of the in-repo documentation.
 - [`CLAUDE.md`](CLAUDE.md) — architecture, data model, scope and
   anti-scope, airgap rules, compliance posture.
+- [`docs/tutorial-first-queries.md`](docs/tutorial-first-queries.md) — the
+  guided first pass over the tool and agent surface.
+- [`docs/ingestion.md`](docs/ingestion.md) — running the ingestion and
+  alias-resolution stages.
 - [`docs/architecture.md`](docs/architecture.md) — the long-form
   architecture notes.
 - [`docs/airgap.md`](docs/airgap.md) — what the airgapped production
   constraint implies for dependencies, images, and inference.
 - [`docs/compliance.md`](docs/compliance.md) — §76 BDSG audit logging,
   retention, OIDC.
+- [`docs/retention.md`](docs/retention.md) — retention timers and the
+  cascade rules for expiry.
 - [`docs/decisions/`](docs/decisions/) — ADRs for the load-bearing
   architectural choices.
+
+Questions, bugs and feature requests:
+<https://github.com/nos-tromo/chorus/issues>.
