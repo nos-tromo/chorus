@@ -18,9 +18,8 @@ just enough to get the app running locally. Everything else lives in
 - Logs every tool invocation to an append-only §76 BDSG audit log.
 
 Inference is reached over the network at the shared vllm-service router;
-chorus ships no model weights and runs airgapped in production. The
-runtime surface is detailed in
-[architecture.md](docs/architecture.md#runtime-surface).
+chorus ships no model weights and runs airgapped in production. Full
+runtime surface: [architecture.md](docs/architecture.md#runtime-surface).
 
 ## Prerequisites
 
@@ -44,20 +43,16 @@ runtime surface is detailed in
 uv sync
 ```
 
-This creates `.venv/` and installs both runtime and dev dependencies
-from the lockfile.
+Creates `.venv/` with both runtime and dev dependencies from the lockfile.
 
 ### 2. Configure environment
-
-Copy the example file and adjust the Neo4j and auth knobs for a
-host-side process talking to a containerised Neo4j:
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env` so the URI points at the host-published bolt port
-and a dev principal is allowed through:
+For a host-side process talking to a containerised Neo4j, point the URI at
+the host-published bolt port and let a dev principal through:
 
 ```env
 NEO4J_URI=bolt://localhost:7687
@@ -67,15 +62,14 @@ NEO4J_PASSWORD=devpassword
 CHORUS_DEFAULT_IDENTITY=dev
 ```
 
-`CHORUS_DEFAULT_IDENTITY` is the dev-only fallback for the
-trusted-header principal seam. Leave it unset in production — without
-it, requests without an `X-Auth-User` header fail with 401.
+`CHORUS_DEFAULT_IDENTITY` is the dev-only fallback for the trusted-header
+principal seam. Leave it unset in production — without it, requests
+without an `X-Auth-User` header fail with 401.
 
 ### 3. Apply migrations
 
-Migrations are idempotent and the app applies pending ones on
-startup, but it's useful to run them explicitly the first time and
-confirm the constraints and vector indexes land:
+Idempotent, and the app applies pending ones on startup — but running them
+explicitly the first time confirms the constraints and vector indexes land:
 
 ```bash
 uv run python -m chorus.migrations.cli apply
@@ -88,14 +82,13 @@ uv run python -m chorus.migrations.cli status
 uv run uvicorn chorus.api.main:app --reload --port 8000
 ```
 
-The lifespan opens the Neo4j driver, applies any remaining
-migrations, and initialises the audit log SQLite file under
-`./var/`.
+The lifespan opens the Neo4j driver, applies any remaining migrations, and
+initialises the audit log SQLite file under `./var/`.
 
 ### 5. (Optional) Start the frontend dev server
 
-The React SPA can be developed locally with Vite's dev server, which proxies
-API calls to the backend running in step 4. In a separate shell:
+Vite proxies `/health`, `/config`, `/tools`, `/agent`, and `/ingestion` to
+`http://localhost:8000`, so run it in a separate shell alongside step 4:
 
 ```bash
 cd frontend
@@ -103,12 +96,9 @@ pnpm install          # first time only; uses the frozen lockfile
 pnpm dev              # Vite dev server at http://localhost:5173
 ```
 
-Vite proxies `/health`, `/config`, `/tools`, `/agent`, and `/ingestion` to
-`http://localhost:8000`. Auth is handled by the `CHORUS_DEFAULT_IDENTITY=dev`
-set in your `.env` — the dev server sends no identity header, and the backend
-falls back to that value when `X-Auth-User` is absent.
-
-For the nginx-served SPA instead of the Vite dev server, see *Operating*.
+The dev server sends no identity header; the backend falls back to the
+`CHORUS_DEFAULT_IDENTITY=dev` in your `.env` when `X-Auth-User` is absent.
+For the nginx-served SPA instead, see *Operating*.
 
 ## Smoke test
 
@@ -121,8 +111,8 @@ If you get a 503 here, the API can't reach Neo4j — check `NEO4J_URI`
 and that the container is up.
 
 From there, [tutorial-first-queries.md](docs/tutorial-first-queries.md)
-walks the surface end-to-end: the tool registry, seeding a row into the
-empty graph, invoking a tool, and asking the agent the same question.
+walks the surface end-to-end: tool registry, seeding a row, invoking a
+tool, asking the agent.
 
 ## Operating
 
