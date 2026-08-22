@@ -2,54 +2,25 @@
 
 GraphRAG system for social network analysis. See [`CLAUDE.md`](CLAUDE.md)
 for the full architecture, data model, and scope; this README covers
-just enough to get the app running locally and to fire the first few
-queries against it.
+just enough to get the app running locally. Everything else lives in
+[`docs/`](docs/README.md).
 
-## What works today
+## What it does
 
-The FastAPI app boots, applies Neo4j migrations on startup, and exposes
-`/health`. On top of that, the following is working and stable on `main`:
+- Ingests social-media exports (postings, comments, messages, profiles,
+  connections) into a people-centric Neo4j knowledge graph.
+- Serves seven named graph retrieval tools over `POST /tools/<name>`,
+  each with a Pydantic input/output schema and version-controlled Cypher.
+- Answers free-text questions with an agent that selects and calls those
+  tools — it never writes Cypher itself.
+- Resolves the `:Alias` surface forms extraction writes onto canonical
+  `:Entity` nodes, so results cluster by entity rather than by spelling.
+- Logs every tool invocation to an append-only §76 BDSG audit log.
 
-- **Seven graph retrieval tools** dispatched end-to-end with §76 BDSG
-  audit logging: `posts_mentioning`, `authors_mentioning`,
-  `author_activity_summary`, `topic_co_occurrence`,
-  `authors_connected_by_topic`, `network_around`, and
-  `social_network_around`. Each has a Pydantic input/output schema and
-  version-controlled Cypher under `chorus/queries/`. The registry is
-  served at `/tools`. The two `*_around` tools return nodes-and-edges
-  payloads the UI renders as network graphs.
-- **A natural-language agent** at `POST /agent/query` (ADR 0009). It
-  selects and calls the registered tools via OpenAI tool-calling to
-  answer a free-text question — it never writes Cypher itself.
-- **An ingestion pipeline CLI** (`python -m chorus.ingestion.cli run`)
-  that pulls the upstream tables (postings, comments, messages,
-  profiles, connections), persists rows to the SQLite raw store, and
-  projects them into the graph. Entity extraction (GLiNER NER) runs
-  inline per post and writes `:MENTIONS` edges to `:Alias` nodes with
-  provenance when `NER_ENABLED` is set.
-- **An entity-resolution stage** (`python -m chorus.ingestion.cli resolve`)
-  that clusters the `:Alias` nodes extraction writes onto canonical
-  `:Entity` nodes — vector similarity + a same-type filter + an LLM
-  tie-break, minting a new entity when nothing matches — and records
-  `:RESOLVED_TO` provenance. It is idempotent, and because the tools
-  read through `:RESOLVED_TO`, a resolve pass upgrades them with no tool
-  change ("Berlin" and "berlin" collapse to one entity).
-- **A React SPA** (Vite + TypeScript + Tailwind v4, `@infra/ui`) served by
-  nginx, with one screen per tool, an agent screen, and a data-ingestion
-  screen — upload CSV exports and run migrate/ingest/resolve as background
-  jobs, gated by `INGESTION_UI_ENABLED` (default off; ADR 0014). The two
-  `*_around` tools render interactive `ForceGraph` network graphs
-  (`@infra/ui`, ADR 0016), with click-to-expand neighborhoods and inline
-  graphs in agent answers.
-- **Migrations** (constraints, indexes, vector indexes) applied in order
-  and idempotently, with a CLI (`apply` / `status`).
-- **App compose project + Makefile** for building and running the api
-  and ui services.
-
-Still on the roadmap — the `semantic_search` and `escape_hatch_cypher`
-tools, the retention sweeper job, and real OIDC wiring — is tracked in
-`docs/` and `docs/decisions/`. See *Current state* in `CLAUDE.md` for
-the punch list.
+Inference is reached over the network at the shared vllm-service router;
+chorus ships no model weights and runs airgapped in production. The
+runtime surface is detailed in
+[architecture.md](docs/architecture.md#runtime-surface).
 
 ## Prerequisites
 
@@ -99,12 +70,6 @@ CHORUS_DEFAULT_IDENTITY=dev
 `CHORUS_DEFAULT_IDENTITY` is the dev-only fallback for the
 trusted-header principal seam. Leave it unset in production — without
 it, requests without an `X-Auth-User` header fail with 401.
-
-chorus defaults to English. Set `RESPONSE_LANGUAGE=de` in `.env` to switch
-the whole app to German: the agent answers in German, strips leading articles
-when building entity queries (`die AfD` → `AfD`), and the React SPA renders
-its captions in German (the SPA reads the language from `GET /config` at boot).
-Unknown values fall back to English. See ADR 0013 and ADR 0015.
 
 ### 3. Apply migrations
 
@@ -171,18 +136,6 @@ and that the container is up.
 From there, [tutorial-first-queries.md](docs/tutorial-first-queries.md)
 walks the surface end-to-end: the tool registry, seeding a row into the
 empty graph, invoking a tool, and asking the agent the same question.
-
-### Metrics
-
-```bash
-curl -s http://localhost:8000/metrics | head
-```
-
-Unauthenticated, like `/health`, so the obs-plane Prometheus scraper can
-reach it without a principal header. Reports aggregate request counters
-and latency histograms only — no user data. Set `METRICS_ENABLED=false`
-to disable.
-
 
 ## Running the test suite
 
