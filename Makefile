@@ -16,7 +16,7 @@ NETWORKS := inference-net data-net edge-net
 VOLUMES  := chorus-state
 include make/common.mk
 
-.PHONY: help migrate ingest resolve bootstrap frontend-lint frontend-test
+.PHONY: help migrate ingest resolve bootstrap frontend-lint
 
 help:
 	@echo "chorus — GraphRAG app (FastAPI backend + React SPA frontend)."
@@ -37,7 +37,7 @@ help:
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
 	@echo "  make pre-commit run pre-commit hooks (ruff + pyrefly)"
 	@echo "  make verify     pre-push gate: pre-commit + frontend lint/build; mirrors CI's lint gate"
-	@echo "  make test       run pytest"
+	@echo "  make test       run pytest + vitest (test-backend / test-frontend for one)"
 
 # Apply pending Neo4j migrations against the configured NEO4J_URI.
 migrate:
@@ -59,7 +59,3 @@ bootstrap: network volumes
 # Lint the React SPA (requires pnpm).
 frontend-lint:
 	cd frontend && pnpm install --frozen-lockfile && pnpm lint
-
-# Run the React SPA unit tests (requires pnpm).
-frontend-test:
-	cd frontend && pnpm install --frozen-lockfile && pnpm test
