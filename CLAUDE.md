@@ -108,8 +108,9 @@ The Makefile wraps the compose workflow: `make network` / `volumes` /
 `bootstrap` (wait for data-plane health, then up) / `test` /
 `pre-commit` / `bundle` (airgap image tarball from the latest annotated
 release tag) / `bundle-dev` (airgap tarball of the current working tree, for
-dev/soak). `README.md` has the local quick start (env vars, seeding, first
-queries).
+dev/soak). `README.md` has the local quick start (env vars, migrations, the
+API); `docs/tutorial-first-queries.md` has the seeding walkthrough and the
+first tool/agent queries, and `docs/README.md` indexes the rest of `docs/`.
 
 Production images are built on the internet-connected CI side with
 `uv sync --locked` from the hash-locked `uv.lock`, baking the dependency
