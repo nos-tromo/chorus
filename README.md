@@ -184,39 +184,6 @@ and latency histograms only — no user data. Set `METRICS_ENABLED=false`
 to disable.
 
 
-## Ingesting data
-
-The ingestion pipeline reads CSV dumps of the upstream tables from
-`INGESTION_SOURCE_DIR`, writes them to the SQLite raw store, and projects
-them into the graph:
-
-```bash
-uv run python -m chorus.ingestion.cli run             # one full pass
-uv run python -m chorus.ingestion.cli run --since 2026-01-01T00:00:00
-```
-
-`--since` restricts the pull to rows newer than the cutoff. Entity
-extraction runs inline per post when `NER_ENABLED=true` and a GLiNER
-endpoint is configured (`NER_API_BASE`); leave it off in dev
-environments without one to avoid a connect-failure warning per post.
-
-Extraction attaches each span to an `:Alias` node. Once a pull (with NER)
-has run, resolve those aliases onto canonical entities:
-
-```bash
-uv run python -m chorus.ingestion.cli resolve
-```
-
-This clusters the unresolved `:Alias` nodes onto `:Entity` nodes — vector
-similarity over `Entity.embedding` plus a same-type filter and an LLM
-tie-break, minting a new entity when nothing matches — and writes
-`:RESOLVED_TO` provenance. It needs the inference endpoint (it embeds the
-surface forms and asks the chat model to break ties) and is idempotent, so
-a re-run only resolves aliases added since. Because the tools read
-through `:RESOLVED_TO`, a resolve pass clusters their results by canonical
-entity with no tool change. Thresholds are env-driven
-(`RES_EMBED_THRESHOLD`, `RES_LLM_TIEBREAK`, `RES_VECTOR_K`).
-
 ## Running the test suite
 
 Unit tests stub the inference provider and run without external
