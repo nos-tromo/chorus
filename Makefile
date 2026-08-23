@@ -31,12 +31,14 @@ help:
 	@echo "  make dev        build backend + frontend, then up-dev"
 	@echo "  make stop       stop containers (keep them)"
 	@echo "  make down       stop + remove containers (never touches data-plane)"
+	@echo "  make logs       follow the compose logs (last 100 lines first)"
 	@echo "  make migrate    apply pending Neo4j migrations"
 	@echo "  make ingest     run one ingestion pass from INGESTION_SOURCE_DIR"
 	@echo "  make resolve    resolve aliases to canonical entities"
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
 	@echo "  make pre-commit run pre-commit hooks (ruff + pyrefly)"
 	@echo "  make verify     pre-push gate: pre-commit + frontend lint/build; mirrors CI's lint gate"
+	@echo "  make frontend-lint  eslint the React SPA alone (the SPA half of 'verify')"
 	@echo "  make test       run pytest + vitest (test-backend / test-frontend for one)"
 
 # Apply pending Neo4j migrations against the configured NEO4J_URI.
