@@ -9,8 +9,9 @@ just enough to get the app running locally. Everything else lives in
 
 - Ingests social-media exports (postings, comments, messages, profiles,
   connections) into a people-centric Neo4j knowledge graph.
-- Serves seven named graph retrieval tools over `POST /tools/<name>`,
-  each with a Pydantic input/output schema and version-controlled Cypher.
+- Serves nine named graph tools over `POST /tools/<name>` — seven
+  retrieval tools plus two click-to-expand tools — each with a Pydantic
+  input/output schema and version-controlled Cypher.
 - Answers free-text questions with an agent that selects and calls those
   tools — it never writes Cypher itself.
 - Resolves the `:Alias` surface forms extraction writes onto canonical
@@ -87,8 +88,11 @@ initialises the audit log SQLite file under `./var/`.
 
 ### 5. (Optional) Start the frontend dev server
 
-Vite proxies `/health`, `/config`, `/tools`, `/agent`, and `/ingestion` to
-`http://localhost:8000`, so run it in a separate shell alongside step 4:
+Vite proxies the eight backend prefixes — `/health`, `/config`, `/tools`,
+`/agent`, `/ingestion`, `/stats`, `/version` and `/whoami` — to
+`http://localhost:8000`, so run it in a separate shell alongside step 4.
+The SPA is served under `/chorus/`, so the proxy matches `/chorus/<prefix>`
+and strips the prefix before forwarding (`frontend/vite.config.ts`):
 
 ```bash
 cd frontend

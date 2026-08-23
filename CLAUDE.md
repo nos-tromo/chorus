@@ -150,7 +150,7 @@ redesign of the ingestion pipeline, not an incremental feature add.
 ## Tech stack
 
 - **Backend**: Python 3.12, FastAPI, Uvicorn
-- **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.9.1`), served by nginx which reverse-proxies the API same-origin (no CORS)
+- **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.15.0`), served by nginx which reverse-proxies the API same-origin (no CORS)
 - **Graph DB**: Neo4j Community Edition (5.11+ for native vector indexes)
 - **Metadata + audit**: SQLite
 - **Entity extraction**: GLiNER, reached through the inference provider
@@ -194,10 +194,10 @@ policies for stored data live next to the data itself.
 
 ```
 vllm-service/             # existing, owns the LiteLLM router + vLLM backends
-  compose.yaml            # inference endpoints on `inference-net` (alias `vllm-router`)
+  docker/compose.yaml     # inference endpoints on `inference-net` (alias `vllm-router`)
 
 data-plane/               # owns Neo4j (chorus) and Qdrant (docint) + their volumes
-  compose.yaml            # Neo4j reachable as `neo4j` on `data-net`
+  docker/compose.yaml     # Neo4j reachable as `neo4j` on `data-net`
   backup/                 # backup + restore runbooks live next to the data
 
 chorus/                   # this repo — app only
@@ -613,6 +613,10 @@ Implemented tool set (self-registered in `chorus/tools/`, served at
   visualization
 - `social_network_around(author, depth, limit)` — author ego network over
   `:FOLLOWS` / `:FRIENDS_WITH`, for visualization
+- `expand_network_node(...)` / `expand_social_node(...)` — one-hop
+  neighborhood of an already-rendered node, for click-to-expand in the
+  graph explorer (ADR 0016). Registered like the rest, so they appear at
+  `/tools` and are advertised to the agent too.
 
 Planned: `semantic_search(query, k, filters)` (vector index on
 `Post.embedding`), and `escape_hatch_cypher(query)` for power users —
@@ -706,7 +710,8 @@ chorus/                      # top-level repo
                               # request counters/latencies, no user data), gated by METRICS_ENABLED
                               # (default on)
       auth/principal.py      # trusted-header principal seam (OIDC swap-in)
-      routers/               # health.py, config.py, tools.py, agent.py, ingestion.py
+      routers/               # health.py, config.py, tools.py, agent.py, ingestion.py, stats.py, whoami.py
+                              # (eight routers — ingestion.py exports two; no /api/v1, prefixes are bare)
     audit/
       logger.py              # §76 BDSG audit log (SQLite, append-only, trigger-enforced)
       schema.sql
@@ -726,7 +731,7 @@ chorus/                      # top-level repo
       resolution.py          # alias / embed-cluster / LLM tiebreak
       raw_store.py           # separate SQLite, not the audit DB
       jobs.py                # background job registry for the ingestion UI (ADR 0014)
-      cli.py                 # python -m chorus.ingestion.cli {run,resolve}
+      cli.py                 # python -m chorus.ingestion.cli {run,resolve,backfill-norm-keys}
     migrations/
       runner.py              # idempotent applier, tracked via (:_Migration {version})
       cli.py                 # python -m chorus.migrations.cli {apply,status}
@@ -756,14 +761,15 @@ chorus/                      # top-level repo
       security-headers.conf  # hardened CSP
     src/
       api/                   # client.ts (no identity header — proxy sets X-Auth-User), queryClient.ts, types.ts, per-domain modules
-      config/                # ConfigProvider — boots GET /config (language + ingestion_enabled)
-      i18n/                  # typed en/de catalog (~160 keys) + useT() hook; parity test
+      config/                # ConfigContext.tsx — ConfigProvider (boots GET /config: language +
+                              # ingestion_enabled), useConfig(), and the useT() i18n hook
+      i18n/                  # typed en/de catalog (151 keys); EN/DE parity test
       layout/                # Shell.tsx, Sidebar.tsx
       routes/                # Router.tsx + one screen per route (Agent, Ingestion, tool screens)
       components/            # DataTable, AgentGraphCard (inline ForceGraph), ToolTrace, ToolScreen, ...
-      hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, useUnifiedExplorer, ingestion hooks
+      hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, useStats, useWhoami,
+                              # useUnifiedExplorer, useExplorerNodeStyles, ingestion hooks
       lib/                   # explorerElements.ts, explorerActions.ts, graphExplorer.ts (ForceGraph element/style mappers + merge logic, ADR 0016)
-      config/                # ConfigProvider, useConfig(), useT() i18n hook
       tools/                 # specs.ts — ToolSpec declarations for the generic table-tool screens
   tests/                     # unit dirs mirror chorus/; per-tool tests in tests/integration/
   docker/
@@ -771,13 +777,16 @@ chorus/                      # top-level repo
     compose.yaml             # app services only — the lone volume (chorus-state) is external
     compose.override.yaml    # dev overlay: publishes backend + frontend (nginx:8080) host ports
   docs/
-    architecture.md / retention.md / compliance.md / airgap.md
+    README.md (index) / tutorial-first-queries.md / architecture.md / ingestion.md /
+    retention.md / compliance.md / airgap.md
     decisions/               # ADRs, one file per significant decision
   scripts/                   # bundle_images.sh, check_dataplane_health.sh
   Makefile                   # network / volumes / build / up / bundle / migrate / ingest / resolve / bootstrap / frontend-lint
   pyproject.toml + uv.lock + pytest.ini
   .pre-commit-config.yaml
-  .github/workflows/ci.yml   # delegates to the shared nos-tromo python-app-ci workflow; frontend job: lint + typecheck + test
+  .github/workflows/        # ci.yml (delegates to the shared nos-tromo python-app-ci workflow;
+                            #   frontend job: lint + typecheck + test), release-tag.yml
+                            #   (mints the annotated tag on merge), claude.yml
 ```
 
 ### Container hardening (deploy ADR 0001)
@@ -826,8 +835,10 @@ hosts the `chorus-state` volume needs a one-time `chown -R 10001:10001`
 - **Pre-commit**: `pre-commit` runs ruff and pyrefly on changed files
   before commit. Full pytest runs in CI, not in the hook.
 - **CI**: GitHub Actions. `.github/workflows/ci.yml` delegates to the
-  shared `nos-tromo/.github` python-app-ci workflow (pinned tag):
-  ruff → pyrefly → pytest on 3.12 (`uv sync --frozen`) →
+  shared `nos-tromo/.github` python-app-ci workflow (pinned to a full
+  commit SHA with the version in a trailing comment, per the
+  federation-wide rule — the `vN` alias is for humans only):
+  ruff → pyrefly → pytest on 3.12 (`uv sync --locked`) →
   Docker build. The airgap delivery bundle is `make bundle` (versioned
   image tarballs via `scripts/bundle_images.sh`). No CI-driven deploy in
   v1; deploys are manual on the airgapped side via the data-plane and
@@ -884,13 +895,20 @@ Chorus processes data that is materially more sensitive than docint's
 administrative documents — observation of behavior, third-party data, likely
 Art. 9 categories. This shapes several defaults:
 
-- **Authentication required from v1.** OIDC against the organizational IdP.
-  Not retrofitted later.
+- **Authentication required from v1.** Enforced at the `edge-plane`
+  gateway (Authelia forward-auth), which injects the trusted
+  `X-Auth-User` the backend's `api/auth/principal.py` seam reads —
+  fail-closed in production, where `CHORUS_DEFAULT_IDENTITY` is unset.
+  Wiring OIDC against the organizational IdP directly into that seam is
+  the planned swap-in and has not landed (see *Current state*). Not
+  retrofitted later: the principal is on every audit row from v1.
 - **§76 BDSG query logging from day one.** Every tool invocation logged with
   user, timestamp, parameters, entities touched, result counts. Immutable
   table, separate retention from content data.
-- **Per-post retention timers.** `Post.retention_until` set at ingestion.
-  Nightly cleanup hard-deletes expired content.
+- **Per-post retention timers.** `Post.retention_until` is set at
+  ingestion today; the nightly sweep that hard-deletes expired content
+  is designed (`docs/retention.md`) but not yet landed — see *Current
+  state*.
 - **DSFA is required**, scoped specifically to social network analysis for
   the defined organizational purpose. Narrow scope > flexible platform.
 
@@ -903,7 +921,9 @@ Chorus and docint are independent applications that share infrastructure:
 - Same `inference-net` Docker network
 - Same vLLM and Ollama endpoints
 - Same GLiNER service (reached via vllm-service's LiteLLM proxy)
-- Same Nginx reverse proxy
+- Same edge gateway (`edge-plane`: Caddy + Authelia), reached under
+  their own sub-paths; each app still ships its own nginx in front of
+  its SPA
 - Same operational conventions (compose federation, healthchecks,
   env-driven config)
 
