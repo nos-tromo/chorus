@@ -9,8 +9,9 @@ just enough to get the app running locally. Everything else lives in
 
 - Ingests social-media exports (postings, comments, messages, profiles,
   connections) into a people-centric Neo4j knowledge graph.
-- Serves seven named graph retrieval tools over `POST /tools/<name>`,
-  each with a Pydantic input/output schema and version-controlled Cypher.
+- Serves nine named graph tools over `POST /tools/<name>` — seven
+  retrieval tools plus two click-to-expand tools — each with a Pydantic
+  input/output schema and version-controlled Cypher.
 - Answers free-text questions with an agent that selects and calls those
   tools — it never writes Cypher itself.
 - Resolves the `:Alias` surface forms extraction writes onto canonical

@@ -9,14 +9,17 @@ diagrams) as they stabilize.
 The FastAPI app boots, applies Neo4j migrations on startup, and exposes
 `/health`. On top of that:
 
-- **Seven graph retrieval tools** dispatched end-to-end with §76 BDSG
-  audit logging: `posts_mentioning`, `authors_mentioning`,
-  `author_activity_summary`, `topic_co_occurrence`,
-  `authors_connected_by_topic`, `network_around`, and
-  `social_network_around`. Each has a Pydantic input/output schema and
-  version-controlled Cypher under `chorus/queries/`. The registry is
-  served at `/tools`. The two `*_around` tools return nodes-and-edges
-  payloads the UI renders as network graphs.
+- **Nine graph tools** dispatched end-to-end with §76 BDSG audit
+  logging — seven retrieval tools (`posts_mentioning`,
+  `authors_mentioning`, `author_activity_summary`,
+  `topic_co_occurrence`, `authors_connected_by_topic`, `network_around`,
+  `social_network_around`) plus two click-to-expand tools
+  (`expand_network_node`, `expand_social_node`; ADR 0016). Each has a
+  Pydantic input/output schema and version-controlled Cypher under
+  `chorus/queries/`. The whole registry is served at `/tools` and
+  advertised to the agent — both iterate the same `TOOLS` dict. The two
+  `*_around` and two `expand_*` tools return nodes-and-edges payloads
+  the UI renders as network graphs.
 - **A natural-language agent** at `POST /agent/query` (ADR 0009). It
   selects and calls the registered tools via OpenAI tool-calling to
   answer a free-text question — it never writes Cypher itself.

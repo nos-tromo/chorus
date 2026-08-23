@@ -613,6 +613,10 @@ Implemented tool set (self-registered in `chorus/tools/`, served at
   visualization
 - `social_network_around(author, depth, limit)` — author ego network over
   `:FOLLOWS` / `:FRIENDS_WITH`, for visualization
+- `expand_network_node(...)` / `expand_social_node(...)` — one-hop
+  neighborhood of an already-rendered node, for click-to-expand in the
+  graph explorer (ADR 0016). Registered like the rest, so they appear at
+  `/tools` and are advertised to the agent too.
 
 Planned: `semantic_search(query, k, filters)` (vector index on
 `Post.embedding`), and `escape_hatch_cypher(query)` for power users —

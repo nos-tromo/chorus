@@ -17,10 +17,12 @@ a real `X-Auth-User` header from the edge gateway.
 curl -s http://localhost:8000/tools | jq
 ```
 
-Lists every registered tool with its Pydantic input/output schemas:
-`posts_mentioning`, `authors_mentioning`, `author_activity_summary`,
-`topic_co_occurrence`, `authors_connected_by_topic`, `network_around`,
-and `social_network_around`.
+Lists every registered tool with its Pydantic input/output schemas —
+the seven retrieval tools `posts_mentioning`, `authors_mentioning`,
+`author_activity_summary`, `topic_co_occurrence`,
+`authors_connected_by_topic`, `network_around` and
+`social_network_around`, plus the two click-to-expand tools
+`expand_network_node` and `expand_social_node` the graph explorer uses.
 
 ## Seed a posting and an entity
 
