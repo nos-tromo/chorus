@@ -40,10 +40,17 @@ yet; the ingestion and resolution stages are in
 ## Frontend tier (React SPA + nginx)
 
 The chorus frontend is a React Single-Page Application built with Vite, served
-by an nginx container (ADR 0015). Nginx reverse-proxies the API route prefixes
-(`/health`, `/config`, `/tools`, `/agent`, `/ingestion`) to the backend on port
-8000, making the whole surface same-origin from the browser's perspective — no
-CORS middleware is needed.
+by an nginx container (ADR 0015). Nginx reverse-proxies eight API route
+prefixes to the backend on port 8000 — `/ingestion` in its own location block
+(it carries the CSV uploads, so it gets the raised body limit and unbuffered
+proxying), and `/health`, `/config`, `/tools`, `/agent`, `/stats`, `/version`,
+`/whoami` in the general JSON block. That makes the whole surface same-origin
+from the browser's perspective — no CORS middleware is needed.
+
+A new backend route has to be added in **two** places or it silently 404s
+through the SPA fallback: the prefix regex in
+`frontend/nginx/default.conf.template` and `API_PREFIXES` in
+`frontend/vite.config.ts`. `/whoami` was missed once already.
 
 ### SPA bootstrap and language
 

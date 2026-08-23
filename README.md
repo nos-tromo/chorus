@@ -88,8 +88,11 @@ initialises the audit log SQLite file under `./var/`.
 
 ### 5. (Optional) Start the frontend dev server
 
-Vite proxies `/health`, `/config`, `/tools`, `/agent`, and `/ingestion` to
-`http://localhost:8000`, so run it in a separate shell alongside step 4:
+Vite proxies the eight backend prefixes — `/health`, `/config`, `/tools`,
+`/agent`, `/ingestion`, `/stats`, `/version` and `/whoami` — to
+`http://localhost:8000`, so run it in a separate shell alongside step 4.
+The SPA is served under `/chorus/`, so the proxy matches `/chorus/<prefix>`
+and strips the prefix before forwarding (`frontend/vite.config.ts`):
 
 ```bash
 cd frontend
