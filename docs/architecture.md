@@ -67,12 +67,14 @@ fall back to English. See ADR 0013 and ADR 0015.
 
 ### Authentication seam
 
-The SPA's API client sends **no** identity header. Browser requests pass
-through the upstream Nginx/OIDC proxy, which injects `X-Auth-User`; the chorus
-nginx forwards that header unchanged to the backend. The backend's
-`api/auth/principal.py` seam reads it and falls back to
-`CHORUS_DEFAULT_IDENTITY` when absent (dev only). This ensures the §76 BDSG
-audit log records the real per-user OIDC principal on every tool invocation.
+The SPA's API client sends **no** identity header. In production, browser
+requests pass through the `edge-plane` gateway — Caddy, with Authelia as
+forward-auth — which strips any client-supplied identity headers and injects
+the trusted `X-Auth-User`; the chorus nginx forwards that header unchanged to
+the backend. The backend's `api/auth/principal.py` seam reads it and falls
+back to `CHORUS_DEFAULT_IDENTITY` when absent (dev only; production leaves it
+unset, so an unheadered request is rejected). This ensures the §76 BDSG audit
+log records the real per-user principal on every tool invocation.
 
 ### Ingestion upload limit
 
@@ -86,19 +88,33 @@ reverse-proxy limit on the chorus vhost if they have a lower global default.
 chorus expects the data-plane Compose project to publish a Neo4j service on
 `data-net`:
 
-- service name: `neo4j-chorus`
+- network alias: `neo4j` (hence the `NEO4J_URI=bolt://neo4j:7687` default)
 - bolt port: `7687`
 - HTTP port: `7474`
 
 chorus reads `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`
-from its env. The chorus repo does not declare any persistent volumes; all
-graph state lives in the data-plane project's named volumes.
+from its env. **All graph state** lives in the data-plane project's named
+volumes — chorus declares none of it. chorus does declare one volume of its
+own, `chorus-state` (audit log, raw store, operational logs under
+`CHORUS_HOME`), and it is `external: true`, so `docker compose down -v` in
+this repo cannot destroy it either.
 
 ## Inference contract
 
-All inference (chat, embed, rerank, NER) is reached through vllm-service's
-LiteLLM proxy at `http://vllm-router:4000/v1`, OpenAI-protocol HTTP,
-selected by the `model` field in each request.
+Chat, embed and rerank are reached through vllm-service's LiteLLM proxy at
+`http://vllm-router:4000/v1`, OpenAI-protocol HTTP, selected by the `model`
+field in each request. `chorus/inference/provider.py` is the only module that
+knows any of that.
+
+NER is the exception. It does **not** go through `provider.py` and is not a
+model-field-routed task: `chorus/inference/ner_client.py` POSTs the
+GLiNER-native `{text, labels, threshold}` body to `{NER_API_BASE}/gliner`,
+with its own env family (`NER_API_BASE`, default `http://vllm-router:4000` —
+note no `/v1` — plus `NER_API_KEY`, `NER_THRESHOLD`, `NER_TIMEOUT`,
+`NER_ENABLED`). Keeping it decoupled from `INFERENCE_PROVIDER` is what lets a
+host run one provider for chat/embed/rerank and vllm-service's ner-only stack
+(`NER_API_BASE=http://gliner-ner:8000`) for NER. See *Inference provider
+abstraction* in [`CLAUDE.md`](../CLAUDE.md).
 
 ## Observability
 
