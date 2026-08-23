@@ -10,13 +10,15 @@ here as dependencies are added. See *Airgapped operation* in
 Vite/React SPA. `docker/Dockerfile.frontend` uses a two-stage build: a
 `node:20-alpine` builder stage runs `pnpm install --frozen-lockfile` and
 `pnpm build` to produce the static bundle, then the artifact is copied into an
-`nginx:1.27-alpine` runtime image. The airgapped side loads the prebuilt image
-and fetches nothing — no node, no npm/pnpm, no build tooling on the airgapped
+`nginxinc/nginx-unprivileged:1.27-alpine` runtime image (uid 101, listening on
+:8080 — deploy ADR 0001). The airgapped side loads the prebuilt image and
+fetches nothing — no node, no npm/pnpm, no build tooling on the airgapped
 host.
 
 **Supply-chain pinning.** Both base images in `docker/Dockerfile.frontend` are
-digest-pinned (e.g. `node:20-alpine@sha256:…` and `nginx:1.27-alpine@sha256:…`),
-so the build is reproducible and immune to mutable-tag substitution attacks even
+digest-pinned (`node:20-alpine@sha256:…` and
+`nginxinc/nginx-unprivileged:1.27-alpine@sha256:…`, as the `NODE_IMAGE` /
+`NGINX_IMAGE` build args), so the build is reproducible and immune to mutable-tag substitution attacks even
 before the image reaches the internal registry.
 
 **No runtime network or telemetry.** Three concrete guarantees:
@@ -42,7 +44,7 @@ regardless of deployment language or ingestion flag.
 ## python-multipart
 
 **Pure-Python form parser, no network, no telemetry** (`python-multipart`
-0.0.29, added 2026-06-07 for ADR 0014). FastAPI requires it to parse
+0.0.32, added 2026-06-07 for ADR 0014). FastAPI requires it to parse
 `multipart/form-data`, which the frontend ingestion endpoint
 (`POST /ingestion/ingest`, `chorus/api/routers/ingestion.py`) uses to receive
 uploaded CSV files. It is a parsing library only — it opens no sockets, calls no
