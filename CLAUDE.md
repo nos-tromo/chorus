@@ -194,10 +194,10 @@ policies for stored data live next to the data itself.
 
 ```
 vllm-service/             # existing, owns the LiteLLM router + vLLM backends
-  compose.yaml            # inference endpoints on `inference-net` (alias `vllm-router`)
+  docker/compose.yaml     # inference endpoints on `inference-net` (alias `vllm-router`)
 
 data-plane/               # owns Neo4j (chorus) and Qdrant (docint) + their volumes
-  compose.yaml            # Neo4j reachable as `neo4j` on `data-net`
+  docker/compose.yaml     # Neo4j reachable as `neo4j` on `data-net`
   backup/                 # backup + restore runbooks live next to the data
 
 chorus/                   # this repo — app only
