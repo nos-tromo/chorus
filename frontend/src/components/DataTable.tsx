@@ -58,6 +58,9 @@ export function DataTable<T extends Record<string, unknown>>({
         <tbody>
           {rows.map((row, rowIdx) => (
             <tr
+              // T is an unconstrained record, so no id is available; the cells are
+              // stateless text, which makes position the only identity there is.
+              // eslint-disable-next-line @eslint-react/no-array-index-key
               key={rowIdx}
               className="border-b border-border last:border-0 hover:bg-accent/40"
             >

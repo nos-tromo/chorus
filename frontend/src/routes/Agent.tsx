@@ -102,6 +102,9 @@ export function Agent() {
         <div className="space-y-4">
           {turns.map((turn, idx) => (
             <div
+              // ConversationTurn carries no id and the transcript is append-only, so
+              // the index is the stable identity.
+              // eslint-disable-next-line @eslint-react/no-array-index-key
               key={idx}
               className={
                 turn.role === 'user'
@@ -140,7 +143,12 @@ export function Agent() {
                 {turn.role === 'assistant' &&
                   turn.trace
                     ?.filter((s) => s.result != null && GRAPH_TRACE_TOOLS.has(s.tool))
-                    .map((s, i) => <AgentGraphCard key={`${s.tool}:${i}`} entry={s} />)}
+                    .map((s, i) => (
+                      // Trace steps within a turn are append-only and carry no id; the
+                      // tool name alone is not unique when a tool is called twice.
+                      // eslint-disable-next-line @eslint-react/no-array-index-key
+                      <AgentGraphCard key={`${s.tool}:${i}`} entry={s} />
+                    ))}
 
                 {turn.truncated && (
                   <Banner variant="info" className="mt-2 text-xs" data-testid="truncation-notice">

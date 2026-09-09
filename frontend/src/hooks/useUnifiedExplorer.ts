@@ -52,7 +52,7 @@ function mapSocialExpand(out: ExpandSocialNodeOut): Added {
 
 export function useUnifiedExplorer() {
   const [graph, setGraph] = useState<GraphState<ExplorerNode, ExplorerEdge> | null>(null)
-  const [selectedIds, select] = useState<string[]>([])
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   // UI disables expansion triggers while expandingId is set (all three expand
   // fns share this flag — a topic expansion and a ties expansion never race).
   const [expandingId, setExpandingId] = useState<string | null>(null)
@@ -80,7 +80,7 @@ export function useUnifiedExplorer() {
       nodes: out.nodes,
       edges: out.edges.map((e) => ({ source: e.source, target: e.target, kind: 'mentions', weight: e.weight }))
     })
-    select([])
+    setSelectedIds([])
     setExpansionTruncated(false)
     setExpandError(null)
   }, [])
@@ -90,7 +90,7 @@ export function useUnifiedExplorer() {
       nodes: out.nodes.map((n) => ({ id: n.id, kind: 'author', label: n.label, entity_id: null, is_seed: n.is_seed })),
       edges: out.edges.map((e) => ({ source: e.source, target: e.target, kind: e.kind, directed: e.directed }))
     })
-    select([])
+    setSelectedIds([])
     setExpansionTruncated(false)
     setExpandError(null)
   }, [])
@@ -159,7 +159,7 @@ export function useUnifiedExplorer() {
         edges: g.edges.filter((e) => !removed.has(e.source) && !removed.has(e.target))
       }
     })
-    select((current) => current.filter((id) => !removed.has(id)))
+    setSelectedIds((current) => current.filter((id) => !removed.has(id)))
   }, [])
 
   return {
@@ -170,7 +170,9 @@ export function useUnifiedExplorer() {
     expandTies,
     expandTopic,
     selectedIds,
-    select,
+    // Exposed as `select` deliberately: reads better at the call site than
+    // `setSelectedIds`, which is the local name the state/setter pairing wants.
+    select: setSelectedIds,
     removeNodes,
     expandingId,
     expansionTruncated,
