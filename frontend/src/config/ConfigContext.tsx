@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, use } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Spinner, Banner } from '@infra/ui'
 import { fetchConfig } from '../api/config'
@@ -33,11 +33,11 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     )
   }
 
-  return <ConfigContext.Provider value={data!}>{children}</ConfigContext.Provider>
+  return <ConfigContext value={data!}>{children}</ConfigContext>
 }
 
 export function useConfig(): AppConfig {
-  const ctx = useContext(ConfigContext)
+  const ctx = use(ConfigContext)
   if (ctx === null) {
     throw new Error('useConfig must be used inside <ConfigProvider>')
   }

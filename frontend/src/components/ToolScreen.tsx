@@ -96,12 +96,12 @@ export function ToolScreen({ spec }: ToolScreenProps) {
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
-        {spec.fields.map((field, idx) => {
+        {spec.fields.map((field) => {
           if (field.kind === 'entity') {
             const label = field.labelKey ? t(field.labelKey) : t('common.entity_input')
             return (
               <EntityInput
-                key={idx}
+                key="_entity"
                 label={label}
                 value={(formState['_entity'] as string) ?? ''}
                 onChange={(v) => setField('_entity', v)}
@@ -114,7 +114,7 @@ export function ToolScreen({ spec }: ToolScreenProps) {
             const label = t(field.labelKey)
             return (
               <EntityInput
-                key={idx}
+                key={field.payloadKey}
                 label={label}
                 value={(formState[field.payloadKey] as string) ?? ''}
                 onChange={(v) => setField(field.payloadKey, v)}
@@ -126,7 +126,7 @@ export function ToolScreen({ spec }: ToolScreenProps) {
           if (field.kind === 'limit') {
             return (
               <LimitField
-                key={idx}
+                key="limit"
                 label={t('common.limit')}
                 min={field.min}
                 max={field.max}
@@ -139,7 +139,7 @@ export function ToolScreen({ spec }: ToolScreenProps) {
           if (field.kind === 'timeRange') {
             return (
               <TimeRangeInputs
-                key={idx}
+                key="_timeRange"
                 fromLabel={t('common.from_ts')}
                 toLabel={t('common.to_ts')}
                 value={(formState['_timeRange'] as TimeRangeValue) ?? {}}

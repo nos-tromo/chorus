@@ -17,6 +17,9 @@ export function ToolTrace({ trace }: ToolTraceProps) {
       </summary>
       <ul className="mt-2 space-y-3 pl-2 border-l-2 border-border">
         {trace.map((entry, idx) => (
+          // An append-only trace with no ids; entries never reorder and hold no
+          // state, so the index is the stable identity.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
           <li key={idx} className="space-y-1">
             {entry.error ? (
               // entry.error is a backend error flag, not user-facing text —
