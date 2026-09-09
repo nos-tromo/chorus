@@ -173,6 +173,11 @@ pulling a different image on the next build — a supply-chain risk in the airga
 delivery model where image tarballs are committed artefacts audited before
 deployment.
 
+> **Note (2026-09-09):** the builder moved to `node:22-alpine` when the frontend
+> migrated to ESLint 10 — Node 20 reached end-of-life, and
+> `@eslint-react/eslint-plugin` requires Node >= 22. The decision recorded here
+> (digest-pin both base images) is unchanged; only the version moved.
+
 Airgap invariant: the static bundle is fully materialized at build time. The
 nginx runtime fetches nothing; Cytoscape and the `@fontsource/inter` font are
 bundled by Vite. No runtime package-manager call occurs on the airgapped side.
