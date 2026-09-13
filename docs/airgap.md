@@ -16,10 +16,10 @@ fetches nothing — no node, no npm/pnpm, no build tooling on the airgapped
 host.
 
 **Supply-chain pinning.** Both base images in `docker/Dockerfile.frontend` are
-digest-pinned (`node:20-alpine@sha256:…` and
-`nginxinc/nginx-unprivileged:1.27-alpine@sha256:…`, as the `NODE_IMAGE` /
-`NGINX_IMAGE` build args), so the build is reproducible and immune to mutable-tag substitution attacks even
-before the image reaches the internal registry.
+digest-pinned on their `FROM` lines (`node:22-alpine@sha256:…` and
+`nginxinc/nginx-unprivileged:1.27-alpine@sha256:…`), so the build is
+reproducible and immune to mutable-tag substitution attacks even before the
+image reaches the internal registry. Dependabot bumps the digests.
 
 **No runtime network or telemetry.** Three concrete guarantees:
 
