@@ -8,18 +8,21 @@ here as dependencies are added. See *Airgapped operation* in
 
 **Build on internet-side CI, ship as a prebuilt nginx image.** The frontend is a
 Vite/React SPA. `docker/Dockerfile.frontend` uses a two-stage build: a
-`node:20-alpine` builder stage runs `pnpm install --frozen-lockfile` and
-`pnpm build` to produce the static bundle, then the artifact is copied into an
-`nginxinc/nginx-unprivileged:1.27-alpine` runtime image (uid 101, listening on
-:8080 — deploy ADR 0001). The airgapped side loads the prebuilt image and
-fetches nothing — no node, no npm/pnpm, no build tooling on the airgapped
-host.
+`node:*-alpine` builder stage installs the pinned pnpm with
+`npm install -g pnpm@<pin>` (Node ≥25 images ship no Corepack), runs
+`pnpm install --frozen-lockfile` and `pnpm build` to produce the static bundle,
+then the artifact is copied into an `nginxinc/nginx-unprivileged:*-alpine`
+runtime image (uid 101, listening on :8080 — deploy ADR 0001). The airgapped
+side loads the prebuilt image and fetches nothing — no node, no npm/pnpm, no
+build tooling on the airgapped host.
 
 **Supply-chain pinning.** Both base images in `docker/Dockerfile.frontend` are
-digest-pinned on their `FROM` lines (`node:22-alpine@sha256:…` and
-`nginxinc/nginx-unprivileged:1.27-alpine@sha256:…`), so the build is
+digest-pinned on their `FROM` lines (`node:*-alpine@sha256:…` and
+`nginxinc/nginx-unprivileged:*-alpine@sha256:…`), so the build is
 reproducible and immune to mutable-tag substitution attacks even before the
-image reaches the internal registry. Dependabot bumps the digests.
+image reaches the internal registry. Dependabot bumps both tags and digests;
+the backend's `python:3.12-slim-trixie` line, by contrast, is fixed by
+`requires-python` and only digest-refreshed (`.github/dependabot.yml`).
 
 **No runtime network or telemetry.** Three concrete guarantees:
 
