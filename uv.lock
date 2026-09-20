@@ -109,14 +109,14 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "loguru", specifier = ">=0.7.3" },
-    { name = "neo4j", specifier = ">=6.3.0" },
-    { name = "openai", specifier = ">=3.13.0" },
+    { name = "neo4j", specifier = ">=6.3.1" },
+    { name = "openai", specifier = ">=3.14.1" },
     { name = "prometheus-fastapi-instrumentator", specifier = ">=8.1.0" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "tenacity", specifier = ">=9.1.4" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.4" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -357,14 +357,14 @@ wheels = [
 
 [[package]]
 name = "neo4j"
-version = "6.3.0"
+version = "6.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pytz" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9d/57/f939c3b9b28e5851095eafb823b5a996eea3f21a14be513bcf9b355f97da/neo4j-6.3.0.tar.gz", hash = "sha256:d0d3986c37ad174a549a39dfec6d22a00a061ebcb0267f1a5caf856589838e73", size = 242487, upload-time = "2026-08-28T10:25:04.743Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/46/7a562799679d0c9bd3f12d28b43591eb953efc975e1241536733c5d8bcd3/neo4j-6.3.1.tar.gz", hash = "sha256:e75530ca0691d69916c56acdb7401df4ee9e1d5084cfcfb3ede796db38667dcd", size = 242885, upload-time = "2026-09-15T08:08:32.67Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/47/d29d93455fe2959e5b8383e52f68b3633d729f39e87fef94743f9f2240ae/neo4j-6.3.0-py3-none-any.whl", hash = "sha256:d243f9c8adf882ae7205a76eb2419b0a632d5f3c89383d4a0044d737a2223991", size = 331471, upload-time = "2026-08-28T10:25:03.263Z" },
+    { url = "https://files.pythonhosted.org/packages/08/a5/e33f76f4eb7e72c350e65802151884048325f889ab5d156ce4b6d9bde959/neo4j-6.3.1-py3-none-any.whl", hash = "sha256:a1b702d356f88885c27bdcf7dcd56af76423dbff4e26064e5bf5dbf47af53044", size = 331462, upload-time = "2026-09-15T08:08:31.252Z" },
 ]
 
 [[package]]
@@ -378,7 +378,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "3.13.0"
+version = "3.14.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -388,9 +388,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/40/f1/4874c4f7db30121885e6a763e2670b2fe1d76c79ed4732f8acbb51c8d96e/openai-3.13.0.tar.gz", hash = "sha256:a8f87a9b3b9c08eb446d68bd0a80e8ec907c4c35fdea63f4265c7b34b2de3a60", size = 1624217, upload-time = "2026-09-10T19:38:27.597Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a2/a5/bc3681f645a0d026332047cc19a703315979740a11a5763f46c163abd614/openai-3.14.1.tar.gz", hash = "sha256:2f3423a71af767d9071b059cf6df1e97a721c3a8d19417375ad7993d4df0d346", size = 1634770, upload-time = "2026-09-15T23:13:35.708Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/7f/ee9ebb7c5ab7abf016969faec7c748a91c1fd893078bfe1e5ba5d82e96c2/openai-3.13.0-py3-none-any.whl", hash = "sha256:e35b1f6fe99245e86e37504d9fad1ad2a363807307c424232c1d849bd0666c8e", size = 2009683, upload-time = "2026-09-10T19:38:25.855Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/13/d1caa2b2385ed22a1e10e1fd7fc09a92e282cffadad49c569827315f468a/openai-3.14.1-py3-none-any.whl", hash = "sha256:a6758739282f3b1cafe8df1204f7a2f7b1e9edbbcfa41c0efba687448fbc51cf", size = 2003545, upload-time = "2026-09-15T23:13:33.164Z" },
 ]
 
 [[package]]
@@ -761,15 +761,15 @@ wheels = [
 
 [[package]]
 name = "uvicorn"
-version = "0.52.4"
+version = "0.53.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "h11" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f2/0f/3f86e61397dd33bf2ccf28188c40db6a740658aeebbbf6e7dbc101a1f487/uvicorn-0.52.4.tar.gz", hash = "sha256:73acfee47a0b133c5de13d219492d62d8a31e935f4fe6e41a232451a15379f86", size = 100627, upload-time = "2026-08-19T06:27:41.821Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5d/ad/04bbb797c84fc1f26cb171f7394716f4865ffb8d8c5e1eef42565c2dfa6b/uvicorn-0.53.0.tar.gz", hash = "sha256:a9356f0cb89b3b8621529c5d5eebd69bfe154f4c3f68b4cf2de47e45fa855c2e", size = 110881, upload-time = "2026-09-14T07:44:23.815Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/79/4a20b54ab0491485ccd8c077db2d39187c7f12b3e15485d38a7be37c81b4/uvicorn-0.52.4-py3-none-any.whl", hash = "sha256:f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1", size = 79871, upload-time = "2026-08-19T06:27:40.36Z" },
+    { url = "https://files.pythonhosted.org/packages/76/18/0eea75741ee812e9f598b687619ce2454f6c3a1c5cd21ea990ec6bd26f45/uvicorn-0.53.0-py3-none-any.whl", hash = "sha256:e8dca71ec86dce5f04e333f0d56cdedf942446e6643b9cea1af0d6d3a02cb03e", size = 87081, upload-time = "2026-09-14T07:44:22.179Z" },
 ]
 
 [package.optional-dependencies]
