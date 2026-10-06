@@ -124,7 +124,7 @@ export function Agent() {
                   <p className="whitespace-pre-wrap">{turn.content}</p>
                 ) : (
                   <>
-                    <div className="prose prose-invert prose-sm max-w-none overflow-x-auto prose-pre:bg-muted prose-code:before:content-none prose-code:after:content-none">
+                    <div className="prose prose-theme prose-sm max-w-none overflow-x-auto prose-pre:bg-muted prose-code:before:content-none prose-code:after:content-none">
                       <Markdown remarkPlugins={[remarkGfm]}>{turn.content}</Markdown>
                     </div>
                     <CopyButton
