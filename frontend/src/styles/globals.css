@@ -43,8 +43,11 @@ option {
   @apply bg-background text-foreground;
 }
 
-* {
-  @apply border-border;
+/* In the base layer: unlayered, this default outranked every `border-*` utility (spinners included). */
+@layer base {
+  * {
+    @apply border-border;
+  }
 }
 
 ::-webkit-scrollbar {
