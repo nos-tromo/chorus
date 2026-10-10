@@ -1,7 +1,7 @@
 [project]
 name = "chorus"
 version = "0.6.14"
-description = "GraphRAG system for social network analysis"
+description = "GraphRAG for social-network analysis — Neo4j graph, FastAPI + React, airgap-first"
 authors = [
   { name = "nos-tromo" }
 ]
