@@ -9,11 +9,11 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = "Apache-2.0"
 dependencies = [
-    "fastapi>=0.143.1",
+    "fastapi>=0.148.0",
     "httpx>=0.28.1",
     "loguru>=0.7.3",
-    "neo4j>=6.4.0",
-    "openai>=3.31.0",
+    "neo4j>=6.4.1",
+    "openai>=3.35.1",
     "prometheus-fastapi-instrumentator>=8.1.0",
     "pydantic>=2.14.1",
     "python-dotenv>=1.2.4",
