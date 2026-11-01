@@ -55,7 +55,8 @@
       "browserslist@<4.28.7": "4.28.7",
       "source-map-js@<1.2.2": "1.2.2",
       "postcss-selector-parser@<7.1.6": "7.1.6",
-      "zod@<4.6.6": "4.6.7"
+      "zod@<4.6.6": "4.6.7",
+      "minimatch@<11.0.1": "11.0.3"
     }
   }
 }
