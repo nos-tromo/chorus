@@ -562,3 +562,36 @@ def test_job_status_404_for_unknown_id(monkeypatch: pytest.MonkeyPatch) -> None:
         assert resp.status_code == 404
     finally:
         jobs.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("filename", "data", "expected"),
+    [
+        (f"{_MARKER}.csv", {}, "rejected 1 upload(s) with an unrecognized or unsafe filename"),
+        ("postings.csv", {"since": _MARKER}, "'since' is not an ISO-8601 timestamp"),
+    ],
+)
+def test_ingest_rejection_log_omits_submitted_values(
+    monkeypatch: pytest.MonkeyPatch, filename: str, data: dict[str, str], expected: str
+) -> None:
+    """A rejected upload name or 'since' value is never echoed into the log."""
+    monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
+    records: list[str] = []
+    sink_id = logger.add(lambda m: records.append(str(m)), level="DEBUG")
+    jobs = JobRegistry()
+    try:
+        client = TestClient(_build_app(None, None, jobs))
+        resp = client.post(
+            "/ingestion/ingest",
+            files=[("files", (filename, _POSTINGS_CSV, "text/csv"))],
+            data=data,
+            headers={"X-Auth-User": "analyst"},
+        )
+        assert resp.status_code == 422
+    finally:
+        logger.remove(sink_id)
+        jobs.shutdown()
+
+    logged = "\n".join(records)
+    assert expected in logged
+    assert _MARKER not in logged

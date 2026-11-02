@@ -674,3 +674,33 @@ def test_tool_exception_error_is_generic_and_logged(
     body = result.model_dump_json()
     assert marker not in body
     assert any(marker in r for r in records)
+
+
+def test_invalid_arguments_log_omits_submitted_values() -> None:
+    """Invalid arguments are logged by field and error type; the model still gets the detail.
+
+    Validation fails before the tool runs, so no driver or audit logger is needed.
+    """
+    from loguru import logger
+
+    from chorus.agent.loop import _execute_tool_call
+
+    marker = "MARKER-SECRET-1234"
+    tc = _FakeToolCall("c1", "posts_mentioning", json.dumps({"entity": "placeholder-entity", "limit": marker}))
+    driver: Any = None
+    audit: Any = None
+
+    records: list[str] = []
+    sink_id = logger.add(lambda m: records.append(str(m)), level="DEBUG")
+    try:
+        step, tool_message = _execute_tool_call(tc, driver, audit, user="u")
+    finally:
+        logger.remove(sink_id)
+
+    logged = "\n".join(records)
+    assert "agent: invalid arguments for tool 'posts_mentioning'" in logged
+    assert "('limit',)" in logged
+    assert "int_parsing" in logged
+    assert marker not in logged
+    assert step.error == "Tool call failed."
+    assert marker in tool_message["content"]

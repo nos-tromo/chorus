@@ -1,8 +1,10 @@
-"""Global error handlers: generic client-visible bodies, full detail to logs.
+"""Global error handlers: generic client-visible bodies, detail to logs.
 
 Covers `install_error_handlers` directly (Template C), plus the specific
 sweep sites that used to leak exception text into response bodies: the
-agent route, tool-input validation, and ingestion job failures.
+agent route, tool-input validation, and ingestion job failures. Validation
+errors reach the log by location and type only, never with the submitted
+value.
 """
 
 from __future__ import annotations
@@ -69,7 +71,7 @@ def _build_validation_app() -> FastAPI:
 
 
 def test_request_validation_error_is_generic_and_logged() -> None:
-    """A malformed request body returns a generic body; details go to logs."""
+    """A malformed request body returns a generic body; the log gets its shape, not its value."""
     records, sink_id = _capture_logs()
     try:
         client = TestClient(_build_validation_app())
@@ -77,7 +79,11 @@ def test_request_validation_error_is_generic_and_logged() -> None:
         assert resp.status_code == 422
         assert resp.json() == {"detail": "Invalid request."}
         assert MARKER not in resp.text
-        assert any(MARKER in r for r in records)
+        logged = "\n".join(records)
+        assert "Validation error on POST /validated" in logged
+        assert "('body', 'value')" in logged
+        assert "int_parsing" in logged
+        assert MARKER not in logged
     finally:
         logger.remove(sink_id)
 
@@ -136,6 +142,23 @@ def test_tool_input_validation_error_is_generic(monkeypatch: pytest.MonkeyPatch)
     assert resp.json() == {"detail": "Invalid request."}
     assert "loc" not in resp.text
     assert "msg" not in resp.text
+
+
+def test_tool_input_validation_logs_shape_not_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A rejected tool payload is logged by tool, field and error type; never by value."""
+    monkeypatch.setenv("CHORUS_DEFAULT_IDENTITY", "test-user")
+    records, sink_id = _capture_logs()
+    try:
+        client = TestClient(_build_tools_app())
+        resp = client.post("/tools/posts_mentioning", json={"entity": "placeholder-entity", "limit": MARKER})
+        assert resp.status_code == 422
+        logged = "\n".join(records)
+        assert "Tool input validation failed for posts_mentioning" in logged
+        assert "('limit',)" in logged
+        assert "int_parsing" in logged
+        assert MARKER not in logged
+    finally:
+        logger.remove(sink_id)
 
 
 def test_job_failure_records_generic_error_and_logs_detail() -> None:

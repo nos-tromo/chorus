@@ -24,6 +24,7 @@ from chorus.agent.prompts import get_system_prompt
 from chorus.audit.logger import AuditLogger
 from chorus.inference import provider
 from chorus.tools import TOOLS
+from chorus.utils.log_redaction import redact_validation_errors
 
 _MAX_TOOL_MESSAGE_ITEMS = 8
 _MAX_TOOL_MESSAGE_STRING_CHARS = 280
@@ -216,8 +217,8 @@ def _execute_tool_call(
     Failures (unknown tool, invalid arguments, tool exception) become an
     ``{"error": ...}`` tool message fed back to the model (full detail, so it
     can self-correct) and a TraceStep with a static, client-safe ``error``
-    set; the loop then continues so the model can recover. The detailed
-    failure is logged in every case.
+    set; the loop then continues so the model can recover. The failure is
+    logged in every case; invalid arguments are logged without their values.
     """
     name = tc.function.name
     loaded: Any
@@ -239,7 +240,7 @@ def _execute_tool_call(
         parsed = spec.input_model.model_validate(arguments)
     except ValidationError as exc:
         detail = f"invalid arguments: {exc.errors()}"
-        logger.warning(f"agent: {detail}")
+        logger.warning("agent: invalid arguments for tool {!r}: {}", name, redact_validation_errors(exc.errors()))
         return TraceStep(tool=name, arguments=arguments, error="Tool call failed."), _tool_message(
             tc, {"error": detail}, max_items=max_items, max_chars=max_chars
         )

@@ -308,8 +308,9 @@ class AuditConfig:
 
     Attributes:
         db_path: Filesystem path to the audit SQLite database.
-        retention_days: How long audit records are retained before the
-            nightly sweeper deletes them. Defaults to two years.
+        retention_days: How long audit records are meant to be retained.
+            Loaded but not yet enforced: no purge job exists. Defaults to
+            two years.
     """
 
     db_path: Path

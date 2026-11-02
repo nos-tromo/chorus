@@ -258,18 +258,22 @@ def ingest(
     # keeps the staged write provably inside the staging dir independent of
     # table_for_filename's internals: defense in depth for the write below.
     safe_names: list[str] = []
-    rejected: list[str] = []
+    rejected = 0
     for f in files:
         raw = f.filename or ""
         base = Path(raw).name
         if base != raw or table_for_filename(base) is None:
-            rejected.append(raw or "<unnamed>")
+            rejected += 1
         else:
             safe_names.append(base)
     if rejected:
+        # Upload names are client-chosen and can carry an account handle, so
+        # only their count is logged.
         logger.warning(
-            f"unrecognized or unsafe filename(s): {rejected}; expected one of {list(TABLES)} "
-            "as '<table>.csv' or '*_<table>.csv'"
+            "rejected {} upload(s) with an unrecognized or unsafe filename; expected one of {} "
+            "as '<table>.csv' or '*_<table>.csv'",
+            rejected,
+            list(TABLES),
         )
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid request.")
     since_dt: datetime | None = None
@@ -277,7 +281,7 @@ def ingest(
         try:
             since_dt = datetime.fromisoformat(since)
         except ValueError as exc:
-            logger.warning(f"invalid 'since' timestamp: {since!r}")
+            logger.warning("rejected an ingest request: 'since' is not an ISO-8601 timestamp")
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid request.") from exc
 
     _reject_if_busy(request)

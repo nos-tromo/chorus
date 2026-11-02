@@ -176,10 +176,10 @@ redesign of the ingestion pipeline, not an incremental feature add.
   and graph traversal happen in the same Cypher statement.
 - **State lives in the data plane, not in the app stack.** Neo4j and its
   volumes are owned by the separate `data-plane/` compose project. The
-  only state chorus keeps (audit log, raw store, operational logs under
-  `CHORUS_HOME`) lives in the `chorus-state` volume, declared
-  `external: true` — so `docker compose down -v` in chorus can never
-  destroy graph data or chorus-local state.
+  only state chorus keeps (audit log and raw store under `CHORUS_HOME`)
+  lives in the `chorus-state` volume, declared `external: true` — so
+  `docker compose down -v` in chorus can never destroy graph data or
+  chorus-local state.
 - **Airgapped in production.** Chorus production environments have no
   internet access. This is non-negotiable and shapes every dependency,
   image, and model choice. See Airgapped operation.
@@ -210,7 +210,7 @@ chorus/                   # this repo — app only
       backend:            # joins inference-net + data-net; bolt://neo4j:7687
       frontend:           # nginx SPA; chorus-net + edge-net (alias chorus-frontend); reverse-proxies API prefixes → backend:8000
     volumes:
-      chorus-state:       # external — audit log, raw store, op logs ($CHORUS_HOME)
+      chorus-state:       # external — audit log + raw store ($CHORUS_HOME)
 ```
 
 `docker compose down -v` in the chorus repo must always be safe — graph
@@ -750,7 +750,8 @@ chorus/                      # top-level repo
       ...
     utils/
       env_cfg.py             # every env var loader as a frozen dataclass
-      logger_cfg.py          # loguru sinks (stderr + rotating file)
+      logger_cfg.py          # loguru stderr sink (no file sink) + uvicorn access-log query-string filter
+      log_redaction.py       # value-free views of errors for ops logs (redact_validation_errors)
   frontend/                  # React SPA (ADR 0015) — Vite + TypeScript + Tailwind v4
     index.html
     package.json + pnpm-lock.yaml
@@ -761,7 +762,7 @@ chorus/                      # top-level repo
                              # serves index.html for it (bit us with /whoami)
     tsconfig.json / vitest.config.ts
     nginx/
-      default.conf.template  # env-templated upload limit (CHORUS_CLIENT_MAX_BODY_SIZE)
+      default.conf.template  # env-templated upload limit (CHORUS_CLIENT_MAX_BODY_SIZE); query-free access log
       security-headers.conf  # hardened CSP
     src/
       api/                   # client.ts (no identity header — proxy sets X-Auth-User), queryClient.ts, types.ts, per-domain modules
@@ -808,7 +809,9 @@ hosts the `chorus-state` volume needs a one-time `chown -R 10001:10001`
 
 - Cypher lives in `queries/`, never inline in Python. Tools import templates.
 - Every retrieval tool has a Pydantic input schema and a typed return.
-- Every tool invocation goes through the audit logger before execution.
+- Every tool invocation is wrapped by the audit logger (`@audited` →
+  `AuditLogger.time_tool`), which writes one row when the call returns —
+  on success or on error.
 - Schema changes are migrations, applied in order, idempotent.
 - Decision records (the "we chose X over Y because Z" entries) go in
   `docs/decisions/` as short markdown files. New significant tradeoffs
@@ -828,8 +831,13 @@ hosts the `chorus-state` volume needs a one-time `chown -R 10001:10001`
   test — env-snapshotting or self-registering modules must be on that
   list, and env-free ones (e.g. `ingestion.jobs`) must stay off it, or
   class identities duplicate and `except`/`isinstance` checks break.
-- **Logging**: `loguru`, same configuration pattern as docint —
-  structured output, JSON in production, human-readable in dev.
+- **Logging**: `loguru`, one stderr sink at `LOG_LEVEL` (default `INFO`)
+  and no file sink; the compose `local` log driver rotates container
+  output. `LOG_FORMAT=json` switches the sink to loguru's serialized
+  JSON — `docker/compose.yaml` defaults it to `json`, `.env.example` to
+  human-readable `text`. Ops logs carry no submitted field values, query
+  strings or network-side identifiers: log locations, error shapes,
+  counts and internal UUIDs instead (`utils/log_redaction.py`).
   Operational logging and the §76 BDSG audit logger are separate
   concerns; do not conflate them in code or in storage.
 - **Type checking**: `pyrefly`. Pydantic models for all tool I/O and
@@ -908,7 +916,8 @@ Art. 9 categories. This shapes several defaults:
   retrofitted later: the principal is on every audit row from v1.
 - **§76 BDSG query logging from day one.** Every tool invocation logged with
   user, timestamp, parameters, entities touched, result counts. Immutable
-  table, separate retention from content data.
+  table. `AUDIT_RETENTION_DAYS` is loaded but not enforced: nothing purges
+  audit rows yet (the purge job is described in `docs/retention.md`).
 - **Per-post retention timers.** `Post.retention_until` is set at
   ingestion today; the nightly sweep that hard-deletes expired content
   is designed (`docs/retention.md`) but not yet landed — see *Current
