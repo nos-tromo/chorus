@@ -80,6 +80,21 @@ def _reload_chorus() -> None:
             del sys.modules[mod]
 
 
+@pytest.fixture(autouse=True)
+def _no_edge_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep ``CHORUS_EDGE_SECRET`` out of every test that does not set it.
+
+    Most tests send a bare ``X-Auth-User``, which a configured secret would
+    ignore. Set empty rather than deleted: ``_env`` reads empty as unset,
+    while a deleted variable comes back from a local ``.env`` when a module
+    reload re-runs ``load_dotenv``.
+
+    Args:
+        monkeypatch: pytest monkeypatch fixture (scopes the change to the test).
+    """
+    monkeypatch.setenv("CHORUS_EDGE_SECRET", "")
+
+
 @pytest.fixture(scope="session")
 def neo4j_container() -> Iterator[tuple[str, str, str]]:
     """Session-scoped Neo4j 5.26.26 testcontainer.

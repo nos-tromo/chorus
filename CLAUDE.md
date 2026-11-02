@@ -240,6 +240,21 @@ backend's trusted-header principal seam — production leaves
 rejected as unauthenticated. The dev override's
 `CHORUS_DEFAULT_IDENTITY=dev` fallback is unchanged.
 
+The backend also sits on the shared `inference-net` and `data-net` networks,
+where any container can call `chorus-backend:8000` with a forged
+`X-Auth-User`. `CHORUS_EDGE_SECRET` closes that: the gateway sends a
+per-app secret in `X-Edge-Secret` (the frontend nginx passes it through),
+and with the env var set the seam trusts the identity headers
+(`X-Auth-User`, `X-Auth-Name`) only when `X-Edge-Secret` matches
+(`hmac.compare_digest`). Otherwise it ignores them — default identity or
+401, plus a warning naming only method and path.
+A secret under 32 characters stops startup; unset keeps the old
+trust-anyone behaviour and warns once at startup when
+`CHORUS_DEFAULT_IDENTITY` is unset too. Rollout: the same value goes into
+edge-plane's `.env` and chorus's, and the gateway must send it before
+chorus enforces it — apply edge-plane first. Contract and rollout detail:
+`docs/architecture.md` (*Authentication seam*).
+
 ## Airgapped operation
 
 Chorus runs in an airgapped production environment with no internet access.
@@ -709,11 +724,11 @@ chorus/                      # top-level repo
       openai_tools.py        # TOOLS registry → OpenAI tool schemas
       prompts.py
     api/
-      main.py                # FastAPI entrypoint (lifespan: logger → driver → migrations → audit);
+      main.py                # FastAPI entrypoint (lifespan: logger → principal config → driver → migrations → audit);
                               # also wires GET /metrics (Prometheus, unauthenticated, aggregate-only
                               # request counters/latencies, no user data), gated by METRICS_ENABLED
                               # (default on)
-      auth/principal.py      # trusted-header principal seam (OIDC swap-in)
+      auth/principal.py      # trusted-header principal seam + X-Edge-Secret check (OIDC swap-in)
       routers/               # health.py, config.py, tools.py, agent.py, ingestion.py, stats.py, whoami.py
                               # (eight routers — ingestion.py exports two; no /api/v1, prefixes are bare)
     audit/
@@ -911,6 +926,9 @@ Art. 9 categories. This shapes several defaults:
   gateway (Authelia forward-auth), which injects the trusted
   `X-Auth-User` the backend's `api/auth/principal.py` seam reads —
   fail-closed in production, where `CHORUS_DEFAULT_IDENTITY` is unset.
+  With `CHORUS_EDGE_SECRET` set, the seam trusts that header only on
+  requests carrying the gateway's matching `X-Edge-Secret`, so other
+  containers on the shared networks cannot act as another user.
   Wiring OIDC against the organizational IdP directly into that seam is
   the planned swap-in and has not landed (see *Current state*). Not
   retrofitted later: the principal is on every audit row from v1.
