@@ -91,18 +91,14 @@ def from_row(row: dict[str, Any]) -> ConnectionDTO | None:
     target_id = str(row["Network Object ID selected conn. User"]).strip()
 
     if row_user_id == target_id:
-        logger.warning("connections row dropped: self-loop on id={!r}", row_user_id)
+        logger.warning("connections row dropped: self-loop (row user is the target)")
         return None
 
     is_friend = _yes(row.get("Friend"))
     is_follower = _yes(row.get("Follower"))
     is_following = _yes(row.get("Following"))
     if not (is_friend or is_follower or is_following):
-        logger.info(
-            "connections row dropped: no flag set (row_user={!r}, target={!r})",
-            row_user_id,
-            target_id,
-        )
+        logger.info("connections row dropped: no Friend/Follower/Following flag set")
         return None
 
     return ConnectionDTO(

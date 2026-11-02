@@ -21,6 +21,7 @@ UNWIND; see ADR 0007.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, TypeVar
@@ -38,10 +39,57 @@ from chorus.ingestion import profiles as profiles_stage
 from chorus.ingestion.adapter import UpstreamAdapter
 from chorus.ingestion.raw_store import RawStore
 from chorus.utils.env_cfg import RetentionConfig, load_ner_client_env
+from chorus.utils.log_redaction import redact_validation_errors
 
 _CONNECTIONS_BATCH_SIZE = 500
 
+_UUID_SHAPE = re.compile(r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}")
+
 T = TypeVar("T")
+
+
+def _row_ref(row: dict[str, Any]) -> str:
+    """Return a log-safe reference to an upstream row.
+
+    The row's upstream UUID is an internal key and may be logged. Any other
+    cell may not, and neither may a ``UUID`` cell that is not UUID-shaped:
+    a multi-line post mis-split by the CSV reader leaves a phantom row whose
+    first cell is a fragment of the post's text.
+
+    Args:
+        row: Raw upstream row.
+
+    Returns:
+        The row's ``UUID`` when it is UUID-shaped, ``"<no uuid>"`` when the
+        cell is missing or blank, and ``"<malformed uuid>"`` otherwise.
+    """
+    value = row.get("UUID")
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return "<no uuid>"
+    return text if _UUID_SHAPE.fullmatch(text) else "<malformed uuid>"
+
+
+def _error_shape(exc: Exception) -> list[dict[str, Any]] | str:
+    """Describe a row parse error without quoting the row's values.
+
+    Args:
+        exc: The ``KeyError``, ``ValidationError`` or ``ValueError`` raised
+            while building a row's DTO.
+
+    Returns:
+        For a ``ValidationError``, its errors with the submitted values
+        redacted (location, type and message remain). For a ``KeyError``,
+        the missing column's name: ``from_row`` raises it only for a missing
+        required column. For any other ``ValueError``, the exception type's
+        name alone, since its message usually quotes the unparseable value.
+    """
+    # ValidationError subclasses ValueError, so it is checked first.
+    if isinstance(exc, ValidationError):
+        return redact_validation_errors(exc.errors())
+    if isinstance(exc, KeyError) and exc.args and isinstance(exc.args[0], str):
+        return f"missing column {exc.args[0]!r}"
+    return type(exc).__name__
 
 
 def _parse_or_skip(
@@ -56,7 +104,8 @@ def _parse_or_skip(
     The raw row has already been persisted by the time stage loops call this
     helper, so skipping a malformed row preserves replay/debuggability without
     aborting the rest of the run. Each skip increments ``dropped[stage]`` so the
-    run can report how many rows were lost to malformation per stage.
+    run can report how many rows were lost to malformation per stage. The skip
+    is logged with the row's UUID and the error's shape, never a cell value.
 
     Args:
         stage: Stage name, used for logging and as the ``dropped`` key.
@@ -71,12 +120,7 @@ def _parse_or_skip(
     try:
         return build(row, *args)
     except (KeyError, ValidationError, ValueError) as exc:
-        logger.warning(
-            "{} row {} skipped: {}",
-            stage,
-            row.get("UUID") or row.get("ID") or row.get("Network Object ID") or "<unknown>",
-            exc,
-        )
+        logger.warning("{} row {} skipped: {}", stage, _row_ref(row), _error_shape(exc))
         dropped[stage] = dropped.get(stage, 0) + 1
         return None
 
@@ -197,11 +241,7 @@ def run_once(
         parent_pid = row.get("Posting ID")
         parent_uuid = posting_id_to_uuid.get(str(parent_pid).strip()) if parent_pid else None
         if not parent_uuid:
-            logger.warning(
-                "comment {} skipped: parent posting (Posting ID={!r}) not in this batch",
-                row.get("UUID"),
-                parent_pid,
-            )
+            logger.warning("comment {} skipped: parent posting not in this batch", _row_ref(row))
             filtered["comments"] += 1
             continue
         # Augment a copy so the raw_store payload stays verbatim.

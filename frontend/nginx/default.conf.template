@@ -8,11 +8,21 @@ map $request_uri $proxy_uri {
     default $request_uri;
 }
 
+# Access log without query string, referer or client address: container
+# stdout is shipped to central log storage, and those fields can carry
+# submitted values or identify a user.
+log_format scrubbed '$time_iso8601 "$request_method $uri $server_protocol" '
+                    '$status $body_bytes_sent $request_time "$http_x_request_id"';
+
 server {
     # 8080: the unprivileged nginx image runs as uid 101 and cannot bind
     # ports below 1024 (deploy ADR 0001).
     listen 8080;
     server_name _;
+
+    # Server level, so it replaces the image's http-level "main" access log
+    # (full request line incl. query string) instead of adding a second one.
+    access_log /var/log/nginx/access.log scrubbed;
 
     root /usr/share/nginx/html;
     index index.html;

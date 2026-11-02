@@ -24,6 +24,7 @@ fields the `profiles` ingestion stage writes onto `:Author` (`bio`,
 `date_of_birth`, and the rest), which are retained indefinitely by
 deliberate decision. See `compliance.md` and ADR 0006.
 
-The audit log has its own retention (`AUDIT_RETENTION_DAYS`) and is
-maintained by a separate privileged job, not by row-level DELETE — the
-audit table has triggers that reject UPDATE/DELETE on individual rows.
+The audit log has its own retention setting (`AUDIT_RETENTION_DAYS`). It is
+loaded but not yet enforced: the purge is designed as a separate privileged
+job, not row-level DELETE — the audit table has triggers that reject
+UPDATE/DELETE on individual rows.

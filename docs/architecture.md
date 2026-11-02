@@ -95,9 +95,9 @@ chorus expects the data-plane Compose project to publish a Neo4j service on
 chorus reads `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`
 from its env. **All graph state** lives in the data-plane project's named
 volumes — chorus declares none of it. chorus does declare one volume of its
-own, `chorus-state` (audit log, raw store, operational logs under
-`CHORUS_HOME`), and it is `external: true`, so `docker compose down -v` in
-this repo cannot destroy it either.
+own, `chorus-state` (audit log and raw store under `CHORUS_HOME`), and it is
+`external: true`, so `docker compose down -v` in this repo cannot destroy it
+either.
 
 ## Inference contract
 

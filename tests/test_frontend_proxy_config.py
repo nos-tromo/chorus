@@ -64,3 +64,26 @@ def test_frontend_image_has_no_python_packages() -> None:
         f"{sorted(copied)} — the frontend is a pure nginx image and needs no Python source. "
         f"Remove those COPY lines (or update this test if the architecture changed)."
     )
+
+
+def test_frontend_access_log_is_scrubbed() -> None:
+    """Nginx logs requests without query string, referer or client address.
+
+    The format is applied by a server-level ``access_log``, which replaces the
+    image's http-level ``main`` log (full request line incl. query string)
+    rather than adding a second log beside it.
+    """
+    conf = (REPO / "frontend" / "nginx" / "default.conf.template").read_text()
+    match = re.search(r"log_format\s+scrubbed\s+(.*?);", conf, re.S)
+    assert match, "expected a 'scrubbed' log_format"
+    fmt = match.group(1)
+    assert "$uri" in fmt
+    assert not re.search(r"\$request\b", fmt), "$request is the raw request line, query string included"
+    for leaky in ("$request_uri", "$args", "$query_string", "$http_referer", "$remote_addr", "$http_x_forwarded_for"):
+        assert leaky not in fmt, f"{leaky} must not be logged"
+
+    server_start = conf.index("server {")
+    assert "access_log" not in conf[:server_start], "an http-level access_log would add a second log"
+    directives = [d.strip() for d in re.findall(r"access_log\s+([^;]+);", conf)]
+    assert "/var/log/nginx/access.log scrubbed" in directives
+    assert all(d in ("/var/log/nginx/access.log scrubbed", "off") for d in directives)
