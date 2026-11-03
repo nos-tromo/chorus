@@ -76,6 +76,37 @@ back to `CHORUS_DEFAULT_IDENTITY` when absent (dev only; production leaves it
 unset, so an unheadered request is rejected). This ensures the §76 BDSG audit
 log records the real per-user principal on every tool invocation.
 
+#### Edge secret
+
+The backend is also reachable on the shared `inference-net` and `data-net`
+networks (alias `chorus-backend`), where any container could send its own
+`X-Auth-User`. `CHORUS_EDGE_SECRET` closes that path. The gateway sends a
+per-app shared secret in `X-Edge-Secret` on every request it proxies to
+chorus and strips any copy a client sent; the chorus nginx passes it through
+with the other request headers. With the secret set:
+
+- The identity headers — `X-Auth-User` (or whatever `CHORUS_AUTH_HEADER`
+  names) and the decorative `X-Auth-Name` shown by `/whoami` — count only on
+  a request whose `X-Edge-Secret` equals the configured value, compared in
+  constant time.
+- On any other request they are ignored as if absent: it gets
+  `CHORUS_DEFAULT_IDENTITY` when that is set, else `401`. If it sent an
+  identity header, the backend logs a warning with the method and path only —
+  no header value, no query string, never the secret.
+- The secret must be at least 32 characters, or the backend refuses to start.
+  Generate it with `make secret` in edge-plane; the same value goes into
+  edge-plane's `.env` and chorus's.
+
+Unset or blank, the identity headers are trusted from any caller, as before
+the secret existed; when `CHORUS_DEFAULT_IDENTITY` is unset too, the backend
+logs one warning at startup saying so.
+
+Rollout order: the gateway must send the secret before chorus enforces it.
+Apply the new `.env` to edge-plane first (`make up` there recreates the
+gateway), then to chorus. In the other order, requests lose their identity and
+get `401` until the gateway catches up. The gateway's side of the contract is
+edge-plane's `docs/identity-contract.md`.
+
 ### Ingestion upload limit
 
 Nginx's `client_max_body_size` is env-templated (`CHORUS_CLIENT_MAX_BODY_SIZE`,

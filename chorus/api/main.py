@@ -2,10 +2,12 @@
 
 Lifespan order matters:
   1. init_logger — so anything that logs during startup is captured
-  2. open Neo4j driver
-  3. apply pending migrations
-  4. init audit log schema
-  5. register tool registry (imports the package; tools self-register)
+  2. check the principal config — a bad CHORUS_EDGE_SECRET stops startup
+     before anything else is touched
+  3. open Neo4j driver
+  4. apply pending migrations
+  5. init audit log schema
+  6. register tool registry (imports the package; tools self-register)
 
 Tool routes are wired up in `chorus.api.routers.tools` and import the
 registry at import-time, so importing that router triggers tool discovery.
@@ -20,6 +22,7 @@ from fastapi import FastAPI
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from chorus.api.auth.principal import check_principal_config
 from chorus.api.errors import install_error_handlers
 from chorus.audit.logger import AuditLogger
 from chorus.db.neo4j import close_driver, get_driver
@@ -47,6 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     init_logger()
     logger.info("chorus starting")
+    check_principal_config()
 
     driver = get_driver()
     newly = apply_all(driver)

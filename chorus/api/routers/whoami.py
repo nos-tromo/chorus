@@ -10,11 +10,10 @@ are treated (no audit log for endpoints that touch no graph data).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from chorus.api.auth.principal import resolve_principal
-from chorus.utils.env_cfg import load_principal_env
+from chorus.api.auth.principal import IdentityHeaders, resolve_identity_headers, resolve_principal
 
 router = APIRouter(tags=["whoami"])
 
@@ -35,19 +34,20 @@ class WhoamiOut(BaseModel):
 
 
 @router.get("/whoami", response_model=WhoamiOut)
-def get_whoami(request: Request, principal: str = Depends(resolve_principal)) -> WhoamiOut:
+def get_whoami(
+    principal: str = Depends(resolve_principal),
+    identity: IdentityHeaders = Depends(resolve_identity_headers),  # noqa: B008 — FastAPI dependency marker
+) -> WhoamiOut:
     """Return the resolved calling identity, for the SPA's AppHeader.
 
-    ``display_name`` reads the raw ``X-Auth-Name`` header directly (it is
-    decorative, not part of the trusted-principal seam) rather than going
-    through ``resolve_principal``.
+    ``display_name`` comes from the same trusted identity headers as the
+    principal, so a request that fails the edge-secret check shows none.
 
     Args:
-        request: The active FastAPI request.
         principal: The resolved request principal (401s closed).
+        identity: The request's trusted identity headers.
 
     Returns:
         WhoamiOut: The caller's username and, when present, display name.
     """
-    display_header = load_principal_env().display_name_header
-    return WhoamiOut(username=principal, display_name=request.headers.get(display_header))
+    return WhoamiOut(username=principal, display_name=identity.display_name)

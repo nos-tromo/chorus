@@ -87,3 +87,15 @@ def test_frontend_access_log_is_scrubbed() -> None:
     directives = [d.strip() for d in re.findall(r"access_log\s+([^;]+);", conf)]
     assert "/var/log/nginx/access.log scrubbed" in directives
     assert all(d in ("/var/log/nginx/access.log scrubbed", "off") for d in directives)
+
+
+def test_frontend_proxy_passes_the_edge_secret_through() -> None:
+    """Nginx forwards the gateway's ``X-Edge-Secret`` to the backend untouched.
+
+    The backend trusts ``X-Auth-User`` only alongside the matching secret
+    (``CHORUS_EDGE_SECRET``), so overriding or dropping the header here
+    would leave every proxied request without an identity.
+    """
+    conf = (REPO / "frontend" / "nginx" / "default.conf.template").read_text()
+    assert not re.search(r"proxy_pass_request_headers\s+off", conf)
+    assert not re.search(r"proxy_set_header\s+X-Edge-Secret\b", conf, re.IGNORECASE)

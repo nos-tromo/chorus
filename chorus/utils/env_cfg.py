@@ -13,7 +13,7 @@ boot against any of the three supported backends.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -295,11 +295,16 @@ class PrincipalConfig:
         display_name_header: Header carrying the gateway's decorative
             display name (default ``X-Auth-Name``, Authelia's
             ``displayname``). Never an identity key — UI display only.
+        edge_secret: Shared secret the edge gateway sends in
+            ``X-Edge-Secret``. When set, the identity headers are trusted
+            only on requests that carry it; ``None`` trusts them from any
+            caller. Kept out of ``repr`` so it never reaches a log line.
     """
 
     header_name: str
     default_identity: str | None
     display_name_header: str
+    edge_secret: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -572,18 +577,36 @@ def load_neo4j_env() -> Neo4jConfig:
     )
 
 
+EDGE_SECRET_MIN_LENGTH = 32
+
+
 def load_principal_env() -> PrincipalConfig:
     """Load trusted-header principal configuration from the environment.
+
+    A blank ``CHORUS_EDGE_SECRET`` counts as unset. Surrounding whitespace
+    is dropped, as HTTP strips it from the header value the gateway sends.
 
     Returns:
         A populated :class:`PrincipalConfig`. ``default_identity`` is
         ``None`` unless explicitly set, which forces the upstream header
         to be present in production.
+
+    Raises:
+        RuntimeError: If ``CHORUS_EDGE_SECRET`` is set but shorter than
+            :data:`EDGE_SECRET_MIN_LENGTH` characters. The message never
+            includes the value.
     """
+    edge_secret = (_env("CHORUS_EDGE_SECRET") or "").strip() or None
+    if edge_secret is not None and len(edge_secret) < EDGE_SECRET_MIN_LENGTH:
+        raise RuntimeError(
+            f"CHORUS_EDGE_SECRET must be at least {EDGE_SECRET_MIN_LENGTH} characters; "
+            "generate one with `make secret` in edge-plane"
+        )
     return PrincipalConfig(
         header_name=_env("CHORUS_AUTH_HEADER", "X-Auth-User") or "X-Auth-User",
         default_identity=_env("CHORUS_DEFAULT_IDENTITY"),
         display_name_header=_env("CHORUS_DISPLAY_NAME_HEADER", "X-Auth-Name") or "X-Auth-Name",
+        edge_secret=edge_secret,
     )
 
 
