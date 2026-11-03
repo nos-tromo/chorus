@@ -18,6 +18,16 @@ include make/common.mk
 
 .PHONY: help migrate ingest resolve bootstrap frontend-lint
 
+# Audited CLI commands run inside the running backend, so their audit chain
+# lands in its log (AUDIT_OUTPUT=container) instead of a one-off container's,
+# which can exit before the log collector sees it. The operator is the
+# invoking host user; CASE_REF / REASON state the purpose, e.g.
+#   make resolve CASE_REF=case-0001 REASON="monthly review"
+AUDIT_EXEC = $(COMPOSE) exec \
+	-e AUDIT_CLI_USER="$${SUDO_USER:-$$(id -un)}" \
+	-e AUDIT_CASE_REF="$(CASE_REF)" -e AUDIT_REASON="$(REASON)" \
+	backend
+
 help:
 	@echo "chorus — GraphRAG app (FastAPI backend + React SPA frontend)."
 	@echo
@@ -32,9 +42,11 @@ help:
 	@echo "  make stop       stop containers (keep them)"
 	@echo "  make down       stop + remove containers (never touches data-plane)"
 	@echo "  make logs       follow the compose logs (last 100 lines first)"
-	@echo "  make migrate    apply pending Neo4j migrations"
-	@echo "  make ingest     run one ingestion pass from INGESTION_SOURCE_DIR"
-	@echo "  make resolve    resolve aliases to canonical entities"
+	@echo "  make migrate    apply pending Neo4j migrations (in the running backend)"
+	@echo "  make ingest     run one ingestion pass from INGESTION_SOURCE_DIR (in the running backend)"
+	@echo "  make resolve    resolve aliases to canonical entities (in the running backend)"
+	@echo "                  migrate/ingest/resolve are audited: the backend must be up;"
+	@echo "                  CASE_REF=... REASON=... state the purpose"
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
 	@echo "  make pre-commit run pre-commit hooks (ruff + pyrefly)"
 	@echo "  make verify     pre-push gate: pre-commit + frontend lint/build; mirrors CI's lint gate"
@@ -43,15 +55,18 @@ help:
 
 # Apply pending Neo4j migrations against the configured NEO4J_URI.
 migrate:
-	$(COMPOSE) run --rm backend python -m chorus.migrations.cli apply
+	$(AUDIT_EXEC) python -m chorus.migrations.cli apply
 
-# Run one ingestion pass against the configured INGESTION_SOURCE_DIR.
+# Run one ingestion pass against INGESTION_SOURCE_DIR as the running backend
+# sees it: the host drop dir (INGEST_HOST_DIR, default ~/chorus/ingest) when
+# the backend was started with the dev overlay (make dev / make up-dev),
+# CHORUS_HOME/ingest on the chorus-state volume in the production shape.
 ingest:
-	$(COMPOSE_DEV) run --rm backend python -m chorus.ingestion.cli run
+	$(AUDIT_EXEC) python -m chorus.ingestion.cli run
 
 # Resolve unresolved :Alias nodes onto canonical :Entity nodes.
 resolve:
-	$(COMPOSE) run --rm backend python -m chorus.ingestion.cli resolve
+	$(AUDIT_EXEC) python -m chorus.ingestion.cli resolve
 
 # Wait for data-plane to be healthy, then bring the app up.
 bootstrap: network volumes

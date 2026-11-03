@@ -1,8 +1,9 @@
 ### chorus app compose — app services only.
 ###
 ### Graph state lives in the data-plane compose project (Neo4j); chorus's
-### own state (audit log, raw store) lives in the external
-### `chorus-state` volume mounted at $CHORUS_HOME. Both are
+### own state (raw store, upload staging, the frozen legacy audit file)
+### lives in the external `chorus-state` volume mounted at $CHORUS_HOME.
+### Audit events leave through the backend's stdout. Both are
 ### `external: true` so `docker compose down -v` in this project is
 ### always safe — only `docker volume rm` against the named volume can
 ### destroy chorus-local state. See docs/architecture.md.
@@ -86,6 +87,11 @@ services:
       # Gates the UI upload-and-run path + /ingestion/* endpoints (ADR 0014).
       # Default off; only the backend reads it (the SPA reads GET /config at startup).
       INGESTION_UI_ENABLED: ${INGESTION_UI_ENABLED:-false}
+      # Audit events go to the container's main stdout under a container-wide
+      # lock, so a CLI run started with `docker compose exec` (the make
+      # targets) lands in this container's log too (docs/audit.md).
+      # AUDIT_REQUIRE_PURPOSE comes from .env like the rest.
+      AUDIT_OUTPUT: container
     volumes:
       - chorus-state:/var/lib/chorus
     networks:
