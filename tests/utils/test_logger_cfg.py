@@ -130,3 +130,24 @@ def test_uvicorn_formatter_renders_scrubbed_request_line(access_logger: logging.
     out = stream.getvalue()
     assert '"GET /tools HTTP/1.1" 200' in out
     assert _PLACEHOLDER not in out
+
+
+@pytest.mark.usefixtures("restore_loguru")
+def test_init_logger_moves_stdout_access_log_to_stderr(access_logger: logging.Logger) -> None:
+    """Uvicorn's default access handler writes to stdout; setup points it at stderr.
+
+    stdout carries the audit stream alone, so no ops log line may land there.
+    A handler writing elsewhere is left alone.
+    """
+    from chorus.utils.logger_cfg import init_logger
+
+    to_stdout = logging.StreamHandler(sys.stdout)
+    elsewhere = io.StringIO()
+    to_other = logging.StreamHandler(elsewhere)
+    access_logger.addHandler(to_stdout)
+    access_logger.addHandler(to_other)
+
+    init_logger()
+
+    assert to_stdout.stream is sys.stderr
+    assert to_other.stream is elsewhere

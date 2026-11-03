@@ -1,13 +1,14 @@
 """Loguru sink configuration.
 
-Operational logging only. The §76 BDSG audit logger lives in
-`chorus.audit.logger` and writes to SQLite — do not route audit records
-through loguru.
+Operational logging only, and only on stderr: the backend's stdout is
+reserved for the data-protection audit stream (``chorus.audit``). Do not
+route audit records through loguru, and do not log to stdout.
 
 A single stderr sink is configured; the container logging driver owns
 log retention and rotation (see ``docker/compose.yaml``). uvicorn's
-access log is stdlib logging, outside loguru: setup attaches a filter to
-it that drops the query string from every logged request line.
+access log is stdlib logging, outside loguru, and uvicorn's default
+config writes it to stdout: setup moves it to stderr and attaches a
+filter that drops the query string from every logged request line.
 """
 
 from __future__ import annotations
@@ -67,15 +68,28 @@ def _install_access_log_scrub() -> None:
         access.addFilter(_AccessQueryScrubFilter())
 
 
+def _move_access_log_to_stderr() -> None:
+    """Point uvicorn's access-log handlers that write to stdout at stderr.
+
+    uvicorn's default logging config sends the access log to stdout, which
+    carries the audit stream alone. Handlers writing anywhere else are left
+    as they are.
+    """
+    for handler in logging.getLogger(_ACCESS_LOGGER).handlers:
+        if isinstance(handler, logging.StreamHandler) and handler.stream in (sys.stdout, sys.__stdout__):
+            handler.setStream(sys.stderr)
+
+
 def init_logger(*, serialize: bool | None = None) -> None:
-    """Install a stderr loguru sink and scrub uvicorn's access log.
+    """Install a stderr loguru sink and move uvicorn's access log to stderr.
 
     Replaces any sinks loguru was started with. Uses a colorized
     human-readable format unless JSON output is requested via
     ``LOG_FORMAT=json``. ``LOG_LEVEL`` selects the minimum level
-    (default ``INFO``). Runs in the app lifespan, so the access-log
-    filter is in place inside the server process before the first
-    request is served; repeated calls do not stack filters.
+    (default ``INFO``). Runs in the app lifespan, so inside the server
+    process, before the first request is served, the access log writes
+    to stderr and drops query strings; repeated calls do not stack
+    filters.
 
     Args:
         serialize: Whether to emit JSON. When ``None`` (the default),
@@ -97,3 +111,4 @@ def init_logger(*, serialize: bool | None = None) -> None:
         diagnose=False,
     )
     _install_access_log_scrub()
+    _move_access_log_to_stderr()

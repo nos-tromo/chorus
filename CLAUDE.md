@@ -765,7 +765,7 @@ chorus/                      # top-level repo
       ...
     utils/
       env_cfg.py             # every env var loader as a frozen dataclass
-      logger_cfg.py          # loguru stderr sink (no file sink) + uvicorn access-log query-string filter
+      logger_cfg.py          # loguru stderr sink (no file sink); uvicorn access log moved to stderr, query strings dropped
       log_redaction.py       # value-free views of errors for ops logs (redact_validation_errors)
   frontend/                  # React SPA (ADR 0015) — Vite + TypeScript + Tailwind v4
     index.html
