@@ -21,7 +21,6 @@ from typing import Any
 from neo4j import Driver
 from pydantic import BaseModel, Field
 
-from chorus.audit.logger import AuditLogger
 from chorus.tools._audit import audited, register_tool
 from chorus.tools._template_loader import load_template
 
@@ -102,13 +101,7 @@ class TopicCoOccurrenceOut(BaseModel):
     output_model=TopicCoOccurrenceOut,
 )
 @audited
-def topic_co_occurrence(
-    driver: Driver,
-    params: TopicCoOccurrenceIn,
-    *,
-    user: str,
-    audit: AuditLogger,
-) -> TopicCoOccurrenceOut:
+def topic_co_occurrence(driver: Driver, params: TopicCoOccurrenceIn) -> TopicCoOccurrenceOut:
     """Return topics co-mentioned with ``params.topic`` in the same posts.
 
     Loads the ``topic_co_occurrence.cypher`` template and runs it. The
@@ -118,14 +111,11 @@ def topic_co_occurrence(
     Args:
         driver: Open Neo4j driver.
         params: Validated input parameters.
-        user: Authenticated identity (consumed by ``@audited``).
-        audit: Active audit logger (consumed by ``@audited``).
 
     Returns:
         A :class:`TopicCoOccurrenceOut` with at most ``params.limit``
         co-occurring topics.
     """
-    del user, audit  # the @audited decorator owns the audit write
     cypher = load_template("topic_co_occurrence")
     cypher_params: dict[str, Any] = {
         "topic": params.topic,

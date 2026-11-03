@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, Request, status
 from loguru import logger
 
+from chorus.utils.audit_event import Actor
 from chorus.utils.env_cfg import load_principal_env
 
 EDGE_SECRET_HEADER = "X-Edge-Secret"
@@ -156,3 +157,25 @@ def resolve_principal(
         detail="Missing authenticated principal.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def resolve_actor(
+    principal: str = Depends(resolve_principal),
+    identity: IdentityHeaders = Depends(resolve_identity_headers),  # noqa: B008 — FastAPI dependency marker
+) -> Actor:
+    """Return the audit actor of an authenticated request.
+
+    A trusted identity header makes the gateway-asserted account the actor
+    (``via="edge"``); the dev fallback identity is the system acting under a
+    configured name (``via="system"``). Both dependencies are cached per
+    request, so the edge-secret check still runs once.
+
+    Args:
+        principal: The resolved principal (401s closed).
+        identity: The request's trusted identity headers.
+
+    Returns:
+        The :class:`~chorus.utils.audit_event.Actor` for the request's
+        audit events.
+    """
+    return Actor(user=principal, via="edge" if identity.user else "system")

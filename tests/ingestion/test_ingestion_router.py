@@ -56,7 +56,7 @@ def _build_app(driver: Any, audit: Any, jobs: JobRegistry) -> FastAPI:
     app.include_router(ingestion_router.status_router)
     app.include_router(ingestion_router.router)
     app.state.driver = driver
-    app.state.audit = audit
+    app.state.audit_log = audit
     app.state.jobs = jobs
     return app
 

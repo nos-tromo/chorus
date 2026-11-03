@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from neo4j import Driver
 
+from chorus.audit.trail import AuditContext
 
-def test_empty_returns_nothing(migrated_driver: Driver, in_memory_audit: Any) -> None:
+
+def test_empty_returns_nothing(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """An empty graph yields no co-occurring topics and echoes the seed."""
     from chorus.tools.topic_co_occurrence import (
         TopicCoOccurrenceIn,
@@ -17,14 +17,13 @@ def test_empty_returns_nothing(migrated_driver: Driver, in_memory_audit: Any) ->
     out = topic_co_occurrence(
         migrated_driver,
         TopicCoOccurrenceIn(topic="Berlin"),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert out.cooccurring == []
     assert out.seed == "Berlin"
 
 
-def test_cooccurrence_ranked_and_excludes_seed(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_cooccurrence_ranked_and_excludes_seed(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Co-occurring topics rank by shared-post count; the seed is excluded."""
     from chorus.tools.topic_co_occurrence import (
         TopicCoOccurrenceIn,
@@ -49,8 +48,7 @@ def test_cooccurrence_ranked_and_excludes_seed(migrated_driver: Driver, in_memor
     out = topic_co_occurrence(
         migrated_driver,
         TopicCoOccurrenceIn(topic="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     names = [c.topic for c in out.cooccurring]
     assert "Berlin" not in names  # seed excluded
@@ -59,7 +57,7 @@ def test_cooccurrence_ranked_and_excludes_seed(migrated_driver: Driver, in_memor
     assert {c.topic for c in out.cooccurring} == {"Paris", "Rome"}
 
 
-def test_time_window_excludes_out_of_range(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_time_window_excludes_out_of_range(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Regression: [from, to) must constrain which posts count toward co-occurrence."""
     from chorus.tools.topic_co_occurrence import (
         TopicCoOccurrenceIn,
@@ -85,13 +83,12 @@ def test_time_window_excludes_out_of_range(migrated_driver: Driver, in_memory_au
                 "to": "2026-06-01T00:00:00+00:00",
             }
         ),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert out.cooccurring == []
 
 
-def test_seed_by_resolved_alias_surface_form(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_seed_by_resolved_alias_surface_form(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Seeding by an alias surface form still works after that alias resolved.
 
     When ``Berlín`` resolves to an entity whose canonical name is ``Berlin``,
@@ -121,8 +118,7 @@ def test_seed_by_resolved_alias_surface_form(migrated_driver: Driver, in_memory_
     out = topic_co_occurrence(
         migrated_driver,
         TopicCoOccurrenceIn(topic="Berlín", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     names = [c.topic for c in out.cooccurring]
     assert "Berlin" not in names  # seed entity excluded even when seeded by its alias
@@ -130,7 +126,7 @@ def test_seed_by_resolved_alias_surface_form(migrated_driver: Driver, in_memory_
     assert out.cooccurring[0].count == 1
 
 
-def test_seed_resolves_across_sibling_surface_forms(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_seed_resolves_across_sibling_surface_forms(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Seeding by one surface form spans posts that mention the entity via another.
 
     ``Berlín`` and ``Berlin`` are two surface forms of the same resolved entity.
@@ -165,8 +161,7 @@ def test_seed_resolves_across_sibling_surface_forms(migrated_driver: Driver, in_
     out = topic_co_occurrence(
         migrated_driver,
         TopicCoOccurrenceIn(topic="Berlín", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     names = {c.topic for c in out.cooccurring}
     assert "Berlin" not in names  # seed entity excluded under both surface forms

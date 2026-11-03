@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import io
 from typing import Any
 
 import pytest
 from neo4j import Driver
 from pydantic import ValidationError
+
+from chorus.audit.trail import AuditContext, AuditTrail
+from chorus.utils.audit_event import Actor
+from tests._audit import operation_events
 
 
 def _ids(nodes: list[Any]) -> set[str]:
@@ -22,15 +27,14 @@ def test_depth_above_two_rejected() -> None:
         NetworkAroundIn(entity="Berlin", depth=3)
 
 
-def test_empty_seed_returns_empty_network(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_empty_seed_returns_empty_network(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A seed matching nothing yields an empty network with no seed node."""
     from chorus.tools.network_around import NetworkAroundIn, network_around
 
     out = network_around(
         migrated_driver,
         NetworkAroundIn(entity="Nowhere", depth=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert out.nodes == []
     assert out.edges == []
@@ -39,7 +43,7 @@ def test_empty_seed_returns_empty_network(migrated_driver: Driver, in_memory_aud
     assert out.audit_result_count() == 0
 
 
-def test_depth_one_star(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_depth_one_star(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """depth=1 returns the seed topic plus authors, every edge author -> seed."""
     from chorus.tools.network_around import NetworkAroundIn, network_around
 
@@ -62,8 +66,7 @@ def test_depth_one_star(migrated_driver: Driver, in_memory_audit: Any) -> None:
     out = network_around(
         migrated_driver,
         NetworkAroundIn(entity="berlin", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert out.seed_node_id == "topic:Berlin"
@@ -76,7 +79,7 @@ def test_depth_one_star(migrated_driver: Driver, in_memory_audit: Any) -> None:
     assert weights == {"author:a": 2, "author:b": 1}
 
 
-def test_depth_one_lockstep_with_authors_mentioning(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_depth_one_lockstep_with_authors_mentioning(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """The depth-1 author set equals authors_mentioning(X)."""
     from chorus.tools.authors_mentioning import AuthorsMentioningIn, authors_mentioning
     from chorus.tools.network_around import NetworkAroundIn, network_around
@@ -102,14 +105,12 @@ def test_depth_one_lockstep_with_authors_mentioning(migrated_driver: Driver, in_
     na = network_around(
         migrated_driver,
         NetworkAroundIn(entity="berlin", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     am = authors_mentioning(
         migrated_driver,
         AuthorsMentioningIn(entity="berlin", limit=500),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     na_authors = {n.id.removeprefix("author:") for n in na.nodes if n.kind == "author"}
@@ -117,7 +118,7 @@ def test_depth_one_lockstep_with_authors_mentioning(migrated_driver: Driver, in_
     assert na_authors == am_authors == {"a1", "a2"}
 
 
-def test_depth_two_expansion(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_depth_two_expansion(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """depth=2 adds the co-topics of the ring-1 authors, keeping the seed star."""
     from chorus.tools.network_around import NetworkAroundIn, network_around
 
@@ -138,8 +139,7 @@ def test_depth_two_expansion(migrated_driver: Driver, in_memory_audit: Any) -> N
     out = network_around(
         migrated_driver,
         NetworkAroundIn(entity="berlin", depth=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     topic_ids = {n.id for n in out.nodes if n.kind == "topic"}
@@ -153,7 +153,7 @@ def test_depth_two_expansion(migrated_driver: Driver, in_memory_audit: Any) -> N
     }
 
 
-def test_resolved_and_unresolved_both_match(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_resolved_and_unresolved_both_match(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Seeding by canonical name and by surface form both build the network.
 
     The resolved seed topic carries its entity id (and audit surfaces it); an
@@ -177,15 +177,13 @@ def test_resolved_and_unresolved_both_match(migrated_driver: Driver, in_memory_a
     by_name = network_around(
         migrated_driver,
         NetworkAroundIn(entity="berlin", depth=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     # seed by surface form
     by_form = network_around(
         migrated_driver,
         NetworkAroundIn(entity="BER", depth=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     for out in (by_name, by_form):
@@ -198,7 +196,7 @@ def test_resolved_and_unresolved_both_match(migrated_driver: Driver, in_memory_a
         assert out.audit_entities() == ["ent-berlin"]
 
 
-def test_unresolved_alias_seed_has_no_audit_entity(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_unresolved_alias_seed_has_no_audit_entity(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """An alias-only seed builds the network but surfaces no audit entity id."""
     from chorus.tools.network_around import NetworkAroundIn, network_around
 
@@ -214,14 +212,13 @@ def test_unresolved_alias_seed_has_no_audit_entity(migrated_driver: Driver, in_m
     out = network_around(
         migrated_driver,
         NetworkAroundIn(entity="berlin", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert out.seed_node_id == "topic:Berlin"
     assert out.audit_entities() == []
 
 
-def test_limit_caps_author_ring(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_limit_caps_author_ring(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """``limit`` caps the author ring deterministically and flips truncated."""
     from chorus.tools.network_around import NetworkAroundIn, network_around
 
@@ -240,8 +237,7 @@ def test_limit_caps_author_ring(migrated_driver: Driver, in_memory_audit: Any) -
     out = network_around(
         migrated_driver,
         NetworkAroundIn(entity="berlin", depth=1, limit=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     authors = [n for n in out.nodes if n.kind == "author"]
     assert len(authors) == 2
@@ -250,14 +246,13 @@ def test_limit_caps_author_ring(migrated_driver: Driver, in_memory_audit: Any) -
     full = network_around(
         migrated_driver,
         NetworkAroundIn(entity="berlin", depth=1, limit=50),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert len([n for n in full.nodes if n.kind == "author"]) == 5
     assert full.truncated is False
 
 
-def test_topic_limit_caps_second_ring(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_topic_limit_caps_second_ring(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """``topic_limit`` caps second-ring topics by weight, always keeping the seed."""
     from chorus.tools.network_around import NetworkAroundIn, network_around
 
@@ -288,8 +283,7 @@ def test_topic_limit_caps_second_ring(migrated_driver: Driver, in_memory_audit: 
     out = network_around(
         migrated_driver,
         NetworkAroundIn(entity="berlin", depth=2, topic_limit=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     topic_ids = {n.id for n in out.nodes if n.kind == "topic"}
     # seed always kept + the single heaviest co-topic (Heavy, weight 3)
@@ -297,7 +291,7 @@ def test_topic_limit_caps_second_ring(migrated_driver: Driver, in_memory_audit: 
     assert out.truncated is True
 
 
-def test_does_not_merge_same_display_name(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_does_not_merge_same_display_name(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Two distinct authors sharing a display name are two author nodes."""
     from chorus.tools.network_around import NetworkAroundIn, network_around
 
@@ -316,8 +310,7 @@ def test_does_not_merge_same_display_name(migrated_driver: Driver, in_memory_aud
     out = network_around(
         migrated_driver,
         NetworkAroundIn(entity="berlin", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     authors = {n.id for n in out.nodes if n.kind == "author"}
     assert authors == {"author:a1", "author:a2"}
@@ -330,10 +323,8 @@ def test_registered_in_tools(migrated_driver: Driver) -> None:
     assert "network_around" in TOOLS
 
 
-def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> None:
-    """One audit row is written per tool call, with node count as result_count."""
-    import sqlite3
-
+def test_audit_event_written(migrated_driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO) -> None:
+    """One query event per call: node count as the target count, the author ring by id."""
     from chorus.tools.network_around import NetworkAroundIn, network_around
 
     with migrated_driver.session() as s:
@@ -348,13 +339,10 @@ def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> Non
     network_around(
         migrated_driver,
         NetworkAroundIn(entity="berlin", depth=1),
-        user="alice",
-        audit=in_memory_audit,
+        audit=audit_trail.context(Actor(user="alice", via="edge")),
     )
-    rows = (
-        sqlite3.connect(in_memory_audit.db_path)
-        .execute("SELECT user, tool_name, result_count, status FROM audit_log")
-        .fetchall()
-    )
-    # seed topic + one author = 2 nodes
-    assert rows == [("alice", "network_around", 2, "ok")]
+    [event] = operation_events(audit_stream)
+    assert (event["action"], event["operation"], event["outcome"]) == ("query", "tool.network_around", "ok")
+    assert event["actor"] == {"user": "alice", "via": "edge"}
+    # seed topic + one author = 2 nodes; the unresolved seed topic has no id
+    assert event["target"] == {"kind": "mixed", "ids": ["author:a"], "count": 2}

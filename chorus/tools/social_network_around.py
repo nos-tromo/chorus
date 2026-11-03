@@ -28,7 +28,6 @@ from typing import Any, Literal
 from neo4j import Driver
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
-from chorus.audit.logger import AuditLogger
 from chorus.tools._audit import audited, register_tool
 from chorus.tools._template_loader import load_template
 
@@ -134,19 +133,15 @@ class SocialNetworkAroundOut(BaseModel):
     nodes: list[SocialNode]
     edges: list[SocialEdge]
     truncated: bool
-    # Author ids in the network, stashed for the §76 audit trail. Unlike the
-    # mention tools (which record resolved :Entity ids), a social read touches no
-    # :Entity — the audit-relevant "entities" are the persons whose connection
-    # data was accessed, so this records author ids. Deliberate, not accidental.
+    # Author ids in the network, stashed for the §76 audit trail: a social read
+    # touches no :Entity, only the persons whose connection data was accessed.
     _author_ids: list[str] = PrivateAttr(default_factory=list)
 
-    def audit_entities(self) -> list[str]:
+    def audit_authors(self) -> list[str]:
         """Return the distinct author ids in the network (the persons touched).
 
         Returns:
-            Author ids in first-seen order, deduped. A deliberate divergence
-            from the mention tools, which record resolved entity ids: a social
-            read accesses people, and those are what §76 should capture here.
+            Author ids in first-seen order, deduped, the seed first.
         """
         seen: list[str] = []
         for aid in self._author_ids:
@@ -193,13 +188,7 @@ def _label(rec: dict[str, Any]) -> str:
     output_model=SocialNetworkAroundOut,
 )
 @audited
-def social_network_around(
-    driver: Driver,
-    params: SocialNetworkAroundIn,
-    *,
-    user: str,
-    audit: AuditLogger,
-) -> SocialNetworkAroundOut:
+def social_network_around(driver: Driver, params: SocialNetworkAroundIn) -> SocialNetworkAroundOut:
     """Return the follows/friends network around an author; use when asked who is connected to a person.
 
     Loads the ``social_network_around.cypher`` template and runs it, then
@@ -210,14 +199,11 @@ def social_network_around(
     Args:
         driver: Open Neo4j driver.
         params: Validated input parameters.
-        user: Authenticated identity (consumed by ``@audited``).
-        audit: Active audit logger (consumed by ``@audited``).
 
     Returns:
         A :class:`SocialNetworkAroundOut` with the seed author, ring-tagged
         author nodes, typed social edges, and a ``truncated`` flag.
     """
-    del user, audit  # the @audited decorator owns the audit write
     cypher = load_template("social_network_around")
     cypher_params: dict[str, Any] = {
         "author": params.author,

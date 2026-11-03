@@ -5,13 +5,20 @@ provider) which tool to call, executes the chosen tool against the graph through
 the audited registry, feeds the result back, and returns the model's final
 answer plus a trace of the tool calls. Bounded by ``max_iterations``.
 
-The whole turn is wrapped in one parent ``agent_query`` audit row; each executed
-tool writes its own §76 row via ``@audited``.
+Audit trail: each executed tool writes its own ``query`` event via
+``@audited`` as it completes. The turn ends with one ``ai_call`` /
+``agent.answer`` event — the record of what went to the chat model
+(``recipient="inference:chat"``): the model alias, the token counts when
+reported, the ids of this turn's tool events as ``sources`` (the evidence
+the model was given), the answer's SHA-256 and a SHA-256 of the question.
+No question or answer text is recorded. A turn that fails at the model
+writes that event with ``outcome="error"``.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any, cast
 
 import openai
@@ -21,10 +28,17 @@ from pydantic import BaseModel, ValidationError
 
 from chorus.agent.openai_tools import tool_definitions
 from chorus.agent.prompts import get_system_prompt
-from chorus.audit.logger import AuditLogger
+from chorus.audit.trail import AuditContext, AuditFailure, PurposeRequired
 from chorus.inference import provider
 from chorus.tools import TOOLS
+from chorus.utils.audit_event import AiCall, sha256_text
 from chorus.utils.log_redaction import redact_validation_errors
+
+#: The audit operation of a whole agent turn.
+AGENT_OPERATION = "agent.answer"
+#: The actions an agent turn performs: tool queries, and the chat-model call
+#: that carries the conversation and the tool results.
+AGENT_ACTIONS = ("query", "ai_call")
 
 _MAX_TOOL_MESSAGE_ITEMS = 8
 _MAX_TOOL_MESSAGE_STRING_CHARS = 280
@@ -103,9 +117,8 @@ class AgentResult(BaseModel):
 
 def run_agent(
     driver: Driver,
-    audit: AuditLogger,
+    audit: AuditContext,
     *,
-    user: str,
     messages: list[dict[str, Any]],
     max_iterations: int = 6,
     model: str | None = None,
@@ -117,9 +130,9 @@ def run_agent(
 
     Args:
         driver: Open Neo4j driver, passed to each executed tool.
-        audit: Audit logger; the turn is recorded as a parent ``agent_query``
-            row and each tool call writes its own row.
-        user: Authenticated principal, attributed on every audit row.
+        audit: The caller's audit context. Each tool call writes its own
+            ``query`` event; the turn writes one ``ai_call`` /
+            ``agent.answer`` event at the end.
         messages: Prior visible conversation turns (role/content); the last
             should be the new user message.
         max_iterations: Maximum model-tool rounds before giving up.
@@ -133,58 +146,172 @@ def run_agent(
 
     Returns:
         An :class:`AgentResult` with the final answer and the tool-call trace.
+
+    Raises:
+        PurposeRequired: If the turn's actions need a stated purpose and the
+            caller stated none (checked before anything reaches the model).
+        AgentInferenceError: If the chat-model call fails.
+        AuditFailure: If an audit event could not be written.
     """
-    convo: list[dict[str, Any]] = [{"role": "system", "content": get_system_prompt(language)}, *messages]
+    question = _last_user_text(messages)
+    criteria: dict[str, object] = {"messages": len(messages), "max_iterations": max_iterations}
+    if question:
+        criteria["question_sha256"] = sha256_text(question)
+    audit.require_purpose(AGENT_ACTIONS, AGENT_OPERATION, criteria)
+
+    system_prompt = get_system_prompt(language)
+    convo: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}, *messages]
     tools = tool_definitions()
     trace: list[TraceStep] = []
-    with audit.time_tool(user, "agent_query", {"messages": messages}) as slot:
+    turn = audit.scoped()  # collects the ids of this turn's tool events
+    usage = provider.TokenUsage()
+    ai = AiCall(
+        model_alias=model or provider.text_model(),
+        prompt_version=f"agent-{language}-{sha256_text(system_prompt)[:12]}",
+    )
+    try:
         for _ in range(max_iterations):
-            try:
-                msg = provider.chat_message(convo, model=model, tools=tools, tool_choice="auto")
-            except openai.OpenAIError as err:
-                # Context-window overflow is unambiguous and is checked first: its
-                # token-count text can mention "tool" results, which would otherwise
-                # trip the broad keyword match in `_is_tool_calling_unsupported`.
-                if _is_context_window_exceeded(err):
-                    logger.warning("agent: request exceeded chat model context window: {}", err)
-                    raise ContextWindowExceededError(
-                        "The agent request exceeded the chat model's context window. "
-                        "This usually means the visible conversation or tool results were too large for "
-                        "the configured model. chorus trims verbose tool payloads before follow-up turns, "
-                        "but this request still did not fit. "
-                        f"Underlying error: {err}"
-                    ) from err
-                if _is_tool_calling_unsupported(err):
-                    if _is_vllm_auto_tool_choice_error(err):
-                        logger.warning("agent: inference backend rejected automatic tool selection: {}", err)
-                    else:
-                        logger.warning("agent: chat model rejected tool-calling request: {}", err)
-                    raise ToolCallingUnsupportedError(_tool_calling_error_message(err)) from err
-                logger.warning("agent: inference request failed: {}", err)
-                raise AgentInferenceError(
-                    "The inference backend request failed "
-                    f"(provider base URL: {provider.api_base()}). Check that the "
-                    "inference service is reachable and INFERENCE_PROVIDER / "
-                    f"OPENAI_API_BASE are correct. Underlying error: {err!r}"
-                ) from err
+            msg = _chat(convo, model=model, tools=tools, usage=usage)
             tool_calls = list(msg.tool_calls or [])
             if not tool_calls:
-                slot.result_count = len(trace)
-                return AgentResult(answer=msg.content or "", trace=trace, truncated=False)
+                answer = msg.content or ""
+                _record_turn(audit, turn, ai, usage, criteria, answer=answer, trace=trace, truncated=False)
+                return AgentResult(answer=answer, trace=trace, truncated=False)
             convo.append(_assistant_turn(msg.content, tool_calls))
             for tc in tool_calls:
                 step, tool_message = _execute_tool_call(
                     tc,
                     driver,
-                    audit,
-                    user=user,
+                    turn,
                     max_items=tool_message_max_items,
                     max_chars=tool_message_max_chars,
                 )
                 trace.append(step)
                 convo.append(tool_message)
-        slot.result_count = len(trace)
+        _record_turn(audit, turn, ai, usage, criteria, answer="", trace=trace, truncated=True)
         return AgentResult(answer="", trace=trace, truncated=True)
+    except (AuditFailure, PurposeRequired):
+        raise
+    except Exception:
+        _record_turn(audit, turn, ai, usage, criteria, answer="", trace=trace, truncated=False, outcome="error")
+        raise
+
+
+def _chat(
+    convo: list[dict[str, Any]],
+    *,
+    model: str | None,
+    tools: list[dict[str, Any]],
+    usage: provider.TokenUsage,
+) -> Any:
+    """Ask the chat model for the next assistant message, mapping its failures.
+
+    Args:
+        convo: The conversation so far, system prompt first.
+        model: Chat model id override, or ``None`` for ``TEXT_MODEL``.
+        tools: The OpenAI tool definitions to advertise.
+        usage: Accumulator for the response's token usage.
+
+    Returns:
+        The assistant message (content and/or tool calls).
+
+    Raises:
+        ContextWindowExceededError: If the request was too large for the model.
+        ToolCallingUnsupportedError: If the model or backend rejects tool calling.
+        AgentInferenceError: For any other inference failure.
+    """
+    try:
+        return provider.chat_message(convo, model=model, tools=tools, tool_choice="auto", usage=usage)
+    except openai.OpenAIError as err:
+        # Context-window overflow is unambiguous and is checked first: its
+        # token-count text can mention "tool" results, which would otherwise
+        # trip the broad keyword match in `_is_tool_calling_unsupported`.
+        if _is_context_window_exceeded(err):
+            logger.warning("agent: request exceeded chat model context window: {}", err)
+            raise ContextWindowExceededError(
+                "The agent request exceeded the chat model's context window. "
+                "This usually means the visible conversation or tool results were too large for "
+                "the configured model. chorus trims verbose tool payloads before follow-up turns, "
+                "but this request still did not fit. "
+                f"Underlying error: {err}"
+            ) from err
+        if _is_tool_calling_unsupported(err):
+            if _is_vllm_auto_tool_choice_error(err):
+                logger.warning("agent: inference backend rejected automatic tool selection: {}", err)
+            else:
+                logger.warning("agent: chat model rejected tool-calling request: {}", err)
+            raise ToolCallingUnsupportedError(_tool_calling_error_message(err)) from err
+        logger.warning("agent: inference request failed: {}", err)
+        raise AgentInferenceError(
+            "The inference backend request failed "
+            f"(provider base URL: {provider.api_base()}). Check that the "
+            "inference service is reachable and INFERENCE_PROVIDER / "
+            f"OPENAI_API_BASE are correct. Underlying error: {err!r}"
+        ) from err
+
+
+def _last_user_text(messages: list[dict[str, Any]]) -> str:
+    """Return the text of the conversation's last user turn.
+
+    Args:
+        messages: The visible conversation, oldest first.
+
+    Returns:
+        The last ``user`` message's content, or ``""`` when there is none.
+    """
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            content = message.get("content")
+            return content if isinstance(content, str) else ""
+    return ""
+
+
+def _record_turn(
+    audit: AuditContext,
+    turn: AuditContext,
+    ai: AiCall,
+    usage: provider.TokenUsage,
+    criteria: Mapping[str, object],
+    *,
+    answer: str,
+    trace: list[TraceStep],
+    truncated: bool,
+    outcome: str = "ok",
+) -> str:
+    """Write the turn's ``ai_call`` / ``agent.answer`` event.
+
+    Args:
+        audit: The caller's audit context.
+        turn: The turn's scoped context, holding its tool events' ids.
+        ai: The turn's model provenance (alias and prompt version).
+        usage: Token counts over the turn's model calls.
+        criteria: The turn's parameters (message count, question hash).
+        answer: The answer shown to the caller; only its hash is recorded.
+        trace: The tool calls the model made.
+        truncated: Whether the turn hit the iteration cap.
+        outcome: ``ok`` or ``error``.
+
+    Returns:
+        The event's id.
+
+    Raises:
+        AuditFailure: If the event could not be written.
+    """
+    return audit.emit(
+        "ai_call",
+        AGENT_OPERATION,
+        outcome=outcome,
+        recipient="inference:chat",
+        criteria={**criteria, "tool_calls": len(trace), "truncated": truncated},
+        ai=AiCall(
+            model_alias=ai.model_alias,
+            prompt_version=ai.prompt_version,
+            sources=list(turn.event_ids),
+            output_sha256=sha256_text(answer) if answer else None,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+        ),
+    )
 
 
 def _assistant_turn(content: str | None, tool_calls: list[Any]) -> dict[str, Any]:
@@ -206,9 +333,8 @@ def _assistant_turn(content: str | None, tool_calls: list[Any]) -> dict[str, Any
 def _execute_tool_call(
     tc: Any,
     driver: Driver,
-    audit: AuditLogger,
+    audit: AuditContext,
     *,
-    user: str,
     max_items: int = _MAX_TOOL_MESSAGE_ITEMS,
     max_chars: int = _MAX_TOOL_MESSAGE_STRING_CHARS,
 ) -> tuple[TraceStep, dict[str, Any]]:
@@ -219,6 +345,8 @@ def _execute_tool_call(
     can self-correct) and a TraceStep with a static, client-safe ``error``
     set; the loop then continues so the model can recover. The failure is
     logged in every case; invalid arguments are logged without their values.
+    An audit failure or a refused purpose is never treated as a tool
+    failure: it ends the turn.
     """
     name = tc.function.name
     loaded: Any
@@ -246,7 +374,9 @@ def _execute_tool_call(
         )
 
     try:
-        out = spec.run(driver, parsed, user=user, audit=audit)
+        out = spec.run(driver, parsed, audit=audit)
+    except (AuditFailure, PurposeRequired):
+        raise
     except Exception as exc:  # surface any tool failure back to the model
         detail = f"{type(exc).__name__}: {exc}"
         logger.opt(exception=exc).error(f"agent: tool {name!r} failed")

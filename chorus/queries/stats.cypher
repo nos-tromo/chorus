@@ -49,13 +49,16 @@ CALL {
     MATCH (al:Alias)-[:RESOLVED_TO]->()
     RETURN count(DISTINCT al) AS resolved_aliases
 }
+// entity_ids (the resolved entities behind a name) feeds the audit trail
+// only; the response shows name and count.
 CALL {
     OPTIONAL MATCH (p:Post)-[:MENTIONS]->(al:Alias)
     OPTIONAL MATCH (al)-[:RESOLVED_TO]->(e:Entity)
-    WITH coalesce(e.canonical_name, al.surface_form) AS name, count(p) AS c
+    WITH coalesce(e.canonical_name, al.surface_form) AS name, count(p) AS c,
+         collect(DISTINCT e.id) AS entity_ids
     WHERE name IS NOT NULL
     ORDER BY c DESC
-    RETURN collect({name: name, count: c})[..5] AS top_entities
+    RETURN collect({name: name, count: c, entity_ids: entity_ids})[..5] AS top_entities
 }
 CALL {
     OPTIONAL MATCH (a:Author)-[:AUTHORED]->(p:Post)

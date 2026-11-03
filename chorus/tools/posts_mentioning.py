@@ -2,7 +2,8 @@
 
 Pattern: Pydantic input + Cypher template + `@audited` wrapper. Every
 follow-on tool should look like this — single responsibility, no inline
-Cypher, audit logging via the decorator.
+Cypher, the audit event written by the decorator from the ``audit_*``
+methods of the output model.
 """
 
 from __future__ import annotations
@@ -11,9 +12,8 @@ from datetime import datetime
 from typing import Any
 
 from neo4j import Driver
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
-from chorus.audit.logger import AuditLogger
 from chorus.tools._audit import audited, register_tool
 from chorus.tools._template_loader import load_template
 
@@ -74,6 +74,18 @@ class PostsMentioningOut(BaseModel):
     """
 
     hits: list[PostsMentioningHit]
+    # Authors of the returned posts, stashed for the §76 audit trail. Private
+    # so the public/JSON shape stays ``{"hits": [...]}``.
+    _author_ids: list[str] = PrivateAttr(default_factory=list)
+
+    def audit_authors(self) -> list[str]:
+        """Return the ids of the authors whose posts this result discloses.
+
+        Returns:
+            Author and co-author ids, in result order. The decorator
+            deduplicates them.
+        """
+        return list(self._author_ids)
 
     def audit_entities(self) -> list[str]:
         """Return distinct resolved entity ids touched by this result set.
@@ -87,6 +99,14 @@ class PostsMentioningOut(BaseModel):
             if h.entity_id and h.entity_id not in seen:
                 seen.append(h.entity_id)
         return seen
+
+    def audit_posts(self) -> list[str]:
+        """Return the uuids of the posts this result discloses.
+
+        Returns:
+            Post uuids in result order.
+        """
+        return [h.uuid for h in self.hits]
 
     def audit_result_count(self) -> int:
         """Return the number of hits in this result set.
@@ -103,13 +123,7 @@ class PostsMentioningOut(BaseModel):
     output_model=PostsMentioningOut,
 )
 @audited
-def posts_mentioning(
-    driver: Driver,
-    params: PostsMentioningIn,
-    *,
-    user: str,
-    audit: AuditLogger,
-) -> PostsMentioningOut:
+def posts_mentioning(driver: Driver, params: PostsMentioningIn) -> PostsMentioningOut:
     """Return posts mentioning ``params.entity`` within an optional time range.
 
     Loads the ``posts_mentioning.cypher`` template and runs it against
@@ -119,14 +133,11 @@ def posts_mentioning(
     Args:
         driver: Open Neo4j driver.
         params: Validated input parameters.
-        user: Authenticated identity (consumed by ``@audited``).
-        audit: Active audit logger (consumed by ``@audited``).
 
     Returns:
         A populated :class:`PostsMentioningOut` with at most
         ``params.limit`` hits.
     """
-    del user, audit  # the @audited decorator owns the audit write
     cypher = load_template("posts_mentioning")
     cypher_params: dict[str, Any] = {
         "entity": params.entity,
@@ -134,17 +145,21 @@ def posts_mentioning(
         "to": params.to.isoformat() if params.to else None,
         "limit": params.limit,
     }
+    hits: list[PostsMentioningHit] = []
+    author_ids: list[str] = []
     with driver.session() as session:
-        result = session.run(cypher, **cypher_params)
-        hits = [
-            PostsMentioningHit(
-                uuid=row["uuid"],
-                text=row["text"],
-                ts=row["ts"].to_native() if hasattr(row["ts"], "to_native") else row["ts"],
-                labels=list(row["labels"]),
-                entity_id=row["entity_id"],
-                matched_name=row["matched_name"],
+        for row in session.run(cypher, **cypher_params):
+            hits.append(
+                PostsMentioningHit(
+                    uuid=row["uuid"],
+                    text=row["text"],
+                    ts=row["ts"].to_native() if hasattr(row["ts"], "to_native") else row["ts"],
+                    labels=list(row["labels"]),
+                    entity_id=row["entity_id"],
+                    matched_name=row["matched_name"],
+                )
             )
-            for row in result
-        ]
-    return PostsMentioningOut(hits=hits)
+            author_ids.extend(row["author_ids"])
+    out = PostsMentioningOut(hits=hits)
+    out._author_ids = author_ids
+    return out

@@ -1,86 +1,96 @@
 """`@audited` decorator + tool registry shared types.
 
-A tool function is wrapped so that every invocation produces exactly one
-audit row via `AuditLogger.time_tool`. The decorator expects the function
-to accept keyword arguments `user: str` and `audit: AuditLogger`, plus a
-positional `driver` and a Pydantic-parsed `params` instance.
+A tool function is wrapped so that every invocation writes exactly one
+``query`` event (``operation="tool.<name>"``) to the data-protection audit
+trail, plus id-continuation events when its result references more than one
+event's worth of ids. The wrapped callable is invoked as
+``run(driver, params, *, audit)`` with an
+:class:`~chorus.audit.trail.AuditContext`; the tool function itself only
+takes ``(driver, params)`` and never sees the trail.
 
-The wrapped function may update `slot.entities_touched` and
-`slot.result_count` by returning a Pydantic model exposing
-`audit_entities()` and `audit_result_count()` methods, or by writing to
-`audit.slot` if it needs finer control.
+The event's criteria are the tool's input parameters. Its target is
+``kind="mixed"``: the result count, plus kind-prefixed references to what
+the result disclosed, data subjects first — ``author:`` ids from
+``audit_authors()``, ``entity:`` ids from ``audit_entities()``, ``post:``
+uuids from ``audit_posts()`` on the output model (each optional), and the
+count from ``audit_result_count()``. A tool that raises writes the event
+with ``outcome="error"`` and no target, then re-raises. When ``query``
+needs a stated purpose and the caller stated none, the call is refused with
+a ``denied`` event before the tool runs.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Protocol, TypeVar
+from typing import Any, TypeVar, cast
 
 from pydantic import BaseModel
 
-from chorus.audit.logger import AuditLogger
-
-
-class _Auditable(Protocol):
-    """Structural interface for tool outputs that report audit metadata.
-
-    Tools whose output models implement this protocol can populate the
-    audit row with the entities they touched and the result count
-    automatically; otherwise the row is written with zero counts.
-    """
-
-    def audit_entities(self) -> list[str]:
-        """Return canonical entity ids the tool resolved during the call.
-
-        Returns:
-            Entity ids in arbitrary order. May be empty.
-        """
-        ...
-
-    def audit_result_count(self) -> int:
-        """Return the number of result rows the tool produced.
-
-        Returns:
-            A non-negative integer.
-        """
-        ...
-
+from chorus.audit.trail import AuditContext, subject_refs
 
 OutT = TypeVar("OutT", bound=BaseModel)
 FnT = TypeVar("FnT", bound=Callable[..., BaseModel])
 
 
-def audited(fn: Callable[..., OutT]) -> Callable[..., OutT]:
-    """Wrap a tool function with audit-log timing.
-
-    The wrapped callable must accept ``(driver, params, *, user,
-    audit)`` and return a Pydantic model. If the model implements
-    :meth:`_Auditable.audit_entities` and
-    :meth:`_Auditable.audit_result_count`, those values are written into
-    the audit row; otherwise the row is written with zero result count
-    and no entities touched. Exceptions raised by the wrapped function
-    are re-raised after the audit row is written with
-    ``status="error"``.
+def _refs(result: BaseModel, method: str) -> list[str]:
+    """Return the ids an output model reports through one ``audit_*`` method.
 
     Args:
-        fn: Tool function to wrap. Its name is recorded as
-            ``tool_name`` on the audit row.
+        result: The tool's output model.
+        method: ``audit_authors``, ``audit_entities`` or ``audit_posts``.
 
     Returns:
-        A wrapped callable with the same signature as ``fn``.
+        The reported ids, or an empty list when the model has no such method.
     """
+    fn = getattr(result, method, None)
+    if not callable(fn):
+        return []
+    return [str(value) for value in cast("Iterable[object]", fn())]
+
+
+def audited(fn: Callable[..., OutT]) -> Callable[..., OutT]:
+    """Wrap a tool function so each call writes one ``query`` audit event.
+
+    The wrapper accepts ``(driver, params, *, audit)`` and calls
+    ``fn(driver, params)``. The event is written after the result is built
+    and before it is returned, so a failed audit write fails the call and
+    no data leaves it.
+
+    Args:
+        fn: Tool function to wrap. Its name becomes the event's operation,
+            ``tool.<name>``.
+
+    Returns:
+        The wrapped callable.
+    """
+    operation = f"tool.{fn.__name__}"
 
     @wraps(fn)
-    def _wrapped(driver: Any, params: BaseModel, *, user: str, audit: AuditLogger) -> OutT:
-        with audit.time_tool(user, fn.__name__, params.model_dump(mode="json")) as slot:
-            result = fn(driver, params, user=user, audit=audit)
-            if isinstance(result, BaseModel) and hasattr(result, "audit_entities"):
-                slot.entities_touched = result.audit_entities()
-            if isinstance(result, BaseModel) and hasattr(result, "audit_result_count"):
-                slot.result_count = result.audit_result_count()
-            return result
+    def _wrapped(driver: Any, params: BaseModel, *, audit: AuditContext) -> OutT:
+        criteria = params.model_dump(mode="json", by_alias=True)
+        audit.require_purpose(("query",), operation, criteria)
+        try:
+            result = fn(driver, params)
+        except Exception:
+            audit.emit("query", operation, outcome="error", criteria=criteria)
+            raise
+        count_fn = getattr(result, "audit_result_count", None)
+        ids = subject_refs(
+            authors=_refs(result, "audit_authors"),
+            entities=_refs(result, "audit_entities"),
+            posts=_refs(result, "audit_posts"),
+        )
+        audit.emit_refs(
+            "query",
+            operation,
+            kind="mixed",
+            ids=ids,
+            count=cast("int", count_fn()) if callable(count_fn) else len(ids),
+            criteria=criteria,
+        )
+        return result
 
     return _wrapped
 
@@ -135,8 +145,8 @@ def register_tool(
     """Decorator that registers a tool in the global :data:`TOOLS` registry.
 
     Apply this *outside* :func:`audited` so the wrapped (audited) function
-    is what ends up in the registry — the FastAPI router invokes
-    ``TOOLS[name].run`` directly, expecting audit logging to fire.
+    is what ends up in the registry — the FastAPI router and the agent
+    invoke ``TOOLS[name].run`` directly, expecting the audit event to fire.
 
     Args:
         name: Unique registry key. Raises if already taken.

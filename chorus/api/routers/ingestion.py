@@ -211,7 +211,7 @@ def migrate(request: Request, user: str = Depends(resolve_principal)) -> Migrate
     """
     _reject_if_busy(request)
     driver = request.app.state.driver
-    audit = request.app.state.audit
+    audit = request.app.state.audit_log
     with audit.time_tool(user, "migrate", {}) as slot:
         newly = apply_all(driver)
         slot.result_count = len(newly)
@@ -298,7 +298,7 @@ def ingest(
         raise
 
     driver = request.app.state.driver
-    audit = request.app.state.audit
+    audit = request.app.state.audit_log
 
     def _ingest_job(_job: Job) -> dict[str, Any]:
         """Run one ingestion pass over the staged files; clean up on exit."""
@@ -357,7 +357,7 @@ def resolve(request: Request, user: str = Depends(resolve_principal)) -> JobAcce
     """
     _reject_if_busy(request)
     driver = request.app.state.driver
-    audit = request.app.state.audit
+    audit = request.app.state.audit_log
 
     def _resolve_job(_job: Job) -> dict[str, Any]:
         summary = resolve_all(driver, load_resolution_env(), audit, user=user)

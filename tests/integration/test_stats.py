@@ -1,26 +1,28 @@
 """GET /stats graph-diagnostics endpoint: seeded and empty-graph cases.
 
 Mirrors the tool integration tests: reuses the `migrated_driver` and
-`in_memory_audit` fixtures; spins up a minimal FastAPI app with the stats
-router wired to the testcontainer driver and a real audit logger so both
-the query and the audit write exercise live code paths.
+`audit_trail` fixtures; spins up a minimal FastAPI app with the stats
+router wired to the testcontainer driver and a captured audit trail so both
+the query and the audit event exercise live code paths.
 """
 
 from __future__ import annotations
 
-import sqlite3
-from typing import Any
+import io
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from neo4j import Driver
+
+from chorus.audit.trail import AuditTrail
+from tests._audit import operation_events
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _build_app(driver: Driver, audit: Any) -> FastAPI:
+def _build_app(driver: Driver, audit: AuditTrail) -> FastAPI:
     """Minimal FastAPI app with only the stats router mounted."""
     from chorus.api.routers import stats as stats_router
 
@@ -29,16 +31,6 @@ def _build_app(driver: Driver, audit: Any) -> FastAPI:
     app.state.driver = driver
     app.state.audit = audit
     return app
-
-
-def _audit_rows(audit: Any) -> list[dict[str, Any]]:
-    """Read all audit rows from the logger's SQLite, oldest first."""
-    conn = sqlite3.connect(audit.db_path)
-    try:
-        conn.row_factory = sqlite3.Row
-        return [dict(r) for r in conn.execute("SELECT * FROM audit_log ORDER BY id")]
-    finally:
-        conn.close()
 
 
 _AUTH = {"X-Auth-User": "analyst"}
@@ -106,15 +98,15 @@ def _seed(driver: Driver) -> None:
         )
 
 
-def test_stats_seeded_graph(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_stats_seeded_graph(migrated_driver: Driver, audit_trail: AuditTrail) -> None:
     """Seeded graph produces the expected counts, highlights, and platform split.
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_trail: The test's captured audit trail.
     """
     _seed(migrated_driver)
-    client = TestClient(_build_app(migrated_driver, in_memory_audit))
+    client = TestClient(_build_app(migrated_driver, audit_trail))
     resp = client.get("/stats", headers=_AUTH)
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -161,22 +153,30 @@ def test_stats_seeded_graph(migrated_driver: Driver, in_memory_audit: Any) -> No
     assert top_entities[0]["count"] == 2
 
 
-def test_stats_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> None:
-    """GET /stats writes exactly one audit row with tool_name 'stats'.
+def test_stats_audit_event_written(migrated_driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO) -> None:
+    """GET /stats writes one query event naming the top authors and resolved top entities.
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_trail: The test's captured audit trail.
+        audit_stream: The captured audit stream.
     """
-    client = TestClient(_build_app(migrated_driver, in_memory_audit))
-    client.get("/stats", headers=_AUTH)
+    _seed(migrated_driver)
+    client = TestClient(_build_app(migrated_driver, audit_trail))
+    resp = client.get("/stats", headers={**_AUTH, "X-Request-ID": "req-0001"})
+    assert resp.status_code == 200
 
-    rows = _audit_rows(in_memory_audit)
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["user"] == "analyst"
-    assert row["tool_name"] == "stats"
-    assert row["status"] == "ok"
+    [event] = operation_events(audit_stream)
+    assert (event["action"], event["operation"], event["outcome"]) == ("query", "stats.read", "ok")
+    assert event["actor"] == {"user": "analyst", "via": "edge"}
+    assert event["request_id"] == "req-0001"
+    # top authors auth-1 (2 posts), auth-2 (1 post); top entities Berlin (resolved) and Paris (alias only)
+    assert event["target"] == {
+        "kind": "mixed",
+        "ids": ["author:auth-1", "author:auth-2", "entity:entity-1"],
+        "count": 4,
+    }
+    assert "criteria" not in event
 
 
 # ---------------------------------------------------------------------------
@@ -184,14 +184,14 @@ def test_stats_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) 
 # ---------------------------------------------------------------------------
 
 
-def test_stats_empty_graph(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_stats_empty_graph(migrated_driver: Driver, audit_trail: AuditTrail) -> None:
     """Empty database returns all zeros, empty lists, null ingested_at — 200 OK.
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_trail: The test's captured audit trail.
     """
-    client = TestClient(_build_app(migrated_driver, in_memory_audit))
+    client = TestClient(_build_app(migrated_driver, audit_trail))
     resp = client.get("/stats", headers=_AUTH)
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -249,7 +249,7 @@ def _seed_posts_no_mentions(driver: Driver) -> None:
         )
 
 
-def test_stats_posts_with_no_mentions(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_stats_posts_with_no_mentions(migrated_driver: Driver, audit_trail: AuditTrail) -> None:
     """Posts exist with AUTHORED edges but no MENTIONS edges.
 
     Regression: the top_entities CALL{} subquery previously produced a
@@ -261,10 +261,10 @@ def test_stats_posts_with_no_mentions(migrated_driver: Driver, in_memory_audit: 
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_trail: The test's captured audit trail.
     """
     _seed_posts_no_mentions(migrated_driver)
-    client = TestClient(_build_app(migrated_driver, in_memory_audit))
+    client = TestClient(_build_app(migrated_driver, audit_trail))
     resp = client.get("/stats", headers=_AUTH)
     assert resp.status_code == 200, resp.text
     body = resp.json()

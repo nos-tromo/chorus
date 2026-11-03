@@ -44,12 +44,22 @@ WITH p,
 // $limit slots. Pick deterministically by entity_id (nulls sort last).
 WITH p, entity_id, matched_name ORDER BY entity_id
 WITH p, head(collect({entity_id: entity_id, matched_name: matched_name})) AS pick
+ORDER BY p.timestamp DESC
+LIMIT $limit
+// author_ids feeds the audit trail only (the tool returns no author fields):
+// whose posts the result discloses. Collected after the limit, so its cost
+// follows the page size, not the match count. The relationship types are
+// matched by name rather than in the pattern, so a graph without any
+// co-authored posting raises no unknown-type notification.
 RETURN
   p.uuid            AS uuid,
   p.text            AS text,
   p.timestamp       AS ts,
   labels(p)         AS labels,
   pick.entity_id    AS entity_id,
-  pick.matched_name AS matched_name
-ORDER BY p.timestamp DESC
-LIMIT $limit;
+  pick.matched_name AS matched_name,
+  COLLECT {
+    MATCH (a:Author)-[r]->(p) WHERE type(r) IN ['AUTHORED', 'CO_AUTHORED']
+    RETURN DISTINCT a.id
+  } AS author_ids
+ORDER BY ts DESC;

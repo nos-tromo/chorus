@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from neo4j import Driver
 
+from chorus.audit.trail import AuditTrail
+
 
 class _FakeFunction:
     def __init__(self, name: str, arguments: str) -> None:
@@ -29,7 +31,7 @@ class _FakeMessage:
 
 
 def test_agent_query_endpoint_returns_answer_and_trace(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_trail: AuditTrail, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """POST /agent/query runs the loop and returns answer + trace as JSON."""
     from chorus.api.routers import agent as agent_router
@@ -57,7 +59,7 @@ def test_agent_query_endpoint_returns_answer_and_trace(
     app = FastAPI()
     app.include_router(agent_router.router)
     app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.audit = audit_trail
 
     client = TestClient(app)
     resp = client.post(
@@ -73,7 +75,7 @@ def test_agent_query_endpoint_returns_answer_and_trace(
 
 
 def test_unsupported_model_returns_502(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_trail: AuditTrail, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """If the model rejects tool-calling, /agent/query returns a generic 502."""
     import openai
@@ -89,7 +91,7 @@ def test_unsupported_model_returns_502(
     app = FastAPI()
     app.include_router(agent_router.router)
     app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.audit = audit_trail
 
     resp = TestClient(app).post(
         "/agent/query",
@@ -101,7 +103,7 @@ def test_unsupported_model_returns_502(
 
 
 def test_inference_unreachable_returns_502(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_trail: AuditTrail, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An unreachable/erroring inference backend returns a generic 502, not a raw 500."""
     import openai
@@ -117,7 +119,7 @@ def test_inference_unreachable_returns_502(
     app = FastAPI()
     app.include_router(agent_router.router)
     app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.audit = audit_trail
 
     resp = TestClient(app).post(
         "/agent/query",
@@ -129,7 +131,7 @@ def test_inference_unreachable_returns_502(
 
 
 def test_context_window_exceeded_returns_502(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_trail: AuditTrail, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A context-window overflow returns a generic 502 detail (specifics go to logs)."""
     import openai
@@ -145,7 +147,7 @@ def test_context_window_exceeded_returns_502(
     app = FastAPI()
     app.include_router(agent_router.router)
     app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.audit = audit_trail
 
     resp = TestClient(app).post(
         "/agent/query",
@@ -157,7 +159,7 @@ def test_context_window_exceeded_returns_502(
 
 
 def test_response_language_de_uses_german_prompt(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_trail: AuditTrail, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """RESPONSE_LANGUAGE=de makes /agent/query send the German system prompt."""
     from chorus.agent.prompts import get_system_prompt
@@ -175,7 +177,7 @@ def test_response_language_de_uses_german_prompt(
     app = FastAPI()
     app.include_router(agent_router.router)
     app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.audit = audit_trail
     resp = TestClient(app).post(
         "/agent/query",
         json={"messages": [{"role": "user", "content": "hallo"}]},
@@ -186,7 +188,7 @@ def test_response_language_de_uses_german_prompt(
 
 
 def test_default_response_language_uses_english_prompt(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_trail: AuditTrail, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With RESPONSE_LANGUAGE unset, /agent/query sends the English prompt."""
     from chorus.agent.prompts import get_system_prompt
@@ -204,7 +206,7 @@ def test_default_response_language_uses_english_prompt(
     app = FastAPI()
     app.include_router(agent_router.router)
     app.state.driver = migrated_driver
-    app.state.audit = in_memory_audit
+    app.state.audit = audit_trail
     resp = TestClient(app).post(
         "/agent/query",
         json={"messages": [{"role": "user", "content": "hi"}]},

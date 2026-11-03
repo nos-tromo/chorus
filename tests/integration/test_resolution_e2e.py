@@ -7,6 +7,8 @@ from typing import Any
 import pytest
 from neo4j import Driver
 
+from chorus.audit.trail import AuditContext
+
 
 def _vec(*head: float) -> list[float]:
     """A 1024-d vector with the given leading components, zero-padded."""
@@ -17,7 +19,7 @@ def _vec(*head: float) -> list[float]:
 
 
 def test_resolution_lets_topic_tool_cluster(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, in_memory_audit: Any, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """topic_co_occurrence sees one Berlin *entity* (count 2), not two aliases."""
     from chorus.inference import provider
@@ -46,8 +48,7 @@ def test_resolution_lets_topic_tool_cluster(
     out = topic_co_occurrence(
         migrated_driver,
         TopicCoOccurrenceIn(topic="Spree", limit=10),
-        user="t",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     berlin = [c for c in out.cooccurring if c.entity_id is not None and c.topic == "Berlin"]
     assert len(berlin) == 1  # one resolved entity, not two alias surface forms

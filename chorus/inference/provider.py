@@ -13,6 +13,7 @@ NER — without coupling the two configs.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
@@ -57,6 +58,77 @@ def _client() -> OpenAI:
     )
 
 
+@dataclass
+class TokenUsage:
+    """Token counts summed over the model calls of one audited operation.
+
+    Pass one to :func:`chat`, :func:`chat_message` or :func:`embed` as
+    ``usage=`` and it adds each response's reported usage. A total is known
+    only while every response reported it; once one did not, it stays
+    ``None``, so an audit event never records an undercount.
+
+    Attributes:
+        calls: Responses counted so far.
+    """
+
+    calls: int = 0
+    _input: int | None = 0
+    _output: int | None = 0
+
+    def add(self, usage: object) -> None:
+        """Add one response's usage (``prompt_tokens`` / ``completion_tokens``).
+
+        Args:
+            usage: The response's ``usage`` object, or ``None`` when absent.
+        """
+        self.calls += 1
+        self._input = _plus(self._input, getattr(usage, "prompt_tokens", None))
+        self._output = _plus(self._output, getattr(usage, "completion_tokens", None))
+
+    @property
+    def input_tokens(self) -> int | None:
+        """Prompt tokens over every counted call, or ``None`` when unknown."""
+        return self._input if self.calls else None
+
+    @property
+    def output_tokens(self) -> int | None:
+        """Completion tokens over every counted call, or ``None`` when unknown."""
+        return self._output if self.calls else None
+
+
+def _plus(total: int | None, value: object) -> int | None:
+    """Add a reported token count to a running total.
+
+    Args:
+        total: The total so far, ``None`` once a count was missing.
+        value: The count a response reported.
+
+    Returns:
+        The new total, or ``None`` when either side is unknown.
+    """
+    if total is None or not isinstance(value, int) or isinstance(value, bool):
+        return None
+    return total + value
+
+
+def text_model() -> str:
+    """Return the chat model id requests use when none is given.
+
+    Returns:
+        ``TEXT_MODEL`` from the active :class:`InferenceConfig`.
+    """
+    return _config().TEXT_MODEL
+
+
+def embed_model() -> str:
+    """Return the embedding model id requests use when none is given.
+
+    Returns:
+        ``EMBED_MODEL`` from the active :class:`InferenceConfig`.
+    """
+    return _config().embed_model
+
+
 def api_base() -> str:
     """Return the configured OpenAI-compatible base URL.
 
@@ -70,13 +142,20 @@ def api_base() -> str:
     return _config().api_base
 
 
-def chat(messages: list[dict[str, str]], *, model: str | None = None, **kwargs: Any) -> str:
+def chat(
+    messages: list[dict[str, str]],
+    *,
+    model: str | None = None,
+    usage: TokenUsage | None = None,
+    **kwargs: Any,
+) -> str:
     """Return the assistant message content for a single chat completion.
 
     Args:
         messages: OpenAI-style messages list (each item carries ``role``
             and ``content``).
         model: Model id to route to. Defaults to ``cfg.TEXT_MODEL``.
+        usage: Accumulator the response's token usage is added to.
         **kwargs: Extra keyword arguments forwarded to
             ``client.chat.completions.create``.
 
@@ -90,6 +169,8 @@ def chat(messages: list[dict[str, str]], *, model: str | None = None, **kwargs: 
         messages=messages,
         **kwargs,
     )
+    if usage is not None:
+        usage.add(resp.usage)
     content = resp.choices[0].message.content or ""
     return content
 
@@ -100,6 +181,7 @@ def chat_message(
     model: str | None = None,
     tools: list[dict[str, Any]] | None = None,
     tool_choice: Any = None,
+    usage: TokenUsage | None = None,
     **kwargs: Any,
 ) -> ChatCompletionMessage:
     """Return the full assistant message for a single chat completion.
@@ -118,6 +200,7 @@ def chat_message(
             request when ``None``.
         tool_choice: OpenAI ``tool_choice`` directive (e.g. ``"auto"``).
             Omitted from the request when ``None``.
+        usage: Accumulator the response's token usage is added to.
         **kwargs: Extra keyword arguments forwarded to
             ``client.chat.completions.create``.
 
@@ -136,15 +219,18 @@ def chat_message(
         messages=messages,
         **extra,
     )
+    if usage is not None:
+        usage.add(resp.usage)
     return resp.choices[0].message
 
 
-def embed(texts: list[str], *, model: str | None = None) -> list[list[float]]:
+def embed(texts: list[str], *, model: str | None = None, usage: TokenUsage | None = None) -> list[list[float]]:
     """Return one embedding vector per input text.
 
     Args:
         texts: Texts to embed; sent as a single batched request.
         model: Model id to route to. Defaults to ``cfg.embed_model``.
+        usage: Accumulator the response's token usage is added to.
 
     Returns:
         A list of float vectors, one per input text, in the same order.
@@ -155,6 +241,8 @@ def embed(texts: list[str], *, model: str | None = None) -> list[list[float]]:
         model=model or _config().embed_model,
         input=texts,
     )
+    if usage is not None:
+        usage.add(resp.usage)
     return [item.embedding for item in resp.data]
 
 

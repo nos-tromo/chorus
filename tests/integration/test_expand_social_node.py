@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import io
 from typing import Any
 
 import pytest
 from neo4j import Driver
 from pydantic import ValidationError
+
+from chorus.audit.trail import AuditContext, AuditTrail
+from chorus.utils.audit_event import Actor
+from tests._audit import operation_events
 
 
 def _edge_tuples(out: Any) -> set[tuple[str, str, str, bool]]:
@@ -41,7 +46,7 @@ def _seed_social_graph(driver: Driver) -> None:
         )
 
 
-def test_expansion_returns_direct_ties(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_expansion_returns_direct_ties(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Expanding auth-a returns both neighbours and the three connecting edges."""
     from chorus.tools.expand_social_node import ExpandSocialNodeIn, expand_social_node
 
@@ -49,8 +54,7 @@ def test_expansion_returns_direct_ties(migrated_driver: Driver, in_memory_audit:
     out = expand_social_node(
         migrated_driver,
         ExpandSocialNodeIn(author_id="auth-a", limit=50),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert _node_ids(out) == {"author:auth-b", "author:auth-c"}
@@ -64,7 +68,7 @@ def test_expansion_returns_direct_ties(migrated_driver: Driver, in_memory_audit:
     assert out.truncated is False
 
 
-def test_limit_truncates_by_degree(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_limit_truncates_by_degree(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """limit=1 keeps only auth-b (degree 2) over auth-c (degree 1); truncated flips True."""
     from chorus.tools.expand_social_node import ExpandSocialNodeIn, expand_social_node
 
@@ -72,23 +76,21 @@ def test_limit_truncates_by_degree(migrated_driver: Driver, in_memory_audit: Any
     out = expand_social_node(
         migrated_driver,
         ExpandSocialNodeIn(author_id="auth-a", limit=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert _node_ids(out) == {"author:auth-b"}
     assert out.truncated is True
 
 
-def test_unknown_author_yields_empty(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_unknown_author_yields_empty(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """An author id matching nothing yields an empty expansion, not an error."""
     from chorus.tools.expand_social_node import ExpandSocialNodeIn, expand_social_node
 
     out = expand_social_node(
         migrated_driver,
         ExpandSocialNodeIn(author_id="no-such", limit=50),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert out.nodes == []
@@ -104,33 +106,27 @@ def test_empty_author_id_rejected() -> None:
         ExpandSocialNodeIn(author_id="   ")
 
 
-def test_audit_records_author_ids(migrated_driver: Driver, in_memory_audit: Any) -> None:
-    """Audit records the clicked author plus both neighbours; result_count is neighbour count."""
-    import json
-    import sqlite3
-
+def test_audit_records_author_ids(migrated_driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO) -> None:
+    """The event records the clicked author plus both neighbours; the count is the neighbour count."""
     from chorus.tools.expand_social_node import ExpandSocialNodeIn, expand_social_node
 
     _seed_social_graph(migrated_driver)
     out = expand_social_node(
         migrated_driver,
         ExpandSocialNodeIn(author_id="auth-a", limit=50),
-        user="alice",
-        audit=in_memory_audit,
+        audit=audit_trail.context(Actor(user="alice", via="edge")),
     )
 
-    assert set(out.audit_entities()) == {"auth-a", "auth-b", "auth-c"}
+    assert set(out.audit_authors()) == {"auth-a", "auth-b", "auth-c"}
     assert out.audit_result_count() == 2
 
-    rows = (
-        sqlite3.connect(in_memory_audit.db_path)
-        .execute("SELECT user, tool_name, entities_touched_json, result_count, status FROM audit_log")
-        .fetchall()
-    )
-    assert len(rows) == 1
-    user, tool_name, entities_json, result_count, status = rows[0]
-    assert (user, tool_name, result_count, status) == ("alice", "expand_social_node", 2, "ok")
-    assert set(json.loads(entities_json)) == {"auth-a", "auth-b", "auth-c"}
+    [event] = operation_events(audit_stream)
+    assert (event["action"], event["operation"], event["outcome"]) == ("query", "tool.expand_social_node", "ok")
+    assert event["actor"] == {"user": "alice", "via": "edge"}
+    assert event["target"]["kind"] == "mixed"
+    assert event["target"]["count"] == 2
+    assert event["target"]["ids"][0] == "author:auth-a"
+    assert set(event["target"]["ids"]) == {"author:auth-a", "author:auth-b", "author:auth-c"}
 
 
 def test_registered_in_tools(migrated_driver: Driver) -> None:

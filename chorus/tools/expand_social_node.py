@@ -19,7 +19,6 @@ from typing import Any
 from neo4j import Driver
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
-from chorus.audit.logger import AuditLogger
 from chorus.tools._audit import audited, register_tool
 from chorus.tools._template_loader import load_template
 from chorus.tools.social_network_around import SocialEdge
@@ -85,11 +84,11 @@ class ExpandSocialNodeOut(BaseModel):
     nodes: list[SocialNeighbor]
     edges: list[SocialEdge]
     truncated: bool
-    # Author ids touched, for the §76 audit trail — same deliberate convention
-    # as social_network_around (persons accessed, not entities).
+    # Author ids touched, for the §76 audit trail — the persons accessed, as in
+    # social_network_around.
     _author_ids: list[str] = PrivateAttr(default_factory=list)
 
-    def audit_entities(self) -> list[str]:
+    def audit_authors(self) -> list[str]:
         """Return the distinct author ids touched (the persons accessed).
 
         Returns:
@@ -117,13 +116,7 @@ class ExpandSocialNodeOut(BaseModel):
     output_model=ExpandSocialNodeOut,
 )
 @audited
-def expand_social_node(
-    driver: Driver,
-    params: ExpandSocialNodeIn,
-    *,
-    user: str,
-    audit: AuditLogger,
-) -> ExpandSocialNodeOut:
+def expand_social_node(driver: Driver, params: ExpandSocialNodeIn) -> ExpandSocialNodeOut:
     """Return one author's direct ties by id; grows a social_network_around graph around a clicked node.
 
     Runs the ``expand_social_node.cypher`` template and assembles the single
@@ -133,14 +126,11 @@ def expand_social_node(
     Args:
         driver: Open Neo4j driver.
         params: Validated input parameters.
-        user: Authenticated identity (consumed by ``@audited``).
-        audit: Active audit logger (consumed by ``@audited``).
 
     Returns:
         An :class:`ExpandSocialNodeOut` with neighbour nodes, typed social
         edges, and a ``truncated`` flag.
     """
-    del user, audit  # the @audited decorator owns the audit write
     cypher = load_template("expand_social_node")
     cypher_params: dict[str, Any] = {"author_id": params.author_id, "limit": params.limit}
     with driver.session() as session:

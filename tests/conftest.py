@@ -9,6 +9,7 @@ driver wired to the testcontainer.
 
 from __future__ import annotations
 
+import io
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -19,12 +20,20 @@ import pytest
 from neo4j import Driver
 from testcontainers.neo4j import Neo4jContainer
 
+from chorus.audit.trail import AuditContext, AuditTrail
+from chorus.utils.audit_event import Actor, AuditEmitter
+from tests._audit import assert_chain_ok
+
 _CHORUS_ENV_MODULES = (
     "chorus.utils.env_cfg",
     "chorus.utils.logger_cfg",
     "chorus.db.neo4j",
     "chorus.audit.logger",
     "chorus.api.auth.principal",
+    # NOTE: chorus.audit.trail is deliberately NOT reloaded either: it reads no
+    # env, and its AuditFailure / PurposeRequired must keep one class identity
+    # for every `except` that catches them.
+    "chorus.api.audit",
     "chorus.api.routers.health",
     "chorus.api.routers.tools",
     "chorus.api.routers.agent",
@@ -234,3 +243,47 @@ def in_memory_audit(chorus_env: Path) -> Any:
     a = AuditLogger(chorus_env / "audit.sqlite")
     a.init_schema()
     return a
+
+
+@pytest.fixture
+def audit_stream() -> io.StringIO:
+    """Capture buffer for the test's audit chain.
+
+    Returns:
+        An empty ``io.StringIO`` the :func:`audit_trail` emitter writes to.
+    """
+    return io.StringIO()
+
+
+@pytest.fixture
+def audit_trail(audit_stream: io.StringIO) -> Iterator[AuditTrail]:
+    """A started audit trail writing to :func:`audit_stream`, no heartbeat.
+
+    At teardown the chain is closed and verified with ``verify_chain()``, so
+    every test that emits through it also checks the chain it wrote.
+
+    Args:
+        audit_stream: The capture buffer.
+
+    Yields:
+        The started :class:`~chorus.audit.trail.AuditTrail`.
+    """
+    trail = AuditTrail(AuditEmitter("chorus", "test", stream=audit_stream, heartbeat_interval_s=0))
+    trail.start({"edge_secret_enforced": False, "default_identity_enabled": True})
+    yield trail
+    trail.close()
+    assert_chain_ok(audit_stream)
+
+
+@pytest.fixture
+def audit_ctx(audit_trail: AuditTrail) -> AuditContext:
+    """The audit trail bound to a synthetic dev caller.
+
+    Args:
+        audit_trail: The test's audit trail.
+
+    Returns:
+        An :class:`~chorus.audit.trail.AuditContext` for
+        ``Actor("test-user", "system")`` with no stated purpose.
+    """
+    return audit_trail.context(Actor(user="test-user", via="system"))

@@ -646,16 +646,19 @@ logged with full Cypher text.
 
 ### Adding a graph tool
 
-A new tool touches six files; registration alone surfaces it to both the
+A new tool touches seven files; registration alone surfaces it to both the
 REST `/tools` surface and the NL agent (each iterates the `TOOLS`
 registry):
 
 1. `chorus/queries/<tool>.cypher` — the query (never inline in Python)
 2. `chorus/tools/<tool>.py` — Pydantic in/out models + `@register_tool`
-   + `@audited`. The function's first docstring line becomes the
-   agent-facing description (enforced by `tests/tools/test_registry.py`);
-   audit metadata flows via `audit_entities()` / `audit_result_count()`
-   on the output model — keep audit-only data on a `PrivateAttr`.
+   + `@audited`; the tool function takes `(driver, params)`. The
+   function's first docstring line becomes the agent-facing description
+   (enforced by `tests/tools/test_registry.py`). The audit event's target
+   comes from the output model: `audit_result_count()` plus whichever of
+   `audit_authors()` / `audit_entities()` / `audit_posts()` apply — the
+   ids of the people, entities and posts the result discloses. Keep
+   audit-only data on a `PrivateAttr`.
 3. `chorus/tools/__init__.py` — import the module so it self-registers
 4. `tests/conftest.py` — add the module to `_CHORUS_ENV_MODULES`; easy
    to miss, and without it the tool silently drops out of the registry
@@ -677,6 +680,9 @@ registry):
      add it to the router and sidebar. No element mappers needed.
 6. `tests/integration/test_<tool>.py` — per-tool tests live in
    `tests/integration/` (`tests/tools/` holds only the registry test)
+7. `tests/integration/test_tool_audit_events.py` — add a sample input for
+   the tool; the module checks every registered tool's audit event and
+   fails when one is missing
 
 ## Ingestion pipeline
 
@@ -826,9 +832,10 @@ hosts the `chorus-state` volume needs a one-time `chown -R 10001:10001`
 
 - Cypher lives in `queries/`, never inline in Python. Tools import templates.
 - Every retrieval tool has a Pydantic input schema and a typed return.
-- Every tool invocation is wrapped by the audit logger (`@audited` →
-  `AuditLogger.time_tool`), which writes one row when the call returns —
-  on success or on error.
+- Every tool invocation is wrapped by `@audited`, which writes one
+  `query` / `tool.<name>` event to the data-protection audit trail when
+  the call completes — before the result is returned, and also on error.
+  A failed audit write fails the call (see `docs/audit.md`).
 - Schema changes are migrations, applied in order, idempotent.
 - Decision records (the "we chose X over Y because Z" entries) go in
   `docs/decisions/` as short markdown files. New significant tradeoffs

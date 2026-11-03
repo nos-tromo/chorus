@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+import io
 
 from neo4j import Driver
 
+from chorus.audit.trail import AuditContext, AuditTrail
+from chorus.utils.audit_event import Actor
+from tests._audit import operation_events
 
-def test_authors_mentioning_empty(migrated_driver: Driver, in_memory_audit: Any) -> None:
+
+def test_authors_mentioning_empty(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Empty database returns no authors and zero audit result count."""
     from chorus.tools.authors_mentioning import (
         AuthorsMentioningIn,
@@ -17,14 +21,13 @@ def test_authors_mentioning_empty(migrated_driver: Driver, in_memory_audit: Any)
     out = authors_mentioning(
         migrated_driver,
         AuthorsMentioningIn(entity="Berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert out.authors == []
     assert out.audit_result_count() == 0
 
 
-def test_authors_mentioning_ranks_by_post_count(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_authors_mentioning_ranks_by_post_count(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Authors are ranked by how many of their posts mention the entity."""
     from chorus.tools.authors_mentioning import (
         AuthorsMentioningIn,
@@ -63,8 +66,7 @@ def test_authors_mentioning_ranks_by_post_count(migrated_driver: Driver, in_memo
     out = authors_mentioning(
         migrated_driver,
         AuthorsMentioningIn(entity="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert [(a.author_id, a.mention_post_count) for a in out.authors] == [
@@ -77,7 +79,7 @@ def test_authors_mentioning_ranks_by_post_count(migrated_driver: Driver, in_memo
     assert top.last_mention is not None and top.last_mention.isoformat() == "2026-05-02T10:00:00+00:00"
 
 
-def test_authors_mentioning_counts_distinct_posts(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_authors_mentioning_counts_distinct_posts(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A post that matches the query via two aliases counts once, not twice."""
     from chorus.tools.authors_mentioning import (
         AuthorsMentioningIn,
@@ -104,14 +106,15 @@ def test_authors_mentioning_counts_distinct_posts(migrated_driver: Driver, in_me
     out = authors_mentioning(
         migrated_driver,
         AuthorsMentioningIn(entity="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert [(a.author_id, a.mention_post_count) for a in out.authors] == [("auth-a", 1)]
 
 
-def test_authors_mentioning_time_window_excludes_entity_branch(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_authors_mentioning_time_window_excludes_entity_branch(
+    migrated_driver: Driver, audit_ctx: AuditContext
+) -> None:
     """Entity-branch mentions outside the [from, to) window exclude the author.
 
     Regression guard for the AND/OR precedence bug that bit posts_mentioning:
@@ -145,14 +148,13 @@ def test_authors_mentioning_time_window_excludes_entity_branch(migrated_driver: 
                 "limit": 10,
             }
         ),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert out.authors == []
 
 
-def test_authors_mentioning_resolved_alias_by_canonical_name(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_authors_mentioning_resolved_alias_by_canonical_name(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A canonical-name query matches through Alias -> Entity and records the id."""
     from chorus.tools.authors_mentioning import (
         AuthorsMentioningIn,
@@ -177,15 +179,14 @@ def test_authors_mentioning_resolved_alias_by_canonical_name(migrated_driver: Dr
     out = authors_mentioning(
         migrated_driver,
         AuthorsMentioningIn(entity="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert [(a.author_id, a.mention_post_count) for a in out.authors] == [("auth-a", 1)]
     assert out.audit_entities() == ["ent-berlin"]
 
 
-def test_authors_mentioning_unresolved_alias(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_authors_mentioning_unresolved_alias(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """An unresolved alias still matches the author; no entity id is recorded."""
     from chorus.tools.authors_mentioning import (
         AuthorsMentioningIn,
@@ -208,15 +209,14 @@ def test_authors_mentioning_unresolved_alias(migrated_driver: Driver, in_memory_
     out = authors_mentioning(
         migrated_driver,
         AuthorsMentioningIn(entity="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert [(a.author_id, a.mention_post_count) for a in out.authors] == [("auth-a", 1)]
     assert out.audit_entities() == []
 
 
-def test_authors_mentioning_lockstep_with_posts_mentioning(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_authors_mentioning_lockstep_with_posts_mentioning(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """authors_mentioning(X) returns exactly the authors behind posts_mentioning(X).
 
     Covers the matching-mirror guarantee and that comments (not just postings)
@@ -258,8 +258,7 @@ def test_authors_mentioning_lockstep_with_posts_mentioning(migrated_driver: Driv
     pm = posts_mentioning(
         migrated_driver,
         PostsMentioningIn(entity="berlin", limit=500),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     pm_uuids = [h.uuid for h in pm.hits]
 
@@ -278,8 +277,7 @@ def test_authors_mentioning_lockstep_with_posts_mentioning(migrated_driver: Driv
     am = authors_mentioning(
         migrated_driver,
         AuthorsMentioningIn(entity="berlin", limit=500),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     am_author_ids = {a.author_id for a in am.authors}
 
@@ -287,7 +285,7 @@ def test_authors_mentioning_lockstep_with_posts_mentioning(migrated_driver: Driv
     assert am_author_ids == {"a1", "a2"}  # non-empty, both surfaces and a comment
 
 
-def test_authors_mentioning_does_not_merge_same_display_name(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_authors_mentioning_does_not_merge_same_display_name(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Two distinct authors sharing a display name are returned as two rows."""
     from chorus.tools.authors_mentioning import (
         AuthorsMentioningIn,
@@ -314,8 +312,7 @@ def test_authors_mentioning_does_not_merge_same_display_name(migrated_driver: Dr
     out = authors_mentioning(
         migrated_driver,
         AuthorsMentioningIn(entity="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert len(out.authors) == 2
@@ -323,10 +320,8 @@ def test_authors_mentioning_does_not_merge_same_display_name(migrated_driver: Dr
     assert all(a.display_name == "Alex" for a in out.authors)
 
 
-def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> None:
-    """One audit row is written per tool call, with the resolved user."""
-    import sqlite3
-
+def test_audit_event_written(migrated_driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO) -> None:
+    """One query event per call: the caller as actor, the parameters as criteria."""
     from chorus.tools.authors_mentioning import (
         AuthorsMentioningIn,
         authors_mentioning,
@@ -335,12 +330,10 @@ def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> Non
     authors_mentioning(
         migrated_driver,
         AuthorsMentioningIn(entity="Nowhere"),
-        user="alice",
-        audit=in_memory_audit,
+        audit=audit_trail.context(Actor(user="alice", via="edge")),
     )
-    rows = (
-        sqlite3.connect(in_memory_audit.db_path)
-        .execute("SELECT user, tool_name, result_count, status FROM audit_log")
-        .fetchall()
-    )
-    assert rows == [("alice", "authors_mentioning", 0, "ok")]
+    [event] = operation_events(audit_stream)
+    assert (event["action"], event["operation"], event["outcome"]) == ("query", "tool.authors_mentioning", "ok")
+    assert event["actor"] == {"user": "alice", "via": "edge"}
+    assert event["criteria"]["entity"] == "Nowhere"
+    assert event["target"] == {"kind": "mixed", "count": 0}
