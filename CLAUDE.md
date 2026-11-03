@@ -246,8 +246,10 @@ where any container can call `chorus-backend:8000` with a forged
 per-app secret in `X-Edge-Secret` (the frontend nginx passes it through),
 and with the env var set the seam trusts the identity headers
 (`X-Auth-User`, `X-Auth-Name`) only when `X-Edge-Secret` matches
-(`hmac.compare_digest`). Otherwise it ignores them — default identity or
-401, plus a warning naming only method and path.
+(`hmac.compare_digest`). Otherwise it ignores them — 401, plus a warning
+naming only method and path. With the secret set, `CHORUS_DEFAULT_IDENTITY`
+is ignored too (one startup warning when both are set), so the dev
+fallback can never stand in for a verified identity.
 A secret under 32 characters stops startup; unset keeps the old
 trust-anyone behaviour and warns once at startup when
 `CHORUS_DEFAULT_IDENTITY` is unset too. Rollout: the same value goes into

@@ -67,7 +67,8 @@ CHORUS_DEFAULT_IDENTITY=dev
 principal seam. Leave it unset in production — without it, requests
 without an `X-Auth-User` header fail with 401. Production also sets
 `CHORUS_EDGE_SECRET`, so that header counts only on requests from the edge
-gateway — see [Authentication seam](docs/architecture.md#authentication-seam).
+gateway, and the fallback is then ignored even if set — see
+[Authentication seam](docs/architecture.md#authentication-seam).
 
 ### 3. Apply migrations
 

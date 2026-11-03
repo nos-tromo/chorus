@@ -89,8 +89,9 @@ with the other request headers. With the secret set:
   names) and the decorative `X-Auth-Name` shown by `/whoami` — count only on
   a request whose `X-Edge-Secret` equals the configured value, compared in
   constant time.
-- On any other request they are ignored as if absent: it gets
-  `CHORUS_DEFAULT_IDENTITY` when that is set, else `401`. If it sent an
+- On any other request they are ignored as if absent, and the request gets
+  `401`: with the secret set, `CHORUS_DEFAULT_IDENTITY` never applies (the
+  backend warns once at startup when both are set). If it sent an
   identity header, the backend logs a warning with the method and path only —
   no header value, no query string, never the secret.
 - The secret must be at least 32 characters, or the backend refuses to start.
