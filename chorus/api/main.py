@@ -125,7 +125,7 @@ app.include_router(_tools_router.router)
 app.include_router(_whoami_router.router)
 
 # Prometheus metrics — aggregate request counters/latencies only, no user
-# data (§76 audit logging is a separate concern, see chorus/audit/logger.py).
+# data (the §76 audit trail is a separate concern, see chorus/audit/trail.py).
 # Unauthenticated by design, like /health and /config, so the obs-plane
 # scraper can reach it without a principal header.
 if load_metrics_env().enabled:

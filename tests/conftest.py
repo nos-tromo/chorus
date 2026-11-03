@@ -14,7 +14,6 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
 from neo4j import Driver
@@ -28,11 +27,11 @@ _CHORUS_ENV_MODULES = (
     "chorus.utils.env_cfg",
     "chorus.utils.logger_cfg",
     "chorus.db.neo4j",
-    "chorus.audit.logger",
     "chorus.api.auth.principal",
-    # NOTE: chorus.audit.trail is deliberately NOT reloaded either: it reads no
-    # env, and its AuditFailure / PurposeRequired must keep one class identity
-    # for every `except` that catches them.
+    # NOTE: chorus.audit.trail and chorus.audit.cli are deliberately NOT
+    # reloaded: neither snapshots env at import, and AuditFailure /
+    # PurposeRequired must keep one class identity for every `except` that
+    # catches them.
     "chorus.api.audit",
     "chorus.api.routers.health",
     "chorus.api.routers.tools",
@@ -231,26 +230,6 @@ def fake_inference(monkeypatch: pytest.MonkeyPatch) -> None:
         "extract_entities",
         lambda text, **kw: [],
     )
-
-
-@pytest.fixture
-def in_memory_audit(chorus_env: Path) -> Any:
-    """Return a fresh :class:`AuditLogger` backed by a temp SQLite file.
-
-    For tools that want a real audit logger rather than a stub.
-
-    Args:
-        chorus_env: Provides ``CHORUS_HOME`` for the temp DB location.
-
-    Returns:
-        A :class:`chorus.audit.logger.AuditLogger` whose schema has
-        already been applied.
-    """
-    from chorus.audit.logger import AuditLogger
-
-    a = AuditLogger(chorus_env / "audit.sqlite")
-    a.init_schema()
-    return a
 
 
 @pytest.fixture

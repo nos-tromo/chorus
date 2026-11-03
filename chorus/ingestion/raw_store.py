@@ -1,11 +1,12 @@
-"""Raw upstream row store (separate SQLite from the audit log).
+"""Raw upstream row store (SQLite under ``CHORUS_HOME``).
 
 Captures the upstream rows verbatim before parsing into DTOs. Useful for
 re-ingestion when DTO schemas or extraction models change, and as the
 single source of truth for "what did the upstream tell us, exactly."
+Writing to it is part of an ingestion pass's ``collect`` audit event
+(per-table row counts).
 
-Retention is independent from `audit_log` retention; see
-`docs/retention.md`.
+Retention is independent from the audit trail's; see `docs/retention.md`.
 """
 
 from __future__ import annotations

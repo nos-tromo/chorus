@@ -324,16 +324,11 @@ class AuditConfig:
         cli_user: ``AUDIT_CLI_USER``: the operator a CLI run is attributed
             to (the make targets pass the invoking host user); ``None``
             when unset.
-        db_path: Filesystem path to the legacy audit SQLite database.
-        retention_days: How long legacy audit rows are meant to be retained.
-            Loaded but not enforced: no purge job exists.
     """
 
     output: str | None
     require_purpose: frozenset[str]
     cli_user: str | None
-    db_path: Path
-    retention_days: int
 
 
 @dataclass(frozen=True)
@@ -629,8 +624,7 @@ def load_audit_env() -> AuditConfig:
 
     ``AUDIT_REQUIRE_PURPOSE`` is a comma-separated list of actions; an
     unknown name raises, so a misspelt action stops startup instead of
-    silently switching a requirement off. The legacy audit database path
-    defaults to ``<chorus_home>/audit.sqlite``.
+    silently switching a requirement off.
 
     Returns:
         A populated :class:`AuditConfig`.
@@ -638,15 +632,10 @@ def load_audit_env() -> AuditConfig:
     Raises:
         ValueError: If ``AUDIT_REQUIRE_PURPOSE`` names an unknown action.
     """
-    paths = load_path_env()
-    db_path_raw = _env("AUDIT_DB_PATH")
-    db_path = Path(db_path_raw) if db_path_raw else paths.chorus_home / "audit.sqlite"
     return AuditConfig(
         output=_env("AUDIT_OUTPUT"),
         require_purpose=parse_required_actions(_env("AUDIT_REQUIRE_PURPOSE"), known=ACTIONS - {"lifecycle"}),
         cli_user=(_env("AUDIT_CLI_USER") or "").strip() or None,
-        db_path=db_path,
-        retention_days=_env_int("AUDIT_RETENTION_DAYS", 365 * 2),
     )
 
 
