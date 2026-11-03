@@ -20,6 +20,14 @@ class FakeAdapter:
     def __init__(self) -> None:
         """Configure the fake. No options needed in the v1 contract."""
 
+    def source_files(self) -> list[str]:
+        """Return the file names a file-backed pass would have read.
+
+        Returns:
+            One invented legacy basename per table.
+        """
+        return ["postings.csv", "comments.csv", "messages.csv", "profiles.csv", "connections.csv"]
+
     def fetch_postings(self, since: Any) -> Iterable[dict[str, Any]]:
         """Yield one canned posting row.
 

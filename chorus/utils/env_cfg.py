@@ -21,7 +21,7 @@ from typing import Literal
 from dotenv import load_dotenv
 
 from chorus.utils.audit_event import ACTIONS
-from chorus.utils.audit_runtime import parse_required_actions
+from chorus.utils.audit_runtime import parse_required_actions, purpose_from_env
 
 load_dotenv()
 
@@ -321,6 +321,9 @@ class AuditConfig:
             run lands in the backend's log).
         require_purpose: The actions that need a stated purpose
             (``AUDIT_REQUIRE_PURPOSE``); empty by default.
+        cli_user: ``AUDIT_CLI_USER``: the operator a CLI run is attributed
+            to (the make targets pass the invoking host user); ``None``
+            when unset.
         db_path: Filesystem path to the legacy audit SQLite database.
         retention_days: How long legacy audit rows are meant to be retained.
             Loaded but not enforced: no purge job exists.
@@ -328,6 +331,7 @@ class AuditConfig:
 
     output: str | None
     require_purpose: frozenset[str]
+    cli_user: str | None
     db_path: Path
     retention_days: int
 
@@ -640,9 +644,24 @@ def load_audit_env() -> AuditConfig:
     return AuditConfig(
         output=_env("AUDIT_OUTPUT"),
         require_purpose=parse_required_actions(_env("AUDIT_REQUIRE_PURPOSE"), known=ACTIONS - {"lifecycle"}),
+        cli_user=(_env("AUDIT_CLI_USER") or "").strip() or None,
         db_path=db_path,
         retention_days=_env_int("AUDIT_RETENTION_DAYS", 365 * 2),
     )
+
+
+def load_cli_purpose_env() -> tuple[str | None, str | None]:
+    """Load a CLI run's stated purpose from ``AUDIT_CASE_REF`` / ``AUDIT_REASON``.
+
+    Returns:
+        ``(case_ref, reason)``, each ``None`` when unset or blank.
+
+    Raises:
+        PurposeError: If a value contains control characters or is longer
+            than the audit library accepts. The message names the field,
+            never its value.
+    """
+    return purpose_from_env(os.environ)
 
 
 def load_retention_env() -> RetentionConfig:

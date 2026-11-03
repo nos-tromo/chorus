@@ -191,6 +191,15 @@ class FileUpstreamAdapter:
         for path in paths:
             yield from self._read_file(path, since=since, since_column=since_column)
 
+    def source_files(self) -> list[str]:
+        """Return the basenames of the files a pass will read, for the audit trail.
+
+        Returns:
+            The matching file names of every table kind, in stage order and,
+            within a table, in read order.
+        """
+        return [path.name for table in TABLES for path in self._table_paths(table)]
+
     def _table_paths(self, table_name: str) -> tuple[Path, ...]:
         """Return all source files for one table kind in deterministic order.
 

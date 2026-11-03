@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import io
 import time
-from typing import Any
 
 import pytest
 from neo4j import Driver
+
+from chorus.audit.trail import AuditContext, AuditTrail
+from chorus.utils.audit_event import Actor
+from tests._audit import operation_events
 
 EMBED_DIM = 1024
 
@@ -227,7 +231,7 @@ def test_resolve_alias_is_idempotent(migrated_driver: Driver) -> None:
 
 
 def test_resolve_all_clusters_and_is_rerunnable(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """resolve_all clusters case-variant aliases and is a no-op on re-run."""
     from chorus.inference import provider
@@ -256,7 +260,7 @@ def test_resolve_all_clusters_and_is_rerunnable(
     vectors = {"Berlin": _vec(1.0), "berlin": _vec(0.0, 0.0, 1.0), "Merkel": _vec(0.0, 1.0)}
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
 
-    summary = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test")
+    summary = resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
     assert summary.processed == 3
     assert summary.minted == 2  # one LOCATION entity + one PERSON entity
     assert summary.attached_cache == 1  # "berlin" clustered via the cache, not vectors
@@ -280,7 +284,7 @@ def test_resolve_all_clusters_and_is_rerunnable(
         )
     assert keys == ["berlin", "berlin"]
 
-    again = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test")
+    again = resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
     assert again.processed == 0
 
 
@@ -358,7 +362,7 @@ def test_resolve_alias_topk_when_tiebreak_disabled(migrated_driver: Driver, monk
 
 
 def test_resolve_all_does_not_merge_different_label_variants(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Same normalized surface but different labels must NOT collapse via the cache."""
     from chorus.inference import provider
@@ -380,7 +384,7 @@ def test_resolve_all_does_not_merge_different_label_variants(
     vectors = {"Apple": _vec(1.0), "apple": _vec(0.0, 1.0)}
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
 
-    summary = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test")
+    summary = resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
     assert summary.processed == 2
     assert summary.minted == 2  # two distinct entities, not one
 
@@ -416,7 +420,7 @@ def test_cluster_candidates_untyped_query_only_matches_untyped(migrated_driver: 
 
 
 def test_resolve_all_aborts_cleanly_on_embed_count_mismatch(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """If provider.embed returns the wrong number of vectors, fail before any write."""
     from chorus.inference import provider
@@ -434,7 +438,7 @@ def test_resolve_all_aborts_cleanly_on_embed_count_mismatch(
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(1.0) for _ in texts[:-1]])
 
     with pytest.raises(ValueError, match="embed"):
-        resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test")
+        resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
 
     # Nothing was written: no entities, no RESOLVED_TO edges.
     with migrated_driver.session() as s:
@@ -445,13 +449,13 @@ def test_resolve_all_aborts_cleanly_on_embed_count_mismatch(
     assert n_ents == 0
 
 
-def test_resolve_all_writes_one_audit_row(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+def test_resolve_all_records_one_combine_event_and_its_transfers(
+    migrated_driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resolve run writes exactly one §76 audit row with entities + counts."""
-    import json
-    import sqlite3
+    """A run writes one combine event naming the entities it linked, then the embedding transfer.
 
+    No surface form reaches the trail: only entity ids and counts.
+    """
     from chorus.inference import provider
     from chorus.ingestion.resolution import resolve_all
     from chorus.utils.env_cfg import load_resolution_env
@@ -470,34 +474,66 @@ def test_resolve_all_writes_one_audit_row(
     vectors = {"Berlin": _vec(1.0), "Spree": _vec(0.0, 1.0)}
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
 
-    summary = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="alice")
+    audit = audit_trail.context(Actor(user="alice-example", via="edge"), request_id="req-0001")
+    summary = resolve_all(migrated_driver, load_resolution_env(), audit)
     assert summary.processed == 2
 
-    rows = (
-        sqlite3.connect(in_memory_audit.db_path)
-        .execute("SELECT user, tool_name, result_count, status, entities_touched_json FROM audit_log")
-        .fetchall()
-    )
-    assert len(rows) == 1
-    user, tool_name, result_count, status, entities_json = rows[0]
-    assert user == "alice"
-    assert tool_name == "resolve_all"
-    assert result_count == 2
-    assert status == "ok"
-
-    touched = json.loads(entities_json)
+    combine, embed = operation_events(audit_stream)
     with migrated_driver.session() as s:
-        ids = [r["id"] for r in s.run("MATCH (e:Entity) RETURN e.id AS id")]
-    assert sorted(touched) == sorted(ids)
-    assert len(touched) == 2
+        ids = sorted(r["id"] for r in s.run("MATCH (e:Entity) RETURN e.id AS id"))
+    assert (combine["action"], combine["operation"], combine["outcome"]) == ("combine", "resolution.run", "ok")
+    assert combine["actor"] == {"user": "alice-example", "via": "edge"}
+    assert combine["request_id"] == "req-0001"
+    assert combine["target"] == {"kind": "entity", "ids": ids, "count": 2}
+    assert combine["criteria"]["counts"]["processed"] == 2
+    assert combine["criteria"]["counts"]["minted"] == 2
+    assert combine["criteria"]["embed_cluster_threshold"] == load_resolution_env().embed_cluster_threshold
+
+    assert (embed["action"], embed["operation"], embed["outcome"]) == ("ai_call", "resolution.embed", "ok")
+    assert embed["recipient"] == "inference:embed"
+    assert embed["parent_event_id"] == combine["event_id"]
+    assert embed["target"] == {"kind": "alias", "count": 2}
+    assert embed["ai"]["sources"] == [combine["event_id"]]
+    assert "Berlin" not in audit_stream.getvalue()
 
 
-def test_resolve_all_audits_failure(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+def test_resolve_all_records_the_llm_tiebreak(
+    migrated_driver: Driver, audit_ctx: AuditContext, audit_stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A failed run still writes an audit row with status='error'."""
-    import sqlite3
+    """Ambiguous candidates go to the chat model; the run records that transfer with the chat model alias."""
+    from chorus.inference import provider
+    from chorus.ingestion.resolution import resolve_all
+    from chorus.utils.env_cfg import load_resolution_env
 
+    _seed_entity(migrated_driver, "e-a", "Example Person A", "PERSON", _vec(1.0))
+    _seed_entity(migrated_driver, "e-b", "Example Person B", "PERSON", _vec(1.0, 0.05))
+    _await_vector(migrated_driver, "e-a", _vec(1.0, 0.02))
+    _await_vector(migrated_driver, "e-b", _vec(1.0, 0.02))
+    with migrated_driver.session() as s:
+        s.run("MERGE (a:Alias {surface_form: 'Person A'}) ON CREATE SET a.label = 'PERSON'")
+    monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(1.0, 0.02) for _ in texts])
+    monkeypatch.setattr(provider, "chat", lambda messages, **kw: "e-a")
+
+    summary = resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
+    assert summary.attached_llm == 1
+
+    combine, embed, tiebreak = operation_events(audit_stream)
+    assert combine["target"] == {"kind": "entity", "ids": ["e-a"], "count": 1}
+    assert combine["criteria"]["llm_tiebreak_model"] == provider.text_model()
+    assert embed["operation"] == "resolution.embed"
+    assert (tiebreak["action"], tiebreak["operation"]) == ("ai_call", "resolution.tiebreak")
+    assert tiebreak["recipient"] == "inference:chat"
+    assert tiebreak["target"] == {"kind": "alias", "count": 1}
+    assert tiebreak["criteria"] == {"matched": 1}
+    assert tiebreak["ai"]["model_alias"] == provider.text_model()
+    assert tiebreak["parent_event_id"] == combine["event_id"]
+    assert "Person A" not in audit_stream.getvalue()
+
+
+def test_resolve_all_records_a_failed_run(
+    migrated_driver: Driver, audit_ctx: AuditContext, audit_stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed run writes its events with outcome error and what it had done, never the exception."""
     from chorus.inference import provider
     from chorus.ingestion.resolution import resolve_all
     from chorus.utils.env_cfg import load_resolution_env
@@ -511,29 +547,30 @@ def test_resolve_all_audits_failure(
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(1.0) for _ in texts[:-1]])
 
     with pytest.raises(ValueError, match="embed"):
-        resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="bob")
+        resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
 
-    rows = sqlite3.connect(in_memory_audit.db_path).execute("SELECT status, error_message FROM audit_log").fetchall()
-    assert len(rows) == 1
-    assert rows[0][0] == "error"
-    assert rows[0][1] is not None
+    combine, embed = operation_events(audit_stream)
+    assert (combine["operation"], combine["outcome"]) == ("resolution.run", "error")
+    assert combine["target"] == {"kind": "entity", "count": 0}
+    assert (embed["operation"], embed["outcome"]) == ("resolution.embed", "error")
+    assert embed["target"]["count"] == 2  # both surface forms were sent before the mismatch was seen
+    assert "vectors for" not in audit_stream.getvalue()
 
 
-def test_resolve_all_empty_writes_no_audit_row(migrated_driver: Driver, in_memory_audit: Any) -> None:
-    """An empty run (no unresolved aliases) writes no audit row (early return)."""
-    import sqlite3
-
+def test_resolve_all_empty_writes_no_event(
+    migrated_driver: Driver, audit_ctx: AuditContext, audit_stream: io.StringIO
+) -> None:
+    """An empty run (no unresolved aliases) writes no event (early return)."""
     from chorus.ingestion.resolution import resolve_all
     from chorus.utils.env_cfg import load_resolution_env
 
-    summary = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="cli")
+    summary = resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
     assert summary.processed == 0
-    row = sqlite3.connect(in_memory_audit.db_path).execute("SELECT count(*) FROM audit_log").fetchone()
-    assert row[0] == 0
+    assert operation_events(audit_stream) == []
 
 
 def test_cross_run_dedup_below_threshold(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A case-variant seen in a LATER run resolves to the earlier entity (#24).
 
@@ -545,7 +582,7 @@ def test_cross_run_dedup_below_threshold(
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
         monkeypatch: pytest monkeypatch fixture.
     """
     from chorus.inference import provider
@@ -562,7 +599,7 @@ def test_cross_run_dedup_below_threshold(
             """
         )
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(1.0) for _ in texts])
-    run1 = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="t")
+    run1 = resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
     assert run1.minted == 1
 
     with migrated_driver.session() as s:
@@ -579,7 +616,7 @@ def test_cross_run_dedup_below_threshold(
             """
         )
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(0.0, 0.0, 1.0) for _ in texts])
-    run2 = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="t")
+    run2 = resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
     assert run2.processed == 1
 
     with migrated_driver.session() as s:
@@ -595,7 +632,7 @@ def test_cross_run_dedup_below_threshold(
 
 
 def test_cross_run_respects_label(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Durable cross-run dedup must not collapse same-surface, different-label aliases.
 
@@ -605,7 +642,7 @@ def test_cross_run_respects_label(
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
         monkeypatch: pytest monkeypatch fixture.
     """
     from chorus.inference import provider
@@ -622,7 +659,7 @@ def test_cross_run_respects_label(
             """
         )
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(1.0) for _ in texts])
-    resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="t")
+    resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
 
     with migrated_driver.session() as s:
         s.run(
@@ -633,7 +670,7 @@ def test_cross_run_respects_label(
             """
         )
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [_vec(0.0, 1.0) for _ in texts])
-    resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="t")
+    resolve_all(migrated_driver, load_resolution_env(), audit_ctx)
 
     with migrated_driver.session() as s:
         rec = s.run(
@@ -743,7 +780,7 @@ def test_case_normalize_off_uses_raw_surface_as_norm_key(migrated_driver: Driver
 
 
 def test_resolve_all_paginates_across_page_boundary(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """resolve_all resolves all aliases correctly when they span multiple pages.
 
@@ -753,7 +790,7 @@ def test_resolve_all_paginates_across_page_boundary(
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
         monkeypatch: pytest monkeypatch fixture.
     """
     from chorus.inference import provider
@@ -781,7 +818,7 @@ def test_resolve_all_paginates_across_page_boundary(
     }
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
 
-    summary = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test", page_size=2)
+    summary = resolve_all(migrated_driver, load_resolution_env(), audit_ctx, page_size=2)
     assert summary.processed == 3
     assert summary.minted == 3
 
@@ -789,12 +826,12 @@ def test_resolve_all_paginates_across_page_boundary(
         rec = s.run("MATCH (e:Entity) RETURN count(e) AS n").single()
     assert rec is not None and rec["n"] == 3
 
-    again = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test", page_size=2)
+    again = resolve_all(migrated_driver, load_resolution_env(), audit_ctx, page_size=2)
     assert again.processed == 0
 
 
 def test_resolve_all_run_cache_spans_pages(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """run_cache persists across pages so intra-run case-variants always cluster.
 
@@ -804,7 +841,7 @@ def test_resolve_all_run_cache_spans_pages(
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
         monkeypatch: pytest monkeypatch fixture.
     """
     from chorus.inference import provider
@@ -826,7 +863,7 @@ def test_resolve_all_run_cache_spans_pages(
     vectors = {"Berlin": _vec(1.0), "berlin": _vec(0.0, 0.0, 1.0)}
     monkeypatch.setattr(provider, "embed", lambda texts, **kw: [vectors[t] for t in texts])
 
-    summary = resolve_all(migrated_driver, load_resolution_env(), in_memory_audit, user="test", page_size=1)
+    summary = resolve_all(migrated_driver, load_resolution_env(), audit_ctx, page_size=1)
     assert summary.processed == 2
     assert summary.minted == 1
     assert summary.attached_cache == 1

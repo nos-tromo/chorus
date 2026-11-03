@@ -8,9 +8,8 @@ Lifespan order matters:
      one config.audit event stating the operating mode; an unknown
      AUDIT_REQUIRE_PURPOSE action or an unwritable stream stops startup
   4. open Neo4j driver
-  5. apply pending migrations
-  6. init the legacy audit log schema (ingestion routes only)
-  7. register tool registry (imports the package; tools self-register)
+  5. apply pending migrations — recorded on the chain as the system
+  6. register tool registry (imports the package; tools self-register)
 
 Tool routes are wired up in `chorus.api.routers.tools` and import the
 registry at import-time, so importing that router triggers tool discovery.
@@ -27,7 +26,6 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from chorus.api.auth.principal import check_principal_config
 from chorus.api.errors import install_error_handlers
-from chorus.audit.logger import AuditLogger
 from chorus.audit.trail import AuditTrail
 from chorus.db.neo4j import close_driver, get_driver
 from chorus.ingestion.jobs import JobRegistry
@@ -72,8 +70,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Args:
         app: The FastAPI application; ``app.state`` is populated with
-            ``driver``, ``audit`` (the audit trail), ``audit_log`` (the
-            legacy logger of the ingestion routes) and ``jobs``.
+            ``driver``, ``audit`` (the audit trail) and ``jobs``.
 
     Yields:
         Nothing — control returns to FastAPI for the lifetime of the
@@ -86,19 +83,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     jobs: JobRegistry | None = None
     try:
         driver = get_driver()
-        newly = apply_all(driver)
+        newly = apply_all(driver, audit=trail.system_context())
         if newly:
             logger.info("applied migrations: {}", newly)
         else:
             logger.info("migrations up to date")
 
-        audit_log = AuditLogger(load_audit_env().db_path)
-        audit_log.init_schema()
-
         jobs = JobRegistry()
         app.state.driver = driver
         app.state.audit = trail
-        app.state.audit_log = audit_log
         app.state.jobs = jobs
         logger.info("chorus ready")
         yield

@@ -180,6 +180,9 @@ def driver(chorus_env: Path) -> Iterator[Driver]:
 def migrated_driver(driver: Driver) -> Driver:
     """Driver against a database that has had all migrations applied.
 
+    The migrations are recorded on a throwaway audit chain of their own, so
+    they never show up in a test's ``audit_stream``.
+
     Args:
         driver: The clean :func:`driver` fixture.
 
@@ -188,7 +191,12 @@ def migrated_driver(driver: Driver) -> Driver:
     """
     from chorus.migrations.runner import apply_all
 
-    apply_all(driver)
+    stream = io.StringIO()
+    trail = AuditTrail(AuditEmitter("chorus", "test", stream=stream, heartbeat_interval_s=0))
+    trail.start({})
+    apply_all(driver, audit=trail.system_context())
+    trail.close()
+    assert_chain_ok(stream)
     return driver
 
 
