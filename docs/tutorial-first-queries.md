@@ -49,12 +49,11 @@ curl -s -X POST http://localhost:8000/tools/posts_mentioning \
 ```
 
 You should see one hit referencing `p-1` and `ent-berlin`. The same
-call writes one row to the audit log:
-
-```bash
-sqlite3 var/audit.sqlite \
-  "SELECT user, tool_name, result_count, status FROM audit_log;"
-```
+call writes one audit event — a JSON line with `"stream":"audit"` — to the
+API process's stdout, in the terminal running `uvicorn`: a `query` /
+`tool.posts_mentioning` event naming the caller, the parameters, and the
+ids the result disclosed (`entity:ent-berlin`, `post:p-1`), never the post
+text.
 
 The other tools are invoked the same way — `POST /tools/<name>` with
 the body matching the schema from `/tools`.
@@ -75,12 +74,14 @@ curl -s -X POST http://localhost:8000/agent/query \
 ```
 
 The response carries the agent's `answer`, a `trace` of the tool calls
-it made, and a `truncated` flag. The turn is logged as a parent
-`agent_query` audit row; each tool it calls writes its own row.
+it made, and a `truncated` flag. Each tool it calls writes its own audit
+event, and the turn ends with one `ai_call` / `agent.answer` event that
+cites them ([audit.md](audit.md)).
 ## Next steps
 
 - Load real data with the [ingestion pipeline](ingestion.md).
 - The full tool set, the graph data model, and the audit contract are in
   [`CLAUDE.md`](../CLAUDE.md); the runtime shape is in
   [architecture.md](architecture.md).
-- Audit-log semantics and the §76 BDSG posture: [compliance.md](compliance.md).
+- What the audit log records: [audit.md](audit.md); the §76 BDSG posture:
+  [compliance.md](compliance.md).

@@ -23,9 +23,32 @@ may touch Art. 9 categories.
 
 ## Audit logging
 
-§76 BDSG audit logging covers query tools (the `@audited` decorator) **and**
-the resolution write path: each `resolve_all` run writes one immutable
-audit row (user, config, entities touched, result count; failures recorded
-with `status="error"`) via the same `AuditLogger`. See
-[ADR 0010](decisions/0010-resolution-audit-logging.md). The remaining
-ingestion writes (the `run` pass) are not yet audited — a noted follow-up.
+Every processing of personal data that §76 BDSG distinguishes is recorded as
+one hash-chained event on the federation's audit stream, with the actor, the
+time, the stated purpose, references to what was touched and, for transfers,
+the recipient:
+
+- **query** — every tool call (REST and agent-invoked) and `GET /stats`;
+- **ai_call** — every agent turn, plus the texts sent to the NER, embedding
+  and tie-break models during ingestion and resolution (the transfer records);
+- **collect** — every ingestion pass, UI upload or CLI, including the rows
+  written to the raw store;
+- **combine** — every entity-resolution run;
+- **modify** — data-changing migrations, the norm-key backfill, and links
+  that resolution replaces;
+- **delete** — the deletion of a staged upload once its job is over; chorus
+  has no other erasure path yet.
+
+Writes fail closed: an operation whose event cannot be written fails. The
+per-endpoint and per-command detail, the stated-purpose rule
+(`X-Audit-Purpose`, `AUDIT_REQUIRE_PURPOSE`) and what is deliberately not
+recorded are in [audit.md](audit.md); the decision record is
+[ADR 0018](decisions/0018-audit-events-on-the-federation-stream.md). The store,
+its retention and who may read it are obs-plane's (obs-plane's
+[`docs/audit.md`](https://github.com/nos-tromo/obs-plane/blob/main/docs/audit.md)).
+
+The SQLite audit log that releases before 0.8.0 wrote is frozen on the
+`chorus-state` volume; its rows are kept until the end of the calendar year
+after the last row was written and then deleted by the operator — see
+[retention.md](retention.md#legacy-sqlite-audit-log) for reading and deleting
+it.

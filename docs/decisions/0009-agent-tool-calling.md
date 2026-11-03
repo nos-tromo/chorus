@@ -32,7 +32,10 @@ registry:
   enforced structurally by tool-calling, not by prompt instruction alone.
 - **Audit**: the whole turn is one parent `agent_query` row; each tool call
   writes its own §76 row. The principal from `resolve_principal` is attributed
-  on every row.
+  on every row. *(Amended by ADR 0018: each tool call writes a `query` event
+  and the turn ends with one `ai_call` / `agent.answer` event whose sources are
+  the turn's tool events; tools now run as `TOOLS[name].run(driver, parsed,
+  audit=)`.)*
 - The loop is bounded by `AGENT_MAX_ITERATIONS` (default 6). Unknown tools,
   invalid arguments, and tool exceptions are fed back as error messages so the
   model can recover; hitting the cap returns a `truncated` result.

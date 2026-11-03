@@ -1,1 +1,1 @@
-"""Tests for the §76 BDSG audit logger."""
+"""Tests for the audit trail glue (``chorus.audit``)."""

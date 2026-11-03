@@ -672,7 +672,7 @@ def test_tool_exception_error_is_generic_and_logged(
 def test_invalid_arguments_log_omits_submitted_values() -> None:
     """Invalid arguments are logged by field and error type; the model still gets the detail.
 
-    Validation fails before the tool runs, so no driver or audit logger is needed.
+    Validation fails before the tool runs, so no driver or audit context is needed.
     """
     from loguru import logger
 

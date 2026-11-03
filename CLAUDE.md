@@ -36,8 +36,8 @@ Foundation is up. The app boots, applies Neo4j migrations, serves
 `/health`, dispatches seven graph retrieval tools (`posts_mentioning`,
 `authors_mentioning`, `author_activity_summary`, `topic_co_occurrence`,
 `authors_connected_by_topic`, `network_around`, `social_network_around`)
-end-to-end with audit logging, and exposes a natural-language agent
-(`POST /agent/query`, ADR 0009) that selects and calls those tools via
+end-to-end, each call recorded on the §76 BDSG audit trail, and exposes
+a natural-language agent (`POST /agent/query`, ADR 0009) that selects and calls those tools via
 OpenAI tool-calling. The two `*_around` tools return `{nodes, edges}`
 payloads rendered as interactive `ForceGraph` graphs in the React SPA
 (ADR 0015; renderer per ADR 0016), with click-to-expand via two additional
@@ -64,6 +64,15 @@ migrate/ingest/resolve as background jobs from the React SPA ingestion screen
 (`POST /ingestion/*`, polled via `GET /ingestion/jobs/{id}`), gated by
 `INGESTION_UI_ENABLED` (default off); `make ingest` remains for
 bulk/server-side loads. See *Repository conventions* below for the live layout.
+
+Every processing of personal data — tool calls, agent turns, `/stats`,
+ingestion passes (UI and CLI), resolution runs, migrations, the deletion of
+staged uploads, and the texts sent to inference — is recorded as a
+hash-chained event on the federation audit stream (stdout, collected by
+obs-plane), with the actor, the stated purpose (`X-Audit-Purpose`;
+`AUDIT_REQUIRE_PURPOSE` makes it mandatory per action) and the request id;
+writes fail closed. The SQLite audit log of releases before 0.8.0 is frozen
+on the volume. See `docs/audit.md` and ADR 0018.
 
 `RESPONSE_LANGUAGE=de` flips the whole app to German — agent answers,
 entity-query article stripping, and React SPA UI captions (ADR 0013; ADR 0015).
@@ -99,6 +108,7 @@ uv run pre-commit run --all-files               # pre-commit hooks
 uv run python -m chorus.migrations.cli apply    # apply Neo4j migrations (or: status)
 uv run python -m chorus.ingestion.cli run       # one ingestion pass from INGESTION_SOURCE_DIR
 uv run python -m chorus.ingestion.cli resolve   # Alias → Entity resolution pass
+                                                # (each audited CLI run writes its own audit chain to stdout)
 uv run uvicorn chorus.api.main:app --reload --port 8000   # dev API
 ```
 
@@ -108,7 +118,9 @@ the first run pulls the image. The other test dirs are unit tests that
 stub inference and need no services.
 
 The Makefile wraps the compose workflow: `make network` / `volumes` /
-`build` / `up` / `up-dev` / `dev` (build, then up-dev) / `down` / `migrate` / `ingest` / `resolve` /
+`build` / `up` / `up-dev` / `dev` (build, then up-dev) / `down` / `migrate` / `ingest` / `resolve`
+(audited: run inside the running backend via `docker compose exec`;
+`CASE_REF=` / `REASON=` state the purpose) /
 `bootstrap` (wait for data-plane health, then up) / `test` /
 `pre-commit` / `bundle` (airgap image tarball from the latest annotated
 release tag) / `bundle-dev` (airgap tarball of the current working tree, for
@@ -156,7 +168,10 @@ redesign of the ingestion pipeline, not an incremental feature add.
 - **Backend**: Python 3.12, FastAPI, Uvicorn
 - **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.15.0`), served by nginx which reverse-proxies the API same-origin (no CORS)
 - **Graph DB**: Neo4j Community Edition (5.11+ for native vector indexes)
-- **Metadata + audit**: SQLite
+- **Raw store**: SQLite under `CHORUS_HOME`
+- **Audit**: hash-chained JSON events on stdout — the federation audit lane,
+  collected and stored by obs-plane; library vendored from `nos-tromo/.github`
+  (`chorus/utils/audit_event.py`, `audit_runtime.py`)
 - **Entity extraction**: GLiNER, reached through the inference provider
   (LiteLLM-routed task in vllm-service); not in-process in chorus
 - **Inference**: shared vLLM / Ollama via `inference-net` Docker network;
@@ -176,8 +191,9 @@ redesign of the ingestion pipeline, not an incremental feature add.
   and graph traversal happen in the same Cypher statement.
 - **State lives in the data plane, not in the app stack.** Neo4j and its
   volumes are owned by the separate `data-plane/` compose project. The
-  only state chorus keeps (audit log and raw store under `CHORUS_HOME`)
-  lives in the `chorus-state` volume, declared `external: true` — so
+  only state chorus keeps (raw store, upload staging and the frozen legacy
+  audit file under `CHORUS_HOME`) lives in the `chorus-state` volume,
+  declared `external: true` — so
   `docker compose down -v` in chorus can never destroy graph data or
   chorus-local state.
 - **Airgapped in production.** Chorus production environments have no
@@ -210,7 +226,7 @@ chorus/                   # this repo — app only
       backend:            # joins inference-net + data-net; bolt://neo4j:7687
       frontend:           # nginx SPA; chorus-net + edge-net (alias chorus-frontend); reverse-proxies API prefixes → backend:8000
     volumes:
-      chorus-state:       # external — audit log + raw store ($CHORUS_HOME)
+      chorus-state:       # external — raw store + upload staging ($CHORUS_HOME)
 ```
 
 `docker compose down -v` in the chorus repo must always be safe — graph
@@ -706,10 +722,13 @@ LLM tie-breaker for ambiguous merges
     │
     ▼
 Neo4j (graph + embeddings)
-    │
-    ▼
-SQLite audit log
 ```
+
+Each stage is recorded on the audit trail as it completes: a pass as one
+`collect` event (authors by id, counts per table, the raw store included),
+NER, embedding and the LLM tie-break as one `ai_call` event per stage per
+run (the transfers to inference), resolution as one `combine` event
+(`docs/audit.md`).
 
 The pull adapter is the only thing that knows about the upstream system's
 schema. Keep it isolated. If a second source ever appears, write a second
@@ -732,21 +751,24 @@ chorus/                      # top-level repo
       openai_tools.py        # TOOLS registry → OpenAI tool schemas
       prompts.py
     api/
-      main.py                # FastAPI entrypoint (lifespan: logger → principal config → driver → migrations → audit);
+      main.py                # FastAPI entrypoint (lifespan: logger → principal config → audit trail → driver → migrations);
                               # also wires GET /metrics (Prometheus, unauthenticated, aggregate-only
                               # request counters/latencies, no user data), gated by METRICS_ENABLED
                               # (default on)
-      auth/principal.py      # trusted-header principal seam + X-Edge-Secret check (OIDC swap-in)
+      auth/principal.py      # trusted-header principal seam + X-Edge-Secret check (OIDC swap-in); resolve_actor
+      audit.py               # request_audit: AuditContext with actor, X-Audit-Purpose, X-Request-ID
+      correlation.py         # RequestIdMiddleware: holds X-Request-ID for the inference clients
       routers/               # health.py, config.py, tools.py, agent.py, ingestion.py, stats.py, whoami.py
                               # (eight routers — ingestion.py exports two; no /api/v1, prefixes are bare)
     audit/
-      logger.py              # §76 BDSG audit log (SQLite, append-only, trigger-enforced)
-      schema.sql
+      trail.py               # AuditTrail / AuditContext: one hash-chained §76 BDSG audit chain per process
+      cli.py                 # run one CLI command in its own audit chain (exit 2 = purpose refused)
     db/
       neo4j.py               # driver factory + session() context manager
     inference/
       provider.py            # OpenAI client; chat/embed/rerank by `model` field
       ner_client.py          # GLiNER /gliner HTTP client (decoupled from `provider`)
+      correlation.py         # X-Request-ID context variable + httpx hook on every inference call
     ingestion/
       adapter.py             # UpstreamAdapter Protocol — the only place that knows the upstream schema
       upstream.py            # concrete adapter
@@ -756,7 +778,7 @@ chorus/                      # top-level repo
       orchestrator.py        # stage runner; inline NER per post (NER_ENABLED gates)
       extraction.py          # ner_client.extract_entities → :MENTIONS with provenance
       resolution.py          # alias / embed-cluster / LLM tiebreak
-      raw_store.py           # separate SQLite, not the audit DB
+      raw_store.py           # raw upstream rows (SQLite under CHORUS_HOME)
       jobs.py                # background job registry for the ingestion UI (ADR 0014)
       cli.py                 # python -m chorus.ingestion.cli {run,resolve,backfill-norm-keys}
     migrations/
@@ -773,6 +795,7 @@ chorus/                      # top-level repo
       ...
     utils/
       env_cfg.py             # every env var loader as a frozen dataclass
+      audit_event.py / audit_runtime.py   # vendored verbatim from nos-tromo/.github — never edit
       logger_cfg.py          # loguru stderr sink (no file sink); uvicorn access log moved to stderr, query strings dropped
       log_redaction.py       # value-free views of errors for ops logs (redact_validation_errors)
   frontend/                  # React SPA (ADR 0015) — Vite + TypeScript + Tailwind v4
@@ -853,8 +876,11 @@ hosts the `chorus-state` volume needs a one-time `chown -R 10001:10001`
   Several chorus modules snapshot env vars at import time, so
   `tests/conftest.py` reloads the modules in `_CHORUS_ENV_MODULES` per
   test — env-snapshotting or self-registering modules must be on that
-  list, and env-free ones (e.g. `ingestion.jobs`) must stay off it, or
-  class identities duplicate and `except`/`isinstance` checks break.
+  list, and env-free ones (e.g. `ingestion.jobs`, `audit.trail`) must stay
+  off it, or class identities duplicate and `except`/`isinstance` checks
+  break. Audit events are captured with the `audit_stream` / `audit_trail` /
+  `audit_ctx` fixtures; the trail fixture closes the chain and runs
+  `verify_chain()` at teardown.
 - **Logging**: `loguru`, one stderr sink at `LOG_LEVEL` (default `INFO`)
   and no file sink; the compose `local` log driver rotates container
   output. `LOG_FORMAT=json` switches the sink to loguru's serialized
@@ -862,8 +888,9 @@ hosts the `chorus-state` volume needs a one-time `chown -R 10001:10001`
   human-readable `text`. Ops logs carry no submitted field values, query
   strings or network-side identifiers: log locations, error shapes,
   counts and internal UUIDs instead (`utils/log_redaction.py`).
-  Operational logging and the §76 BDSG audit logger are separate
-  concerns; do not conflate them in code or in storage.
+  Operational logs go to stderr only: the backend's stdout carries the §76
+  BDSG audit stream and nothing else, so never print to stdout in the
+  server, and never route audit events through loguru.
 - **Type checking**: `pyrefly`. Pydantic models for all tool I/O and
   ingestion DTOs so pyrefly stays useful at module boundaries.
 - **Lint and format**: `ruff` (single tool for both — no separate
@@ -940,11 +967,16 @@ Art. 9 categories. This shapes several defaults:
   containers on the shared networks cannot act as another user.
   Wiring OIDC against the organizational IdP directly into that seam is
   the planned swap-in and has not landed (see *Current state*). Not
-  retrofitted later: the principal is on every audit row from v1.
-- **§76 BDSG query logging from day one.** Every tool invocation logged with
-  user, timestamp, parameters, entities touched, result counts. Immutable
-  table. `AUDIT_RETENTION_DAYS` is loaded but not enforced: nothing purges
-  audit rows yet (the purge job is described in `docs/retention.md`).
+  retrofitted later: the principal is on every audit event.
+- **§76 BDSG audit log.** Every processing of personal data is one
+  hash-chained event on the federation audit stream — queries (tools,
+  `/stats`), agent turns and transfers to inference (`ai_call`),
+  collection, combination, modification and erasure — with actor, time,
+  stated purpose, references (ids and counts, never content) and
+  recipient. Writes fail closed. The store, its retention and access are
+  obs-plane's; the SQLite audit log of releases before 0.8.0 is frozen and
+  deleted by the operator once its retention period is over
+  (`docs/audit.md`, `docs/retention.md`, ADR 0018).
 - **Per-post retention timers.** `Post.retention_until` is set at
   ingestion today; the nightly sweep that hard-deletes expired content
   is designed (`docs/retention.md`) but not yet landed — see *Current

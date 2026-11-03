@@ -1,4 +1,4 @@
-"""posts_mentioning tool: empty database returns no hits and writes one audit row."""
+"""posts_mentioning tool: matching, alias/entity handling, and its one audit event per call."""
 
 from __future__ import annotations
 
