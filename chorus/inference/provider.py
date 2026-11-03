@@ -9,6 +9,9 @@ NER is **not** handled here: GLiNER on vllm-service speaks its own
 :mod:`chorus.inference.ner_client`. Keeping it separate lets chorus mix
 providers — e.g. Ollama for chat/embed/rerank, vllm-service ner-only for
 NER — without coupling the two configs.
+
+Every request carries the current ``X-Request-ID`` (see
+:mod:`chorus.inference.correlation`), and nothing else about the caller.
 """
 
 from __future__ import annotations
@@ -18,9 +21,10 @@ from functools import lru_cache
 from typing import Any
 
 import httpx
-from openai import OpenAI
+from openai import DefaultHttpxClient, OpenAI
 from openai.types.chat import ChatCompletionMessage
 
+from chorus.inference.correlation import forward_request_id
 from chorus.utils.env_cfg import InferenceConfig, load_inference_env
 
 
@@ -36,6 +40,17 @@ def _config() -> InferenceConfig:
         The cached :class:`InferenceConfig`.
     """
     return load_inference_env()
+
+
+def _http_client() -> DefaultHttpxClient:
+    """Return the HTTP client under the OpenAI SDK.
+
+    The SDK's own defaults, plus the hook that forwards ``X-Request-ID``.
+
+    Returns:
+        A new client of the SDK's HTTP stack.
+    """
+    return DefaultHttpxClient(event_hooks={"request": [forward_request_id]})
 
 
 @lru_cache(maxsize=1)
@@ -55,6 +70,7 @@ def _client() -> OpenAI:
         api_key=cfg.api_key,
         timeout=cfg.timeout_s,
         max_retries=cfg.max_retries,
+        http_client=_http_client(),
     )
 
 
@@ -285,7 +301,7 @@ def rerank(
     }
     if top_n is not None:
         payload["top_n"] = top_n
-    with httpx.Client(timeout=cfg.timeout_s) as h:
+    with httpx.Client(timeout=cfg.timeout_s, event_hooks={"request": [forward_request_id]}) as h:
         r = h.post(url, json=payload, headers={"Authorization": f"Bearer {cfg.api_key}"})
     r.raise_for_status()
     data = r.json()

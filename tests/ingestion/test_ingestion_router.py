@@ -311,20 +311,30 @@ def test_ingest_records_the_ner_transfer(
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     monkeypatch.setenv("NER_ENABLED", "true")
     monkeypatch.setenv("NER_MODEL_VERSION", "example-ner-model")
-    monkeypatch.setattr(ner_client, "extract_entities", lambda text, **kw: [])
+    from chorus.inference.correlation import REQUEST_ID
+
+    ids_at_ner: list[str | None] = []
+
+    def _extract(text: str, **kw: Any) -> list[Any]:
+        ids_at_ner.append(REQUEST_ID.get())  # what the NER call would forward
+        return []
+
+    monkeypatch.setattr(ner_client, "extract_entities", _extract)
     jobs = JobRegistry()
     try:
         client = TestClient(_build_app(migrated_driver, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
-            headers={"X-Auth-User": "analyst"},
+            headers={"X-Auth-User": "analyst", "X-Request-ID": "req-0001"},
         )
         assert _await_job(client, resp.json()["job_id"])["status"] == "done"
     finally:
         jobs.shutdown()
+    assert ids_at_ner == ["req-0001"]  # the job carries its request's id to inference
 
     collect, ner, _deleted = operation_events(audit_stream)
+    assert collect["request_id"] == "req-0001"
     assert (ner["action"], ner["operation"], ner["outcome"]) == ("ai_call", "ingest.ner", "ok")
     assert ner["recipient"] == "inference:ner"
     assert ner["target"] == {"kind": "post", "count": 1}

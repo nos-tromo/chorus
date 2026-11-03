@@ -43,6 +43,7 @@ from pydantic import BaseModel
 from chorus.api.audit import request_audit
 from chorus.api.auth.principal import resolve_principal
 from chorus.audit.trail import AuditContext, AuditFailure
+from chorus.inference.correlation import request_id_scope
 from chorus.ingestion.jobs import Job, JobBusyError, JobKind, JobStatus
 from chorus.ingestion.orchestrator import ingest_actions, run_audited
 from chorus.ingestion.raw_store import RawStore
@@ -390,6 +391,11 @@ def ingest(
 
     def _ingest_job(_job: Job) -> dict[str, Any]:
         """Run one ingestion pass over the staged files; clean up on exit."""
+        with request_id_scope(audit.request_id):
+            return _ingest_and_clean_up(_job)
+
+    def _ingest_and_clean_up(_job: Job) -> dict[str, Any]:
+        """The ingest job's body, inside its request's correlation scope."""
         try:
             adapter = FileUpstreamAdapter(staging)
             raw = RawStore(load_path_env().raw_store)
@@ -459,7 +465,8 @@ def resolve(
     driver = request.app.state.driver
 
     def _resolve_job(_job: Job) -> dict[str, Any]:
-        summary = resolve_all(driver, load_resolution_env(), audit)
+        with request_id_scope(audit.request_id):
+            summary = resolve_all(driver, load_resolution_env(), audit)
         return {"resolution": summary.as_dict()}
 
     try:
