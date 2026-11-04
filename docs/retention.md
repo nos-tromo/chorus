@@ -10,8 +10,10 @@ messages. The upstream `Timestamp` (content creation) and `Crawled at`
 than dropped. The crawling software owns its own retention timer on its own
 store — chorus's clock is independent.
 
-`ingested_at` is written `ON CREATE` only, so re-ingesting a row keeps its
-original deadline (retention is measured from first ingestion).
+`ingested_at` is written once, from the post's own row, so re-ingesting a row
+keeps its original deadline (retention is measured from first ingestion). A
+post that a reply referenced before its own row arrived — later in the same
+file, or in a later run — is filled when that row arrives, deadline included.
 `RETENTION_ENABLED=false` fully bypasses retention: every post is written with
 `retention_until = null`, so the nightly sweep never targets it.
 

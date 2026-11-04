@@ -127,6 +127,12 @@ def write(driver: Driver, dto: MessageDTO) -> None:
     via ``[:AUTHORED]``, ``[:ON_PLATFORM]``, ``[:IN_CHAT]``, and
     optionally ``[:REPLIES_TO]``.
 
+    The message's own properties, ``ingested_at`` and ``retention_until``
+    included, are written once: when the node is created, or when a reply
+    written earlier created it as a bare reference to its parent. A later
+    re-ingest leaves them as they are, so retention keeps counting from the
+    first ingestion.
+
     Args:
         driver: Open Neo4j driver.
         dto: Validated message DTO to write.
@@ -141,7 +147,8 @@ def write(driver: Driver, dto: MessageDTO) -> None:
     MERGE (g:Group {id: $chat_id})
       ON CREATE SET g.name = $chat_group, g.platform = $network
     MERGE (m:Post:Message {uuid: $uuid})
-      ON CREATE SET
+    FOREACH (_ IN CASE WHEN m.ingested_at IS NULL THEN [1] ELSE [] END |
+      SET
         m.text            = $text,
         m.timestamp       = datetime($timestamp),
         m.url             = $url,
@@ -149,6 +156,7 @@ def write(driver: Driver, dto: MessageDTO) -> None:
         m.system_tags     = $system_tags,
         m.ingested_at     = datetime($ingested_at),
         m.retention_until = datetime($retention_until)
+    )
     MERGE (a)-[:AUTHORED]->(m)
     MERGE (m)-[:ON_PLATFORM]->(pl)
     MERGE (m)-[:IN_CHAT]->(g)

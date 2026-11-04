@@ -152,6 +152,12 @@ def write(driver: Driver, dto: PostingDTO) -> None:
     users are MERGEd as additional ``:Author`` nodes. Safe to call
     repeatedly with the same DTO.
 
+    The posting's own properties, ``ingested_at`` and ``retention_until``
+    included, are written once: when the node is created, or when a comment
+    written earlier created it as a bare reference to its parent. A later
+    re-ingest leaves them as they are, so retention keeps counting from the
+    first ingestion.
+
     Args:
         driver: Open Neo4j driver.
         dto: Validated posting DTO to write.
@@ -162,7 +168,8 @@ def write(driver: Driver, dto: PostingDTO) -> None:
                     a.platform = $network
     MERGE (pl:Platform {name: $network})
     MERGE (p:Post:Posting {uuid: $uuid})
-      ON CREATE SET
+    FOREACH (_ IN CASE WHEN p.ingested_at IS NULL THEN [1] ELSE [] END |
+      SET
         p.network_post_id     = $network_posting_id,
         p.url                 = $url,
         p.text                = $text,
@@ -180,6 +187,7 @@ def write(driver: Driver, dto: PostingDTO) -> None:
         p.system_tags         = $system_tags,
         p.ingested_at         = datetime($ingested_at),
         p.retention_until     = datetime($retention_until)
+    )
     MERGE (a)-[:AUTHORED]->(p)
     MERGE (p)-[:ON_PLATFORM]->(pl)
     WITH p
