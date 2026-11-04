@@ -53,8 +53,11 @@ background jobs from the React SPA's ingestion screen, gated by
 
 Every pass, resolve run and migration is recorded on the data-protection
 audit trail ([audit.md](audit.md)): the make targets attribute it to the
-invoking host user and take the stated purpose from `CASE_REF` / `REASON`
-(required when `AUDIT_REQUIRE_PURPOSE` names the command's actions):
+invoking host user and take the stated purpose from `CASE_REF` / `REASON`.
+A purpose is required only when `AUDIT_REQUIRE_PURPOSE` names one of the
+command's actions (`collect`, `combine`, `modify`, `admin`, `ai_call`). The
+compose default, `query,disclose`, names none of them, so these commands run
+without one, and record it when it is given:
 
 ```bash
 make ingest CASE_REF=case-0001 REASON="monthly import"

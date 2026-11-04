@@ -39,7 +39,10 @@ the recipient:
 - **delete** — the deletion of a staged upload once its job is over; chorus
   has no other erasure path yet.
 
-Writes fail closed: an operation whose event cannot be written fails. The
+Writes fail closed: an operation whose event cannot be written fails.
+Queries and disclosures must state their reason: the compose shape refuses
+them without a stated purpose (`AUDIT_REQUIRE_PURPOSE=query,disclose`), and
+the SPA's users give it in the purpose bar in the header. The
 per-endpoint and per-command detail, the stated-purpose rule
 (`X-Audit-Purpose`, `AUDIT_REQUIRE_PURPOSE`) and what is deliberately not
 recorded are in [audit.md](audit.md); the decision record is

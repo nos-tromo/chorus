@@ -71,7 +71,8 @@ staged uploads, and the texts sent to inference — is recorded as a
 hash-chained event on the federation audit stream (stdout, collected by
 obs-plane), with the actor, the stated purpose (`X-Audit-Purpose`, which
 the SPA sends on every request from the header's purpose bar;
-`AUDIT_REQUIRE_PURPOSE` makes it mandatory per action) and the request id;
+`AUDIT_REQUIRE_PURPOSE` makes it mandatory per action, and the compose
+shape requires it for queries and disclosures) and the request id;
 writes fail closed. The SQLite audit log of releases before 0.8.0 is frozen
 on the volume. See `docs/audit.md` and ADR 0018.
 
@@ -121,7 +122,8 @@ stub inference and need no services.
 The Makefile wraps the compose workflow: `make network` / `volumes` /
 `build` / `up` / `up-dev` / `dev` (build, then up-dev) / `down` / `migrate` / `ingest` / `resolve`
 (audited: run inside the running backend via `docker compose exec`;
-`CASE_REF=` / `REASON=` state the purpose) /
+`CASE_REF=` / `REASON=` state the purpose, needed only when
+`AUDIT_REQUIRE_PURPOSE` names their actions — the default does not) /
 `bootstrap` (wait for data-plane health, then up) / `test` /
 `pre-commit` / `bundle` (airgap image tarball from the latest annotated
 release tag) / `bundle-dev` (airgap tarball of the current working tree, for
@@ -976,7 +978,9 @@ Art. 9 categories. This shapes several defaults:
   `/stats`), agent turns and transfers to inference (`ai_call`),
   collection, combination, modification and erasure — with actor, time,
   stated purpose, references (ids and counts, never content) and
-  recipient. Writes fail closed. The store, its retention and access are
+  recipient. Queries and disclosures without a stated purpose are
+  refused in the compose shape (`AUDIT_REQUIRE_PURPOSE=query,disclose`).
+  Writes fail closed. The store, its retention and access are
   obs-plane's; the SQLite audit log of releases before 0.8.0 is frozen and
   deleted by the operator once its retention period is over
   (`docs/audit.md`, `docs/retention.md`, ADR 0018).
