@@ -8,7 +8,7 @@ import type { AppConfig } from '../api/types'
 vi.mock('../api/config', () => ({
   fetchConfig: vi.fn(
     (): Promise<AppConfig> =>
-      Promise.resolve({ language: 'de', ingestion_enabled: true, version: '0.1.0' }),
+      Promise.resolve({ language: 'de', ingestion_enabled: true, version: '0.1.0', require_purpose: [] }),
   ),
 }))
 

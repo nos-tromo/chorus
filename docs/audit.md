@@ -71,6 +71,38 @@ for the store, its retention, who may read it, and the chain verifier.
 - **Background jobs** (UI ingest and resolve) write their events with the
   actor, purpose and request id of the request that started them.
 
+## Stating the purpose in the SPA
+
+The SPA's header carries a purpose bar (`PurposeBar` from `@infra/ui`). The
+user states a case reference, a short reason, or both; the purpose holds for
+the browser tab (`sessionStorage`, scope `chorus`) until it is changed or
+cleared, and signing out clears it. `GET /config` reports which actions the
+backend refuses without a purpose (`require_purpose`, sorted); while that
+list is non-empty, an empty bar shows *Purpose required*.
+
+Every API request goes out through one fetch wrapper
+(`frontend/src/api/client.ts`), which adds the stated purpose as
+`X-Audit-Purpose`. A `428` opens the bar's dialog: once the user saves, the
+request is sent once more with the purpose; a cancelled dialog leaves the
+refusal standing, and the screen says that a purpose is needed. A query
+refused that way (the dashboard's `/stats`) loads again by itself once a
+purpose is stated; a refused form is submitted again by the user.
+
+| SPA request | Actions | How it carries the purpose |
+|---|---|---|
+| `POST /tools/{name}` (tool screens, explorer seed and expand) | `query` | `X-Audit-Purpose`, from the wrapper |
+| `GET /stats` (dashboard) | `query` | wrapper |
+| `POST /agent/query` (chat) | `query`, `ai_call` | wrapper; the turn's tool calls run in the same request and record its purpose |
+| `POST /ingestion/ingest` (CSV upload, multipart) | `collect`, `delete`, `ai_call` with NER, the resolution actions with *then resolve* | wrapper; on a `428` the same form data is sent again |
+| `POST /ingestion/resolve` | `combine`, `ai_call`, `modify` | wrapper |
+| `POST /ingestion/migrate` | `admin`, plus `modify` for a data-changing migration | wrapper |
+| `GET /config`, `/whoami`, `/health`, `/tools`, `/ingestion/migrations`, `/ingestion/jobs/{id}` | not recorded | wrapper (sent and ignored) |
+| Explorer exports (JSON, GraphML, HTML) | none: no request | built in the browser from an audited tool result |
+
+Nothing else reaches the backend: the SPA has no `<a href>` download,
+`<img>` or media source, `EventSource`, `window.open` or native form post
+pointing at an API route, so no request can bypass the wrapper.
+
 ## What is recorded: HTTP endpoints
 
 | Endpoint | Recorded as | Notes |

@@ -9,6 +9,11 @@ describe('describeError', () => {
       vars: { status: 502 },
     })
   })
+  it('maps a 428 (purpose prompt declined) to the purpose key', () => {
+    expect(describeError(new ApiError(428, 'A stated purpose is required for this request.'))).toEqual({
+      key: 'common.error_purpose',
+    })
+  })
   it('maps network TypeError to the network key', () => {
     expect(describeError(new TypeError('Failed to fetch'))).toEqual({
       key: 'common.error_network',

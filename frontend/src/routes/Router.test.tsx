@@ -10,7 +10,7 @@ import type { AppConfig, Whoami } from '../api/types'
 vi.mock('../api/config', () => ({
   fetchConfig: vi.fn(
     (): Promise<AppConfig> =>
-      Promise.resolve({ language: 'en', ingestion_enabled: false, version: '0.1.0' }),
+      Promise.resolve({ language: 'en', ingestion_enabled: false, version: '0.1.0', require_purpose: [] }),
   ),
   // Shell mounts useWhoami — stub it so it doesn't hit the network.
   getWhoami: vi.fn((): Promise<Whoami> => Promise.resolve({ username: 'alice', display_name: null })),

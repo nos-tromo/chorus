@@ -5,6 +5,8 @@ export const en = {
   'common.error_unknown': 'Something went wrong. Please try again or contact support.',
   'common.error_network':
     'Service unreachable. Please check your connection or try again later.',
+  'common.error_purpose':
+    'This action needs a stated purpose. Please state one in the header and try again.',
   'common.entity_input': 'Entity name or alias',
   'common.limit': 'Limit',
   'common.from_ts': 'From (ISO timestamp, optional)',
@@ -170,6 +172,23 @@ export const en = {
   'app.header.theme.light': 'light',
   'app.header.theme.dark': 'dark',
   'app.header.sign_out': 'Sign out',
+  // AppShell purpose bar (X-Audit-Purpose); {max} is filled in by the bar
+  'purpose.label': 'Purpose',
+  'purpose.empty': 'No purpose stated',
+  'purpose.required': 'Purpose required',
+  'purpose.title': 'Purpose',
+  'purpose.description':
+    'Sent with each request you make in this app until you change or clear it, or the session ends.',
+  'purpose.requested': 'This action needs a stated purpose.',
+  'purpose.case_ref': 'Case reference',
+  'purpose.reason': 'Reason',
+  'purpose.save': 'Save',
+  'purpose.cancel': 'Cancel',
+  'purpose.clear': 'Clear',
+  'purpose.error_length': 'At most {max} characters.',
+  'purpose.error_control': 'Remove line breaks, tabs and other control characters.',
+  'purpose.error_header': 'Too long to send together. Shorten one of the fields.',
+  'purpose.error_empty': 'Enter a case reference or a reason.',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph overview',
   'dashboard.nodes': 'Nodes',

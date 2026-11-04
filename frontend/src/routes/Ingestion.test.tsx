@@ -22,7 +22,7 @@ vi.mock('../api/client', () => ({
 }))
 
 // Config mock — start with ingestion enabled; individual tests can override.
-const mockConfig: AppConfig = { language: 'en', ingestion_enabled: true, version: '0.1.0' }
+const mockConfig: AppConfig = { language: 'en', ingestion_enabled: true, version: '0.1.0', require_purpose: [] }
 
 vi.mock('../api/config', () => ({
   fetchConfig: vi.fn((): Promise<AppConfig> => Promise.resolve(mockConfig)),
@@ -41,6 +41,7 @@ function renderIngestion(ingestionEnabled = true) {
     language: 'en',
     ingestion_enabled: ingestionEnabled,
     version: '0.1.0',
+    require_purpose: [],
   })
 
   const queryClient = new QueryClient({

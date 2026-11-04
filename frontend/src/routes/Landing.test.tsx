@@ -27,7 +27,7 @@ vi.mock('recharts', () => ({
 vi.mock('../api/config', () => ({
   fetchConfig: vi.fn(
     (): Promise<AppConfig> =>
-      Promise.resolve({ language: 'en', ingestion_enabled: false, version: '0.1.0' }),
+      Promise.resolve({ language: 'en', ingestion_enabled: false, version: '0.1.0', require_purpose: [] }),
   ),
 }))
 
@@ -184,6 +184,7 @@ describe('Landing', () => {
       language: 'en',
       ingestion_enabled: true,
       version: '0.1.0',
+      require_purpose: [],
     })
     mockAllApis()
 
@@ -203,6 +204,7 @@ describe('Landing', () => {
       language: 'en',
       ingestion_enabled: false,
       version: '0.1.0',
+      require_purpose: [],
     })
     mockAllApis()
 

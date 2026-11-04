@@ -2,6 +2,8 @@ export interface AppConfig {
   language: 'en' | 'de'
   ingestion_enabled: boolean
   version: string
+  /** Audit actions the backend refuses without a stated purpose, sorted; empty when none. */
+  require_purpose: string[]
 }
 
 /** Response from the authenticated GET /whoami route. */
