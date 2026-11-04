@@ -32,6 +32,10 @@ The FastAPI app boots, applies Neo4j migrations on startup, and exposes
   graphs in agent answers.
 - **Migrations** (constraints, indexes, vector indexes) applied in order
   and idempotently, with a CLI (`apply` / `status`).
+- **A retention sweeper** that deletes expired posts with every copy chorus
+  keeps, on a schedule inside the backend once `RETENTION_SWEEP_ENABLED` is
+  on (off by default), with a dry run and a one-off command
+  ([retention.md](retention.md)).
 
 *Current state* in [`CLAUDE.md`](../CLAUDE.md) tracks what has not landed
 yet; the ingestion and resolution stages are in
@@ -169,7 +173,9 @@ curl -s http://localhost:8000/metrics | head
 
 Unauthenticated, like `/health`, so the obs-plane Prometheus scraper can
 reach it without a principal header. Reports aggregate request counters
-and latency histograms only — no user data. Set `METRICS_ENABLED=false`
+and latency histograms only — no user data — plus the retention sweep's
+counts and its `chorus_retention_sweep_halted` gauge
+([retention.md](retention.md#monitoring)). Set `METRICS_ENABLED=false`
 to disable.
 
 ### Audit events

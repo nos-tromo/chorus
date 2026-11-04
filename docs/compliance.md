@@ -6,15 +6,33 @@ planned swap-in, §76 BDSG query logging, per-post retention timers, DSFA
 scope). This file will expand with the as-built compliance design once
 the v1 features land.
 
+## Retention
+
+Every post is stamped with a deadline at ingestion (`retention_until`,
+`RETENTION_DAYS_DEFAULT` days after chorus ingested it). The sweeper deletes
+expired posts with every copy chorus keeps of them — their comment and reply
+threads, the aliases, hashtags and attachments only they referenced, their
+raw-store rows — plus raw rows and staged uploads that outlived the period,
+and records each deletion on the audit trail before it takes effect. It
+deletes nothing until an operator switches it on
+(`RETENTION_SWEEP_ENABLED`, off by default and in the compose shape); the
+dry run (`make retention-report`) shows first what the configured period
+would delete, as counts. Copies outside chorus's stores — the operator's
+source exports and data-plane's backups — follow their own owners' rules.
+Details: [retention.md](retention.md).
+
 ## Profile data retention
 
 The `profiles` ingestion stage writes personal profile fields — `bio`,
 `date_of_birth`, `hometown`, `work_education`, `current_city` — onto
 `:Author` nodes. By deliberate decision, this data is **not** subject to
-the nightly retention sweep: the sweep operates on `:Post` nodes and
-already skips `:Author` (see [`retention.md`](retention.md)), and no
-per-author retention timer is set. Author profile data is therefore
-retained indefinitely.
+the retention sweep: the sweep deletes posts and keeps `:Author` nodes with
+their social edges and their raw `profiles` and `connections` rows (see
+[`retention.md`](retention.md#what-a-sweep-keeps)), and no per-author
+retention timer is set. Author profile data is therefore retained
+indefinitely, also once a sweep has deleted every post of an author: the
+dry run counts the authors a sweep would leave without any post or social
+edge, and how many of them carry profile data.
 
 This is a conscious choice, recorded in
 [ADR 0006](decisions/0006-profiles-table.md). It must be confirmed by
@@ -36,8 +54,10 @@ the recipient:
 - **combine** — every entity-resolution run;
 - **modify** — data-changing migrations, the norm-key backfill, and links
   that resolution replaces;
-- **delete** — the deletion of a staged upload once its job is over; chorus
-  has no other erasure path yet.
+- **delete** — every deletion by the retention sweep (expired posts with
+  their threads and what only they referenced, their raw rows, raw rows no
+  post holds, stale staged uploads), recorded before it takes effect, and the
+  deletion of a staged upload once its job is over.
 
 Writes fail closed: an operation whose event cannot be written fails.
 Queries and disclosures must state their reason: the compose shape refuses

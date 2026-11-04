@@ -45,10 +45,10 @@ class MessageDTO(BaseModel):
         system_tags: Upstream ``Tags`` field as a string list.
         ingested_at: Time chorus ingested this row (chorus-set, not from the
             upstream). The anchor retention is measured from.
-        retention_until: Absolute time the nightly sweeper should
-            hard-delete this message (``ingested_at`` + the configured
-            window); ``None`` when retention is disabled, leaving it
-            non-expiring.
+        retention_until: Absolute time from which the retention sweep
+            deletes this message (``ingested_at`` + the configured window),
+            once it is switched on; ``None`` when retention is disabled,
+            leaving it non-expiring.
     """
 
     uuid: str

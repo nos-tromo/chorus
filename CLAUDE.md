@@ -67,14 +67,26 @@ bulk/server-side loads. See *Repository conventions* below for the live layout.
 
 Every processing of personal data — tool calls, agent turns, `/stats`,
 ingestion passes (UI and CLI), resolution runs, migrations, the deletion of
-staged uploads, and the texts sent to inference — is recorded as a
-hash-chained event on the federation audit stream (stdout, collected by
-obs-plane), with the actor, the stated purpose (`X-Audit-Purpose`, which
+staged uploads, retention deletions, and the texts sent to inference — is
+recorded as a hash-chained event on the federation audit stream (stdout,
+collected by obs-plane), with the actor, the stated purpose (`X-Audit-Purpose`, which
 the SPA sends on every request from the header's purpose bar;
 `AUDIT_REQUIRE_PURPOSE` makes it mandatory per action, and the compose
 shape requires it for queries and disclosures) and the request id;
 writes fail closed. The SQLite audit log of releases before 0.8.0 is frozen
 on the volume. See `docs/audit.md` and ADR 0018.
+
+The retention sweeper (`chorus/retention/`, ADR 0019) deletes posts whose
+`retention_until` has passed, with their comment and reply threads, what only
+they referenced (aliases, hashtags, attachments) and their raw-store rows,
+plus raw rows and staged uploads older than the period; authors, entities and
+groups stay (ADR 0006). It deletes nothing until `RETENTION_SWEEP_ENABLED` is
+on (default off, also in the compose shape); then the backend sweeps every
+`RETENTION_SWEEP_INTERVAL_S` (default a day) in bounded batches, each recorded
+as a `delete` event inside its transactions before they commit, and stops on
+a failed audit write. `make retention-report` is the dry run (counts only,
+records nothing), `make retention-sweep` a one-off sweep. See
+`docs/retention.md`.
 
 `RESPONSE_LANGUAGE=de` flips the whole app to German — agent answers,
 entity-query article stripping, and React SPA UI captions (ADR 0013; ADR 0015).
@@ -90,7 +102,6 @@ mirrors `nos-tromo/.github/configs/python-strict/`; drift fails CI.
 
 Not yet landed (tracked in `docs/decisions/` / open tickets):
 - Semantic search — `Post.embedding` backfill + `semantic_search` tool
-- Retention sweeper job
 - Real OIDC wiring (`principal.py` is the seam)
 - `escape_hatch_cypher` power-user tool
 
@@ -111,6 +122,8 @@ uv run python -m chorus.migrations.cli apply    # apply Neo4j migrations (or: st
 uv run python -m chorus.ingestion.cli run       # one ingestion pass from INGESTION_SOURCE_DIR
 uv run python -m chorus.ingestion.cli resolve   # Alias → Entity resolution pass
                                                 # (each audited CLI run writes its own audit chain to stdout)
+uv run python -m chorus.retention.cli report    # retention dry run: counts only, records nothing
+uv run python -m chorus.retention.cli sweep     # one retention sweep (needs RETENTION_SWEEP_ENABLED; audited)
 uv run uvicorn chorus.api.main:app --reload --port 8000   # dev API
 ```
 
@@ -121,9 +134,11 @@ stub inference and need no services.
 
 The Makefile wraps the compose workflow: `make network` / `volumes` /
 `build` / `up` / `up-dev` / `dev` (build, then up-dev) / `down` / `migrate` / `ingest` / `resolve`
+/ `retention-sweep`
 (audited: run inside the running backend via `docker compose exec`;
 `CASE_REF=` / `REASON=` state the purpose, needed only when
 `AUDIT_REQUIRE_PURPOSE` names their actions — the default does not) /
+`retention-report` (the retention dry run, in the running backend) /
 `bootstrap` (wait for data-plane health, then up) / `test` /
 `pre-commit` / `bundle` (airgap image tarball from the latest annotated
 release tag) / `bundle-dev` (airgap tarball of the current working tree, for
@@ -419,8 +434,10 @@ Edges:
   `coalesce(entity, alias)` rule (entity when resolved, else the surface form).
   The edge carries provenance (span offsets, model version, confidence) so
   re-extraction with a newer model is auditable.
-- **`retention_until` on Post** drives nightly cleanup (sweeper not yet
-  landed). Cascade behavior is defined explicitly — see `docs/retention.md`.
+- **`retention_until` on Post** drives the retention sweep, which deletes
+  nothing until `RETENTION_SWEEP_ENABLED` is on. A post goes with its thread
+  (comments on a posting, replies to anything) and what only it referenced;
+  the cascade is defined explicitly in `docs/retention.md` (ADR 0019).
 - **Embeddings live on nodes** (`Post.embedding`, `Entity.embedding`), indexed
   via Neo4j vector indexes. No separate vector store.
 - **`system_tags` vs hashtags.** `system_tags` is the upstream `Tags` field
@@ -754,7 +771,8 @@ chorus/                      # top-level repo
       openai_tools.py        # TOOLS registry → OpenAI tool schemas
       prompts.py
     api/
-      main.py                # FastAPI entrypoint (lifespan: logger → principal config → audit trail → driver → migrations);
+      main.py                # FastAPI entrypoint (lifespan: logger → principal config → audit trail → driver → migrations
+                              # → retention sweep, when scheduled);
                               # also wires GET /metrics (Prometheus, unauthenticated, aggregate-only
                               # request counters/latencies, no user data), gated by METRICS_ENABLED
                               # (default on)
@@ -784,6 +802,12 @@ chorus/                      # top-level repo
       raw_store.py           # raw upstream rows (SQLite under CHORUS_HOME)
       jobs.py                # background job registry for the ingestion UI (ADR 0014)
       cli.py                 # python -m chorus.ingestion.cli {run,resolve,backfill-norm-keys}
+    retention/               # the retention sweep (docs/retention.md, ADR 0019)
+      sweeper.py             # expired posts + threads + copies, bounded batches, delete event before commit
+      report.py              # the dry run: counts and date ranges, read-only, records nothing
+      scheduler.py           # the backend's interval thread (RETENTION_SWEEP_INTERVAL_S), halts on audit failure
+      metrics.py             # chorus_retention_* Prometheus metrics (defined once; never reloaded in tests)
+      cli.py                 # python -m chorus.retention.cli {report,sweep}
     migrations/
       runner.py              # idempotent applier, tracked via (:_Migration {version})
       cli.py                 # python -m chorus.migrations.cli {apply,status}
@@ -837,7 +861,8 @@ chorus/                      # top-level repo
     retention.md / compliance.md / airgap.md
     decisions/               # ADRs, one file per significant decision
   scripts/                   # bundle_images.sh, check_dataplane_health.sh
-  Makefile                   # network / volumes / build / up / bundle / migrate / ingest / resolve / bootstrap / frontend-lint
+  Makefile                   # network / volumes / build / up / bundle / migrate / ingest / resolve /
+                             # retention-report / retention-sweep / bootstrap / frontend-lint
   pyproject.toml + uv.lock + pytest.ini
   .pre-commit-config.yaml
   .github/workflows/        # ci.yml (delegates to the shared nos-tromo python-app-ci workflow;
@@ -881,9 +906,10 @@ hosts the `chorus-state` volume needs a one-time `chown -R 10001:10001`
   Several chorus modules snapshot env vars at import time, so
   `tests/conftest.py` reloads the modules in `_CHORUS_ENV_MODULES` per
   test — env-snapshotting or self-registering modules must be on that
-  list, and env-free ones (e.g. `ingestion.jobs`, `audit.trail`) must stay
-  off it, or class identities duplicate and `except`/`isinstance` checks
-  break. Audit events are captured with the `audit_stream` / `audit_trail` /
+  list, and env-free ones (e.g. `ingestion.jobs`, `audit.trail`, the
+  `retention` package, whose `metrics` module may register its Prometheus
+  metrics only once) must stay off it, or class identities duplicate and
+  `except`/`isinstance` checks break. Audit events are captured with the `audit_stream` / `audit_trail` /
   `audit_ctx` fixtures; the trail fixture closes the chain and runs
   `verify_chain()` at teardown.
 - **Logging**: `loguru`, one stderr sink at `LOG_LEVEL` (default `INFO`)
@@ -985,9 +1011,10 @@ Art. 9 categories. This shapes several defaults:
   deleted by the operator once its retention period is over
   (`docs/audit.md`, `docs/retention.md`, ADR 0018).
 - **Per-post retention timers.** `Post.retention_until` is set at
-  ingestion today; the nightly sweep that hard-deletes expired content
-  is designed (`docs/retention.md`) but not yet landed — see *Current
-  state*.
+  ingestion; the retention sweep hard-deletes expired posts with every copy
+  chorus keeps, recorded before each deletion takes effect, once an operator
+  switches it on (`RETENTION_SWEEP_ENABLED`, off by default) — the dry run
+  shows first what it would delete (`docs/retention.md`, ADR 0019).
 - **DSFA is required**, scoped specifically to social network analysis for
   the defined organizational purpose. Narrow scope > flexible platform.
 

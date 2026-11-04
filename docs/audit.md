@@ -22,14 +22,19 @@ for the store, its retention, who may read it, and the chain verifier.
   (`lifecycle` / `heartbeat`) and ends with `lifecycle` / `shutdown`.
 - **`config.audit` criteria:** `edge_secret_enforced` (whether
   `CHORUS_EDGE_SECRET` is set), `default_identity_enabled` (whether the dev
-  fallback identity is in effect: set, and no edge secret) and
-  `require_purpose` (the sorted actions that need a stated purpose). CLI
-  chains state `require_purpose` only. No secrets, no paths.
+  fallback identity is in effect: set, and no edge secret),
+  `retention_sweep` (how expired posts are deleted: `off`, `scheduled` or
+  `on_demand`, see [retention.md](retention.md#the-sweeper)),
+  `retention_period_days` (the period stamped on new posts, `null` while
+  retention is off) and `require_purpose` (the sorted actions that need a
+  stated purpose). CLI chains state `require_purpose` only. No secrets, no
+  paths.
 - **Where the lines go.** `docker/compose.yaml` sets `AUDIT_OUTPUT=container`:
   every process in the backend container writes to the container's main
   stdout under one container-wide lock, so a command started with
-  `docker compose exec` (the `make migrate` / `ingest` / `resolve` targets)
-  lands in the backend's log next to the server's chain, and lines from
+  `docker compose exec` (the `make migrate` / `ingest` / `resolve` /
+  `retention-sweep` targets) lands in the backend's log next to the server's
+  chain, and lines from
   concurrent writers never interleave. Do not run audited commands in a
   one-off `docker compose run --rm` container: it can exit before the log
   collector sees it, and its events would be lost.
@@ -44,7 +49,7 @@ for the store, its retention, who may read it, and the chain verifier.
 | Identity header trusted by the principal seam (`X-Auth-User`) | `{"user": <account>, "via": "edge"}` |
 | Dev fallback `CHORUS_DEFAULT_IDENTITY` (only without `CHORUS_EDGE_SECRET`) | `{"user": <default identity>, "via": "system"}` |
 | CLI command | `{"user": AUDIT_CLI_USER, "via": "cli"}` (`null` when unset) |
-| Startup migrations, the chain's own events | `{"user": null, "via": "system"}` |
+| Startup migrations, the scheduled retention sweep, the chain's own events | `{"user": null, "via": "system"}` |
 
 - **Unauthenticated requests (401) are not audited**: they have no actor, and
   recording them would let anyone on the shared networks flood the trail. A
@@ -153,8 +158,11 @@ question or answer text is recorded. A turn that fails at the model writes the e
 | `python -m chorus.ingestion.cli run` (`make ingest`) | `collect` / `ingest.run`, then `ai_call` / `ingest.ner` when NER ran |
 | `python -m chorus.ingestion.cli resolve` (`make resolve`) | the resolution events, as for `POST /ingestion/resolve` |
 | `python -m chorus.ingestion.cli backfill-norm-keys` | `modify` / `resolution.backfill_norm_keys` (a no-op writes nothing) |
+| `python -m chorus.retention.cli sweep` (`make retention-sweep`) | `delete` / `retention.sweep` per batch of expired posts, `retention.raw_store` per page of raw rows no post holds, `retention.uploads` per stale staged upload; `delete` / `retention.sweep`, `denied`, while `RETENTION_SWEEP_ENABLED` is off |
+| `python -m chorus.retention.cli report` (`make retention-report`) | not recorded: the dry run returns counts and date ranges, no data |
 | `python -m chorus.migrations.cli status` | not recorded: lists migration versions only |
 | Backend startup | the chain's start and `config.audit`, then `migration.apply` per applied migration, as the system |
+| Backend, every `RETENTION_SWEEP_INTERVAL_S` while `RETENTION_SWEEP_ENABLED` is on | the sweep's events, as for `make retention-sweep`, as the system |
 
 The make targets run the command inside the running backend
 (`docker compose exec`), pass the invoking host user as `AUDIT_CLI_USER`, and
@@ -166,10 +174,12 @@ make resolve CASE_REF=case-0001 REASON="monthly review"
 
 A command run that way follows the backend's `AUDIT_REQUIRE_PURPOSE`. None of
 chorus's commands queries or discloses, so under the compose default
-(`query,disclose`) `make migrate`, `make ingest` and `make resolve` run
-without a purpose and record one when it is given. A policy that names one
-of their actions — `collect` for an ingestion pass, say — makes the command
-exit 2 without `CASE_REF` or `REASON`, before it touches anything.
+(`query,disclose`) `make migrate`, `make ingest`, `make resolve` and
+`make retention-sweep` run without a purpose and record one when it is
+given. A policy that names one of their actions — `collect` for an ingestion
+pass, `delete` for a sweep, say — makes the command exit 2 without
+`CASE_REF` or `REASON`, before it touches anything. The scheduled sweep runs
+as the system, like startup migrations, and states no purpose.
 
 ## Targets and criteria
 
@@ -197,8 +207,31 @@ post text, question, answer, prompt or file content is ever recorded.
 - **Modification**: migrations reference their version and carry the store's
   change counters (`changes`); the backfill and relink events carry a count of
   aliases.
-- **Erasure**: the staged copy of an upload is deleted once its job is over;
-  the event names the deleted files (`kind="file"`).
+- **Erasure, staged uploads**: the staged copy of an upload is deleted once
+  its job is over; the event names the deleted files (`kind="file"`,
+  `container="uploads"`).
+- **Erasure, retention** ([retention.md](retention.md#what-a-sweep-deletes)):
+  each batch of expired posts is one `delete` / `retention.sweep` event with
+  a `mixed` target — `author:<id>` for the authors, co-authors and quoted
+  users of the deleted posts, `entity:<id>` for the entities they mentioned,
+  then `post:<uuid>` for every post deleted — and `target.count` the number
+  of posts. Its criteria: `period_days` and `cutoff` (posts whose deadline is
+  at or before it expired), `batch`, `posts` per table, `expired` (own
+  deadline passed), `cascaded` (deleted with the post they belong to),
+  `parent_refs` (bare parent references), the `aliases`, `hashtags` and
+  `attachments` deleted with their last post, and `raw_store` (raw rows
+  deleted per table). Raw rows no post holds go as `retention.raw_store`
+  events (`kind="post"`, `container="raw_store"`; criteria `received_before`,
+  `rows` per table, `unlisted` for rows whose `UUID` cell is not UUID-shaped:
+  such a cell can be a fragment of post text, so it is counted, never named).
+  Stale staged uploads go as `retention.uploads` events naming their files.
+  Every deletion is recorded before it takes effect: inside the batch's
+  transactions for the graph and the raw store, before the files are removed
+  for an upload. A commit or a file deletion that fails after its event is
+  recorded with `outcome="error"` and the first event as parent: for a batch,
+  `criteria.deleted` says what went anyway (`none`, or `raw_store` when only
+  the raw rows did); for an upload, the target names the files left. No
+  alias, hashtag, attachment name or text is recorded.
 - **More than 200 ids**: the first 200 go on the operation's event, each
   further 200 on a continuation event (same action, operation
   `<operation>.ids`, `parent_event_id` set to the operation's event), so no
@@ -215,7 +248,10 @@ turn the failure ends the turn (it is never fed back to the model as a tool
 error); a background job is marked failed; a CLI command exits 1. Nothing
 falls back to the operational log. Startup stops when the audit stream cannot
 be opened. A write is recorded after it is committed, so a collection whose
-event fails has still been written; the job reports the failure.
+event fails has still been written; the job reports the failure. A deletion
+is the other way round: a retention batch whose event cannot be written rolls
+back, and the sweep stops (`chorus_retention_sweep_halted` on `/metrics`)
+until a later one can record again.
 
 ## Configuration
 
@@ -238,8 +274,8 @@ event fails has still been written; the job reports the failure.
 - A queued ingest job cancelled at shutdown never runs, so its staged upload
   stays under `CHORUS_HOME/uploads` and no deletion is recorded (see
   ADR 0014 for the orphan-directory caveat).
-- Chorus has no other erasure path yet; the retention sweeper
-  ([retention.md](retention.md)) will be recorded as `delete` when it lands.
+- The retention dry run (`make retention-report`): it returns counts and
+  date ranges only, changes nothing, and works with the sweeper off.
 
 ## The legacy SQLite audit log
 
