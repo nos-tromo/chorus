@@ -16,7 +16,7 @@ NETWORKS := inference-net data-net edge-net
 VOLUMES  := chorus-state
 include make/common.mk
 
-.PHONY: help migrate ingest resolve bootstrap frontend-lint
+.PHONY: help migrate ingest resolve retention-report retention-sweep bootstrap frontend-lint
 
 # Audited CLI commands run inside the running backend, so their audit chain
 # lands in its log (AUDIT_OUTPUT=container) instead of a one-off container's,
@@ -24,10 +24,10 @@ include make/common.mk
 # invoking host user; CASE_REF / REASON state the purpose, e.g.
 #   make resolve CASE_REF=case-0001 REASON="monthly review"
 # The backend's AUDIT_REQUIRE_PURPOSE applies (compose default
-# query,disclose). None of the three queries or discloses: migrate is admin
+# query,disclose). None of these queries or discloses: migrate is admin
 # (plus modify), ingest collect (plus ai_call with NER), resolve combine,
-# ai_call and modify. They run without a purpose unless
-# AUDIT_REQUIRE_PURPOSE names one of those actions; then they exit 2.
+# ai_call and modify, retention-sweep delete. They run without a purpose
+# unless AUDIT_REQUIRE_PURPOSE names one of those actions; then they exit 2.
 AUDIT_EXEC = $(COMPOSE) exec \
 	-e AUDIT_CLI_USER="$${SUDO_USER:-$$(id -un)}" \
 	-e AUDIT_CASE_REF="$(CASE_REF)" -e AUDIT_REASON="$(REASON)" \
@@ -55,6 +55,10 @@ help:
 	@echo "                    make ingest CASE_REF=case-0001 REASON=\"monthly import\""
 	@echo "                  needed only if AUDIT_REQUIRE_PURPOSE names their actions"
 	@echo "                  (none of them queries or discloses: the default needs none)"
+	@echo "  make retention-report  dry run: what a retention sweep would delete now, as counts"
+	@echo "                  and date ranges (in the running backend; records and deletes nothing)"
+	@echo "  make retention-sweep   delete the expired posts now (in the running backend; audited"
+	@echo "                  like migrate/ingest/resolve, and only while RETENTION_SWEEP_ENABLED is on)"
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
 	@echo "  make pre-commit run pre-commit hooks (ruff + pyrefly)"
 	@echo "  make verify     pre-push gate: pre-commit + frontend lint/build; mirrors CI's lint gate"
@@ -75,6 +79,18 @@ ingest:
 # Resolve unresolved :Alias nodes onto canonical :Entity nodes.
 resolve:
 	$(AUDIT_EXEC) python -m chorus.ingestion.cli resolve
+
+# Retention (docs/retention.md). The dry run reads counts with the backend's
+# settings and records nothing, so it needs no operator or purpose. The
+# one-off sweep is audited like the targets above; it deletes only while
+# RETENTION_SWEEP_ENABLED is on, and is refused (exit 2) and recorded
+# otherwise. Both run inside the running backend, so they see its settings
+# and the chorus-state volume.
+retention-report:
+	$(COMPOSE) exec backend python -m chorus.retention.cli report
+
+retention-sweep:
+	$(AUDIT_EXEC) python -m chorus.retention.cli sweep
 
 # Wait for data-plane to be healthy, then bring the app up.
 bootstrap: network volumes

@@ -96,6 +96,10 @@ services:
       # Colon-less on purpose: unset keeps this default, while an empty
       # AUDIT_REQUIRE_PURPOSE= in .env turns the requirement off.
       AUDIT_REQUIRE_PURPOSE: ${AUDIT_REQUIRE_PURPOSE-query,disclose}
+      # Expired posts are deleted only once an operator switches the sweeper
+      # on; `make retention-report` shows first what the configured period
+      # would delete (docs/retention.md).
+      RETENTION_SWEEP_ENABLED: ${RETENTION_SWEEP_ENABLED:-false}
     volumes:
       - chorus-state:/var/lib/chorus
     networks:
