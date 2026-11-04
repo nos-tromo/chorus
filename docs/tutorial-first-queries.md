@@ -45,15 +45,24 @@ MERGE (p)-[:MENTIONS]->(e);
 curl -s -X POST http://localhost:8000/tools/posts_mentioning \
   -H 'Content-Type: application/json' \
   -H 'X-Auth-User: dev' \
+  -H 'X-Audit-Purpose: case_ref=case-0001&reason=tutorial' \
   -d '{"entity": "Berlin", "limit": 10}' | jq
 ```
 
 You should see one hit referencing `p-1` and `ent-berlin`. The same
 call writes one audit event — a JSON line with `"stream":"audit"` — to the
 API process's stdout, in the terminal running `uvicorn`: a `query` /
-`tool.posts_mentioning` event naming the caller, the parameters, and the
-ids the result disclosed (`entity:ent-berlin`, `post:p-1`), never the post
-text.
+`tool.posts_mentioning` event naming the caller, the stated purpose, the
+parameters, and the ids the result disclosed (`entity:ent-berlin`,
+`post:p-1`), never the post text.
+
+`X-Audit-Purpose` states why you are looking: a case reference, a reason,
+or both, form-encoded (`case_ref=…&reason=…`). The bare `uvicorn` of the
+quick start requires none unless `.env` sets `AUDIT_REQUIRE_PURPOSE`; the
+compose stack (`make dev`, which publishes the backend on the same port)
+refuses a query without one with `428` and records the refusal. In the
+SPA, the purpose bar in the header sends it for you
+([audit.md](audit.md#stating-the-purpose-in-the-spa)).
 
 The other tools are invoked the same way — `POST /tools/<name>` with
 the body matching the schema from `/tools`.
@@ -70,6 +79,7 @@ inference endpoint that supports tool-calling (`OPENAI_API_BASE` /
 curl -s -X POST http://localhost:8000/agent/query \
   -H 'Content-Type: application/json' \
   -H 'X-Auth-User: dev' \
+  -H 'X-Audit-Purpose: case_ref=case-0001&reason=tutorial' \
   -d '{"messages": [{"role": "user", "content": "Which posts mention Berlin?"}]}' | jq
 ```
 

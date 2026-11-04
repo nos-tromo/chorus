@@ -8,6 +8,8 @@ export const de: Strings = {
     'Etwas ist schiefgelaufen – Bitte versuchen Sie es erneut oder kontaktieren Sie den Support.',
   'common.error_network':
     'Dienst nicht erreichbar – Bitte prüfen Sie Ihre Verbindung oder versuchen Sie es später erneut.',
+  'common.error_purpose':
+    'Für diese Aktion muss ein Zweck angegeben werden – Bitte geben Sie ihn oben in der Kopfzeile an und versuchen Sie es erneut.',
   'common.entity_input': 'Name oder Alias der Entität',
   'common.limit': 'Limit',
   'common.from_ts': 'Von (ISO-Zeitstempel, optional)',
@@ -180,6 +182,23 @@ export const de: Strings = {
   'app.header.theme.light': 'Hell',
   'app.header.theme.dark': 'Dunkel',
   'app.header.sign_out': 'Abmelden',
+  // AppShell Zweck-Leiste (X-Audit-Purpose); {max} setzt die Leiste selbst ein
+  'purpose.label': 'Zweck',
+  'purpose.empty': 'Kein Zweck angegeben',
+  'purpose.required': 'Zweck erforderlich',
+  'purpose.title': 'Zweck',
+  'purpose.description':
+    'Wird mit jeder Ihrer Anfragen in dieser App gesendet, bis Sie ihn ändern oder entfernen oder die Sitzung endet.',
+  'purpose.requested': 'Für diese Aktion muss ein Zweck angegeben werden.',
+  'purpose.case_ref': 'Aktenzeichen',
+  'purpose.reason': 'Begründung',
+  'purpose.save': 'Speichern',
+  'purpose.cancel': 'Abbrechen',
+  'purpose.clear': 'Entfernen',
+  'purpose.error_length': 'Höchstens {max} Zeichen.',
+  'purpose.error_control': 'Bitte entfernen Sie Zeilenumbrüche, Tabulatoren und andere Steuerzeichen.',
+  'purpose.error_header': 'Zusammen zu lang zum Senden. Bitte kürzen Sie eines der Felder.',
+  'purpose.error_empty': 'Bitte geben Sie ein Aktenzeichen oder eine Begründung an.',
   // dashboard (landing diagnostics)
   'dashboard.graph_overview': 'Graph-Übersicht',
   'dashboard.nodes': 'Knoten',

@@ -54,11 +54,15 @@ through the SPA fallback: the prefix regex in
 
 ### SPA bootstrap and language
 
-The SPA fetches `GET /config` (unauthenticated, like `/health`) at startup to
-get `{language, ingestion_enabled}`. `RESPONSE_LANGUAGE` and
-`INGESTION_UI_ENABLED` live on the backend only; the SPA reads them via this
-endpoint. No runtime toggle is exposed in the UI — the language is fixed at
-boot from the backend env.
+The SPA fetches `GET /config` (unauthenticated and unaudited, like `/health`)
+at startup to get `{language, ingestion_enabled, version, require_purpose}`.
+`RESPONSE_LANGUAGE` and `INGESTION_UI_ENABLED` live on the backend only; the
+SPA reads them via this endpoint. `version` is the release the header shows;
+`require_purpose` lists, sorted, the actions the backend refuses without a
+stated purpose (`AUDIT_REQUIRE_PURPOSE`), and while it is non-empty the
+header's purpose bar shows a purpose as required
+([audit.md](audit.md#stating-the-purpose-in-the-spa)). No runtime toggle is
+exposed in the UI — the language is fixed at boot from the backend env.
 
 chorus defaults to English. `RESPONSE_LANGUAGE=de` switches the whole app to
 German: the agent answers in German, strips leading articles when building
@@ -75,7 +79,10 @@ the backend. The backend's `api/auth/principal.py` seam reads it and falls
 back to `CHORUS_DEFAULT_IDENTITY` when absent (dev only; production leaves it
 unset, so an unheadered request is rejected). This is what lets the audit
 trail attribute every event to the real per-user principal
-([audit.md](audit.md)).
+([audit.md](audit.md)). What the client does send on every request is the
+user's stated purpose, `X-Audit-Purpose`, from the header's purpose bar; the
+gateway and the chorus nginx pass it through unchanged, and neither access
+log records request headers.
 
 #### Edge secret
 

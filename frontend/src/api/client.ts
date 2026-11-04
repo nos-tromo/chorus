@@ -1,3 +1,6 @@
+import { withPurpose } from '@infra/ui'
+import { PURPOSE_SCOPE } from './purpose'
+
 /** API base: explicit VITE_API_BASE_URL wins; otherwise derive from
  *  Vite's base path so the SPA works under /chorus/ and at root alike. */
 export function apiBase(
@@ -39,6 +42,18 @@ async function handle<T>(res: Response): Promise<T> {
   return body as T
 }
 
+type SendInit = Omit<RequestInit, 'headers'> & { headers?: Record<string, string> }
+
+/** Every API request goes out through the purpose store: it carries the
+ *  stated purpose (X-Audit-Purpose), and a 428 opens the header's purpose
+ *  bar and sends the request once more. The body may therefore be sent
+ *  twice — a string or FormData, never a stream. */
+function send(input: string, init: SendInit = {}): Promise<Response> {
+  return withPurpose(PURPOSE_SCOPE, (purpose) =>
+    fetch(input, { ...init, headers: { ...init.headers, ...purpose } }),
+  )
+}
+
 export async function apiGet<T>(
   path: string,
   params?: Record<string, string | number | undefined | null>,
@@ -52,7 +67,7 @@ export async function apiGet<T>(
           .map(([k, v]) => [k, String(v)]),
       ).toString()
     : ''
-  return handle<T>(await fetch(url(path + qs), { signal }))
+  return handle<T>(await send(url(path + qs), { signal }))
 }
 
 export async function apiPost<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
@@ -64,5 +79,5 @@ export async function apiPost<T>(path: string, body?: unknown, signal?: AbortSig
     headers['content-type'] = 'application/json'
     payload = JSON.stringify(body)
   }
-  return handle<T>(await fetch(url(path), { method: 'POST', headers, body: payload, signal }))
+  return handle<T>(await send(url(path), { method: 'POST', headers, body: payload, signal }))
 }

@@ -57,11 +57,18 @@ for the store, its retention, who may read it, and the chain verifier.
   a generic body and writes nothing. A CLI run states it in `AUDIT_CASE_REF`
   / `AUDIT_REASON`; a malformed value exits 2 before the chain starts.
 - **Required purpose.** `AUDIT_REQUIRE_PURPOSE` lists the actions that need a
-  stated purpose (default: none). An operation whose actions include a
-  required one, without a stated purpose, is refused before it processes
-  anything: one event with `outcome="denied"` (same action and operation,
-  its criteria, no target) and a `428` with a generic body — exit code 2 for
-  a CLI command. An unknown action name stops startup.
+  stated purpose. `docker/compose.yaml` sets it to `query,disclose`, so a
+  deployment refuses every query and disclosure without one (§76 BDSG
+  Abs. 2 asks the reason for both): tool calls, `/stats` and agent turns.
+  Collection, combination, modification and administration — the ingestion
+  routes and the make targets — still run without one. An operation whose
+  actions include a required one, without a stated purpose, is refused
+  before it processes anything: one event with `outcome="denied"` (same
+  action and operation, its criteria, no target) and a `428` with a generic
+  body — exit code 2 for a CLI command. `AUDIT_REQUIRE_PURPOSE=` (empty) in
+  `.env` turns the requirement off; unset keeps the compose default. The
+  code default is empty, so a bare `uvicorn` run and the test suite require
+  nothing unless the variable is set. An unknown action name stops startup.
 - **Refusals.** An authenticated request refused for a missing purpose
   (`428`), or refused at the ingestion feature gate (`403`) on one of the
   three ingestion action routes, is recorded as `denied`.
@@ -70,6 +77,41 @@ for the store, its retention, who may read it, and the chain verifier.
   inference calls the request makes (never the identity, never the purpose).
 - **Background jobs** (UI ingest and resolve) write their events with the
   actor, purpose and request id of the request that started them.
+
+## Stating the purpose in the SPA
+
+The SPA's header carries a purpose bar (`PurposeBar` from `@infra/ui`). The
+user states a case reference, a short reason, or both; the purpose holds for
+the browser tab (`sessionStorage`, scope `chorus`) until it is changed or
+cleared, and signing out clears it. `GET /config` reports which actions the
+backend refuses without a purpose (`require_purpose`, sorted); while that
+list is non-empty, an empty bar shows *Purpose required*.
+
+Every API request goes out through one fetch wrapper
+(`frontend/src/api/client.ts`), which adds the stated purpose as
+`X-Audit-Purpose`. A `428` opens the bar's dialog: once the user saves, the
+request is sent once more with the purpose; a cancelled dialog leaves the
+refusal standing, and the screen says that a purpose is needed. A query
+refused that way (the dashboard's `/stats`) loads again by itself once a
+purpose is stated; a refused form is submitted again by the user.
+
+| SPA request | Actions | Purpose needed by default | How it carries the purpose |
+|---|---|---|---|
+| `POST /tools/{name}` (tool screens, explorer seed and expand) | `query` | yes | `X-Audit-Purpose`, from the wrapper |
+| `GET /stats` (dashboard) | `query` | yes | wrapper |
+| `POST /agent/query` (chat) | `query`, `ai_call` | yes | wrapper; the turn's tool calls run in the same request and record its purpose |
+| `POST /ingestion/ingest` (CSV upload, multipart) | `collect`, `delete`, `ai_call` with NER, the resolution actions with *then resolve* | no | wrapper; on a `428` the same form data is sent again |
+| `POST /ingestion/resolve` | `combine`, `ai_call`, `modify` | no | wrapper |
+| `POST /ingestion/migrate` | `admin`, plus `modify` for a data-changing migration | no | wrapper |
+| `GET /config`, `/whoami`, `/health`, `/tools`, `/ingestion/migrations`, `/ingestion/jobs/{id}` | not recorded | no | wrapper (sent and ignored) |
+| Explorer exports (JSON, GraphML, HTML) | none: no request | no | built in the browser from an audited tool result |
+
+*By default* means the compose default `query,disclose`. An audited request
+that carries a purpose records it, whether it was needed or not.
+
+Nothing else reaches the backend: the SPA has no `<a href>` download,
+`<img>` or media source, `EventSource`, `window.open` or native form post
+pointing at an API route, so no request can bypass the wrapper.
 
 ## What is recorded: HTTP endpoints
 
@@ -122,6 +164,13 @@ take the purpose from `CASE_REF` / `REASON`:
 make resolve CASE_REF=case-0001 REASON="monthly review"
 ```
 
+A command run that way follows the backend's `AUDIT_REQUIRE_PURPOSE`. None of
+chorus's commands queries or discloses, so under the compose default
+(`query,disclose`) `make migrate`, `make ingest` and `make resolve` run
+without a purpose and record one when it is given. A policy that names one
+of their actions — `collect` for an ingestion pass, say — makes the command
+exit 2 without `CASE_REF` or `REASON`, before it touches anything.
+
 ## Targets and criteria
 
 An event references what it touched by id and count, never by content. No
@@ -173,7 +222,7 @@ event fails has still been written; the job reports the failure.
 | Variable | Default | Meaning |
 |---|---|---|
 | `AUDIT_OUTPUT` | unset (`stdout`); `container` in `docker/compose.yaml` | `stdout`: the process's own stdout. `container`: the container's main stdout under the container-wide lock. |
-| `AUDIT_REQUIRE_PURPOSE` | empty | Comma-separated actions that need a stated purpose, e.g. `query,disclose`. Unknown names stop startup. |
+| `AUDIT_REQUIRE_PURPOSE` | empty; `query,disclose` in `docker/compose.yaml` | Comma-separated actions that need a stated purpose; a request without one is refused with `428`, a CLI run exits 2, and the refusal is recorded. Set it empty (`AUDIT_REQUIRE_PURPOSE=`) to require nothing; unset keeps the compose default. `GET /config` reports it to the SPA as `require_purpose`. Unknown names stop startup. |
 | `AUDIT_CLI_USER` | unset | The operator a CLI run is attributed to; the make targets pass the invoking host user. |
 | `AUDIT_CASE_REF`, `AUDIT_REASON` | unset | A CLI run's stated purpose; the make targets pass `CASE_REF` / `REASON`. |
 

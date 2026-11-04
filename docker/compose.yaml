@@ -90,8 +90,12 @@ services:
       # Audit events go to the container's main stdout under a container-wide
       # lock, so a CLI run started with `docker compose exec` (the make
       # targets) lands in this container's log too (docs/audit.md).
-      # AUDIT_REQUIRE_PURPOSE comes from .env like the rest.
       AUDIT_OUTPUT: container
+      # Queries and disclosures must state their purpose (§76 BDSG Abs. 2):
+      # without one they are refused with 428 and recorded as denied.
+      # Colon-less on purpose: unset keeps this default, while an empty
+      # AUDIT_REQUIRE_PURPOSE= in .env turns the requirement off.
+      AUDIT_REQUIRE_PURPOSE: ${AUDIT_REQUIRE_PURPOSE-query,disclose}
     volumes:
       - chorus-state:/var/lib/chorus
     networks:

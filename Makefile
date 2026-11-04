@@ -23,6 +23,11 @@ include make/common.mk
 # which can exit before the log collector sees it. The operator is the
 # invoking host user; CASE_REF / REASON state the purpose, e.g.
 #   make resolve CASE_REF=case-0001 REASON="monthly review"
+# The backend's AUDIT_REQUIRE_PURPOSE applies (compose default
+# query,disclose). None of the three queries or discloses: migrate is admin
+# (plus modify), ingest collect (plus ai_call with NER), resolve combine,
+# ai_call and modify. They run without a purpose unless
+# AUDIT_REQUIRE_PURPOSE names one of those actions; then they exit 2.
 AUDIT_EXEC = $(COMPOSE) exec \
 	-e AUDIT_CLI_USER="$${SUDO_USER:-$$(id -un)}" \
 	-e AUDIT_CASE_REF="$(CASE_REF)" -e AUDIT_REASON="$(REASON)" \
@@ -46,7 +51,10 @@ help:
 	@echo "  make ingest     run one ingestion pass from INGESTION_SOURCE_DIR (in the running backend)"
 	@echo "  make resolve    resolve aliases to canonical entities (in the running backend)"
 	@echo "                  migrate/ingest/resolve are audited: the backend must be up;"
-	@echo "                  CASE_REF=... REASON=... state the purpose"
+	@echo "                  CASE_REF=... REASON=... state the purpose, e.g."
+	@echo "                    make ingest CASE_REF=case-0001 REASON=\"monthly import\""
+	@echo "                  needed only if AUDIT_REQUIRE_PURPOSE names their actions"
+	@echo "                  (none of them queries or discloses: the default needs none)"
 	@echo "  make bootstrap  wait for data-plane to be healthy, then up"
 	@echo "  make pre-commit run pre-commit hooks (ruff + pyrefly)"
 	@echo "  make verify     pre-push gate: pre-commit + frontend lint/build; mirrors CI's lint gate"

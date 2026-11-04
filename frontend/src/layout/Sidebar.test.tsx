@@ -12,6 +12,7 @@ const mockConfig: AppConfig = {
   language: 'en',
   ingestion_enabled: false,
   version: '0.0.0',
+  require_purpose: [],
 }
 
 // Mock the entire ConfigContext module so no Provider / real fetch is needed.

@@ -69,8 +69,10 @@ Every processing of personal data — tool calls, agent turns, `/stats`,
 ingestion passes (UI and CLI), resolution runs, migrations, the deletion of
 staged uploads, and the texts sent to inference — is recorded as a
 hash-chained event on the federation audit stream (stdout, collected by
-obs-plane), with the actor, the stated purpose (`X-Audit-Purpose`;
-`AUDIT_REQUIRE_PURPOSE` makes it mandatory per action) and the request id;
+obs-plane), with the actor, the stated purpose (`X-Audit-Purpose`, which
+the SPA sends on every request from the header's purpose bar;
+`AUDIT_REQUIRE_PURPOSE` makes it mandatory per action, and the compose
+shape requires it for queries and disclosures) and the request id;
 writes fail closed. The SQLite audit log of releases before 0.8.0 is frozen
 on the volume. See `docs/audit.md` and ADR 0018.
 
@@ -120,7 +122,8 @@ stub inference and need no services.
 The Makefile wraps the compose workflow: `make network` / `volumes` /
 `build` / `up` / `up-dev` / `dev` (build, then up-dev) / `down` / `migrate` / `ingest` / `resolve`
 (audited: run inside the running backend via `docker compose exec`;
-`CASE_REF=` / `REASON=` state the purpose) /
+`CASE_REF=` / `REASON=` state the purpose, needed only when
+`AUDIT_REQUIRE_PURPOSE` names their actions — the default does not) /
 `bootstrap` (wait for data-plane health, then up) / `test` /
 `pre-commit` / `bundle` (airgap image tarball from the latest annotated
 release tag) / `bundle-dev` (airgap tarball of the current working tree, for
@@ -166,7 +169,7 @@ redesign of the ingestion pipeline, not an incremental feature add.
 ## Tech stack
 
 - **Backend**: Python 3.12, FastAPI, Uvicorn
-- **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.15.0`), served by nginx which reverse-proxies the API same-origin (no CORS)
+- **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.21.0`), served by nginx which reverse-proxies the API same-origin (no CORS)
 - **Graph DB**: Neo4j Community Edition (5.11+ for native vector indexes)
 - **Raw store**: SQLite under `CHORUS_HOME`
 - **Audit**: hash-chained JSON events on stdout — the federation audit lane,
@@ -811,15 +814,17 @@ chorus/                      # top-level repo
       default.conf.template  # env-templated upload limit (CHORUS_CLIENT_MAX_BODY_SIZE); query-free access log
       security-headers.conf  # hardened CSP
     src/
-      api/                   # client.ts (no identity header — proxy sets X-Auth-User), queryClient.ts, types.ts, per-domain modules
+      api/                   # client.ts (no identity header — proxy sets X-Auth-User; every request goes
+                              # through @infra/ui withPurpose: X-Audit-Purpose, a 428 re-asks once),
+                              # purpose.ts (PURPOSE_SCOPE), queryClient.ts, types.ts, per-domain modules
       config/                # ConfigContext.tsx — ConfigProvider (boots GET /config: language +
-                              # ingestion_enabled), useConfig(), and the useT() i18n hook
-      i18n/                  # typed en/de catalog (151 keys); EN/DE parity test
-      layout/                # Shell.tsx, Sidebar.tsx
+                              # ingestion_enabled + require_purpose), useConfig(), and the useT() i18n hook
+      i18n/                  # typed en/de catalog (167 keys); EN/DE parity test
+      layout/                # Shell.tsx (AppShell + the PurposeBar in headerActions), Sidebar.tsx
       routes/                # Router.tsx + one screen per route (Agent, Ingestion, tool screens)
       components/            # DataTable, AgentGraphCard (inline ForceGraph), ToolTrace, ToolScreen, ...
       hooks/                 # useHealth, useTools, useToolCall, useAgentQuery, useStats, useWhoami,
-                              # useUnifiedExplorer, useExplorerNodeStyles, ingestion hooks
+                              # useUnifiedExplorer, useExplorerNodeStyles, useRefetchOnPurpose, ingestion hooks
       lib/                   # explorerElements.ts, explorerActions.ts, graphExplorer.ts (ForceGraph element/style mappers + merge logic, ADR 0016)
       tools/                 # specs.ts — ToolSpec declarations for the generic table-tool screens
   tests/                     # unit dirs mirror chorus/; per-tool tests in tests/integration/
@@ -973,7 +978,9 @@ Art. 9 categories. This shapes several defaults:
   `/stats`), agent turns and transfers to inference (`ai_call`),
   collection, combination, modification and erasure — with actor, time,
   stated purpose, references (ids and counts, never content) and
-  recipient. Writes fail closed. The store, its retention and access are
+  recipient. Queries and disclosures without a stated purpose are
+  refused in the compose shape (`AUDIT_REQUIRE_PURPOSE=query,disclose`).
+  Writes fail closed. The store, its retention and access are
   obs-plane's; the SQLite audit log of releases before 0.8.0 is frozen and
   deleted by the operator once its retention period is over
   (`docs/audit.md`, `docs/retention.md`, ADR 0018).

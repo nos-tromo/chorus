@@ -1,6 +1,11 @@
+import { PURPOSE_REQUIRED_STATUS } from '@infra/ui'
 import { ApiError } from './client'
 
-export type ErrorKey = 'common.error_request' | 'common.error_unknown' | 'common.error_network'
+export type ErrorKey =
+  | 'common.error_request'
+  | 'common.error_unknown'
+  | 'common.error_network'
+  | 'common.error_purpose'
 
 export type ErrorDescriptor = {
   key: ErrorKey
@@ -13,6 +18,10 @@ export function describeError(err: unknown): ErrorDescriptor {
   if (err instanceof ApiError) {
     // Dev-only visibility; the body is generic post-backend-fix anyway.
     console.debug('API error detail', err.status, err.detail)
+    // Only reaches here when the user declined the purpose bar's prompt.
+    if (err.status === PURPOSE_REQUIRED_STATUS) {
+      return { key: 'common.error_purpose' }
+    }
     return { key: 'common.error_request', vars: { status: err.status } }
   }
   if (err instanceof TypeError) {
