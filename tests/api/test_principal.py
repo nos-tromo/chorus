@@ -74,6 +74,11 @@ def _trust_warnings(records: list[str]) -> list[str]:
     return [r for r in records if "trusted from any caller" in r]
 
 
+def _fallback_warnings(records: list[str]) -> list[str]:
+    """Return the startup "default identity is ignored" warnings."""
+    return [r for r in records if "CHORUS_DEFAULT_IDENTITY is ignored" in r]
+
+
 # --- per-request check -------------------------------------------------------
 
 
@@ -124,11 +129,23 @@ def test_missing_or_wrong_secret_ignores_identity_headers(env: pytest.MonkeyPatc
     assert resp.status_code == 401
 
 
-def test_ignored_identity_headers_fall_back_to_default_identity(env: pytest.MonkeyPatch) -> None:
-    """Ignored headers behave as absent: the dev default identity applies, no display name."""
+@pytest.mark.parametrize(
+    "headers",
+    [{}, {**IDENTITY, "X-Edge-Secret": WRONG}],
+    ids=["no-identity", "unverified-identity"],
+)
+def test_default_identity_is_ignored_while_the_secret_is_set(env: pytest.MonkeyPatch, headers: dict[str, str]) -> None:
+    """With the secret set, the dev default identity never applies: no verified identity means 401."""
     env.setenv("CHORUS_EDGE_SECRET", SECRET)
     env.setenv("CHORUS_DEFAULT_IDENTITY", DEFAULT)
-    resp = _client().get("/whoami", headers={**IDENTITY, "X-Edge-Secret": WRONG})
+    resp = _client().get("/whoami", headers=headers)
+    assert resp.status_code == 401
+
+
+def test_default_identity_applies_without_a_secret(env: pytest.MonkeyPatch) -> None:
+    """Without the secret, a request without identity headers gets the dev default identity."""
+    env.setenv("CHORUS_DEFAULT_IDENTITY", DEFAULT)
+    resp = _client().get("/whoami")
     assert resp.status_code == 200
     assert resp.json() == {"username": DEFAULT, "display_name": None}
 
@@ -148,11 +165,81 @@ def test_ignored_headers_warning_names_method_and_path_only(env: pytest.MonkeyPa
 def test_no_warning_without_identity_headers(env: pytest.MonkeyPatch, logs: list[str]) -> None:
     """A request without identity headers has nothing to ignore, so nothing is logged."""
     env.setenv("CHORUS_EDGE_SECRET", SECRET)
-    env.setenv("CHORUS_DEFAULT_IDENTITY", DEFAULT)
     resp = _client().get("/whoami")
-    assert resp.status_code == 200
-    assert resp.json() == {"username": DEFAULT, "display_name": None}
+    assert resp.status_code == 401
     assert not _ignored_warnings(logs)
+
+
+_VERIFIED = {**IDENTITY, "X-Edge-Secret": SECRET}
+_FORGED = {**IDENTITY, "X-Edge-Secret": WRONG}
+
+
+@pytest.mark.parametrize(
+    ("secret", "default", "headers", "expected"),
+    [
+        ("", "", {}, None),
+        ("", "", IDENTITY, USER),
+        ("", DEFAULT, {}, DEFAULT),
+        ("", DEFAULT, IDENTITY, USER),
+        (SECRET, "", {}, None),
+        (SECRET, "", _VERIFIED, USER),
+        (SECRET, "", _FORGED, None),
+        (SECRET, DEFAULT, {}, None),
+        (SECRET, DEFAULT, _VERIFIED, USER),
+        (SECRET, DEFAULT, _FORGED, None),
+    ],
+    ids=[
+        "no-secret-no-default-anonymous",
+        "no-secret-no-default-header",
+        "no-secret-default-anonymous",
+        "no-secret-default-header-wins",
+        "secret-no-default-anonymous",
+        "secret-no-default-verified",
+        "secret-no-default-forged",
+        "secret-default-anonymous",
+        "secret-default-verified",
+        "secret-default-forged",
+    ],
+)
+def test_identity_matrix(
+    env: pytest.MonkeyPatch, secret: str, default: str, headers: dict[str, str], expected: str | None
+) -> None:
+    """Every edge-secret x default-identity combination: who the request is, or 401.
+
+    The default identity only ever applies without a secret; with one, only a
+    verified header identifies the caller.
+    """
+    env.setenv("CHORUS_EDGE_SECRET", secret)
+    env.setenv("CHORUS_DEFAULT_IDENTITY", default)
+    resp = _client().get("/whoami", headers=headers)
+    if expected is None:
+        assert resp.status_code == 401
+    else:
+        assert resp.status_code == 200
+        assert resp.json()["username"] == expected
+
+
+@pytest.mark.parametrize(
+    ("secret", "default", "trust_warnings", "fallback_warnings"),
+    [("", "", 1, 0), ("", DEFAULT, 0, 0), (SECRET, "", 0, 0), (SECRET, DEFAULT, 0, 1)],
+    ids=["neither", "default-only", "secret-only", "both"],
+)
+def test_startup_warning_matrix(
+    env: pytest.MonkeyPatch,
+    logs: list[str],
+    secret: str,
+    default: str,
+    trust_warnings: int,
+    fallback_warnings: int,
+) -> None:
+    """One warning when headers are trusted from anyone, one when the fallback is ignored, else none."""
+    from chorus.api.auth.principal import check_principal_config
+
+    env.setenv("CHORUS_EDGE_SECRET", secret)
+    env.setenv("CHORUS_DEFAULT_IDENTITY", default)
+    check_principal_config()
+    assert len(_trust_warnings(logs)) == trust_warnings
+    assert len(_fallback_warnings(logs)) == fallback_warnings
 
 
 # --- config load and startup -------------------------------------------------
@@ -213,6 +300,23 @@ def test_startup_is_quiet_with_a_secret_or_a_default_identity(
     env.setenv(key, value)
     check_principal_config()
     assert not _trust_warnings(logs)
+    assert not _fallback_warnings(logs)
+
+
+def test_startup_warns_once_when_the_default_identity_is_ignored(env: pytest.MonkeyPatch, logs: list[str]) -> None:
+    """With both the secret and a default identity set, one warning says the fallback is ignored."""
+    from chorus.api.auth.principal import check_principal_config
+
+    env.setenv("CHORUS_EDGE_SECRET", SECRET)
+    env.setenv("CHORUS_DEFAULT_IDENTITY", DEFAULT)
+    check_principal_config()
+    warnings = _fallback_warnings(logs)
+    assert len(warnings) == 1
+    assert "WARNING" in warnings[0]
+    assert not _trust_warnings(logs)
+    logged = "".join(logs)
+    assert SECRET not in logged
+    assert DEFAULT not in logged
 
 
 def test_lifespan_fails_fast_on_a_short_secret(env: pytest.MonkeyPatch) -> None:

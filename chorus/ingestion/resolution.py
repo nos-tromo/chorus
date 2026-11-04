@@ -13,21 +13,39 @@ thresholds in `ResolutionConfig` can be tuned without rewriting the
 plumbing. `resolve_alias_to_entity` runs the pipeline for one alias and
 writes the `:RESOLVED_TO` edge; `resolve_all` is the batch, re-runnable
 entry point (exposed via `python -m chorus.ingestion.cli resolve`).
+
+Audit trail: a `resolve_all` run that has work to do writes one `combine` /
+`resolution.run` event (the entities linked, the per-method counts, the
+run config), then, parented to it, one `ai_call` event per model stage —
+`resolution.embed` for the surface forms sent to the embedding model and
+`resolution.tiebreak` for the LLM tie-break calls — and a `modify` /
+`resolution.relink` event when links to another entity were replaced.
+Bulk stages are counted per run, not per alias.
 """
 
 from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from loguru import logger
 from neo4j import Driver
 
-from chorus.audit.logger import AuditLogger
+from chorus.audit.trail import AuditContext
 from chorus.inference import provider
+from chorus.utils.audit_event import AiCall, Target
 from chorus.utils.env_cfg import ResolutionConfig, load_inference_env
+
+#: The audit operation of one resolution run.
+RESOLUTION_OPERATION = "resolution.run"
+#: The audit operation of a norm-key backfill.
+BACKFILL_OPERATION = "resolution.backfill_norm_keys"
+#: The actions a resolution run performs: linking aliases to entities, the
+#: embedding and tie-break model calls, and re-pointing existing links.
+RESOLUTION_ACTIONS = ("combine", "ai_call", "modify")
 
 
 def normalize_surface(s: str, cfg: ResolutionConfig) -> str:
@@ -212,13 +230,19 @@ def mint_entity(
     return entity_id
 
 
-def llm_tiebreaker(surface: str, candidates: list[dict[str, Any]]) -> str | None:
+def llm_tiebreaker(
+    surface: str,
+    candidates: list[dict[str, Any]],
+    *,
+    usage: provider.TokenUsage | None = None,
+) -> str | None:
     """Pick the candidate entity that matches ``surface`` via an LLM call.
 
     Args:
         surface: The unresolved surface form.
         candidates: Candidate entities with at least ``id``,
             ``canonical_name``, and ``type`` keys.
+        usage: Accumulator for the call's token usage.
 
     Returns:
         The chosen entity id, or ``None`` to signal "no confident match"
@@ -234,7 +258,7 @@ def llm_tiebreaker(surface: str, candidates: list[dict[str, Any]]) -> str | None
         "Reply with ONLY the id of the candidate that refers to the same "
         "real-world entity as the surface form, or NONE if none of them do."
     )
-    text = provider.chat([{"role": "user", "content": prompt}]).strip()
+    text = provider.chat([{"role": "user", "content": prompt}], usage=usage).strip()
     # Match by exact id token, not substring: otherwise an id like "e-1"
     # would be matched inside a reply naming "e-12". Tokenize on runs of
     # id-legal characters (alphanumerics, hyphen, underscore) so UUIDs and
@@ -338,7 +362,7 @@ def _write_resolved_to(
     score: float | None,
     embed_model: str,
     norm_key: str,
-) -> None:
+) -> int:
     """MERGE the :RESOLVED_TO edge from an alias to an entity with provenance.
 
     Enforces one outgoing ``:RESOLVED_TO`` edge per alias (last-writer-wins):
@@ -361,6 +385,9 @@ def _write_resolved_to(
         embed_model: Embedding model id used, for provenance.
         norm_key: Normalized surface form, stamped on the alias for durable
             cross-run dedup.
+
+    Returns:
+        How many existing links to another entity were dropped.
     """
     cypher = """
     MATCH (a:Alias {surface_form: $surface})
@@ -374,7 +401,7 @@ def _write_resolved_to(
         a.norm_key = $norm_key
     """
     with driver.session() as session:
-        session.run(
+        summary = session.run(
             cypher,
             surface=surface,
             entity_id=entity_id,
@@ -383,6 +410,7 @@ def _write_resolved_to(
             embed_model=embed_model,
             norm_key=norm_key,
         ).consume()
+    return int(summary.counters.relationships_deleted)
 
 
 _PAGE_SIZE = 500
@@ -459,7 +487,7 @@ def _batch_lookup_norm_keys(
 def _batch_write_resolved_to(
     driver: Driver,
     rows: list[dict[str, Any]],
-) -> None:
+) -> int:
     """UNWIND-batch :func:`_write_resolved_to` for multiple resolved aliases.
 
     Each dict in ``rows`` must carry the same keys as the keyword arguments to
@@ -469,9 +497,12 @@ def _batch_write_resolved_to(
     Args:
         driver: Open Neo4j driver.
         rows: Write descriptors, one per alias.
+
+    Returns:
+        How many existing links to another entity were dropped.
     """
     if not rows:
-        return
+        return 0
     cypher = """
     UNWIND $rows AS row
     MATCH (a:Alias {surface_form: row.surface})
@@ -485,7 +516,29 @@ def _batch_write_resolved_to(
         a.norm_key = row.norm_key
     """
     with driver.session() as session:
-        session.run(cypher, rows=rows).consume()
+        summary = session.run(cypher, rows=rows).consume()
+    return int(summary.counters.relationships_deleted)
+
+
+@dataclass
+class _Transfers:
+    """What a resolution run sent to inference and changed in place, for its audit events.
+
+    Attributes:
+        embedded: Surface forms sent to the embedding model.
+        embed_usage: Token usage of the embedding calls.
+        tiebreaks: LLM tie-break calls made.
+        tiebreak_matched: Tie-break calls that affirmed a candidate.
+        chat_usage: Token usage of the tie-break calls.
+        relinked: Existing links to another entity that were dropped.
+    """
+
+    embedded: int = 0
+    embed_usage: provider.TokenUsage = field(default_factory=provider.TokenUsage)
+    tiebreaks: int = 0
+    tiebreak_matched: int = 0
+    chat_usage: provider.TokenUsage = field(default_factory=provider.TokenUsage)
+    relinked: int = 0
 
 
 @dataclass(frozen=True)
@@ -530,20 +583,38 @@ _METHOD_FIELD = {
 }
 
 
-def _embed_in_chunks(surfaces: list[str], *, chunk: int = 128) -> list[list[float]]:
-    """Embed surface forms in batches to bound request size."""
+def _embed_in_chunks(
+    surfaces: list[str],
+    *,
+    chunk: int = 128,
+    transfers: _Transfers | None = None,
+) -> list[list[float]]:
+    """Embed surface forms in batches to bound request size.
+
+    Args:
+        surfaces: The surface forms to embed.
+        chunk: Surface forms per request.
+        transfers: Accumulator counting what is sent, before each request.
+
+    Returns:
+        One vector per surface form, in order.
+    """
     out: list[list[float]] = []
     for i in range(0, len(surfaces), chunk):
-        out.extend(provider.embed(surfaces[i : i + chunk]))
+        batch = surfaces[i : i + chunk]
+        if transfers is None:
+            out.extend(provider.embed(batch))
+            continue
+        transfers.embedded += len(batch)
+        out.extend(provider.embed(batch, usage=transfers.embed_usage))
     return out
 
 
 def resolve_all(
     driver: Driver,
     cfg: ResolutionConfig,
-    audit: AuditLogger,
+    audit: AuditContext,
     *,
-    user: str,
     page_size: int = _PAGE_SIZE,
 ) -> ResolutionSummary:
     """Resolve every unresolved :Alias to a canonical :Entity (batch, idempotent).
@@ -558,24 +629,27 @@ def resolve_all(
     session and run-cache / cross-run writes are UNWIND-batched into one
     session, reducing per-alias round-trips from 2-3 down to O(1) amortised.
 
-    The whole run is recorded as one §76 audit row (``tool_name="resolve_all"``)
-    via ``audit``; an empty run writes no row.
+    A run with work to do is recorded on the audit trail (see the module
+    docstring): one ``combine`` / ``resolution.run`` event whose target is
+    the entities minted or linked to and whose criteria are the run config
+    and the per-method counts, then the model-stage ``ai_call`` events and,
+    when links were replaced, a ``modify`` event. A failed run writes them
+    with ``outcome="error"`` and the counts so far. An empty run writes
+    nothing.
 
     Args:
         driver: Open Neo4j driver.
         cfg: Resolution thresholds/toggles.
-        audit: §76 audit logger; one row is written per non-empty run, with
-            the run config as params, the minted/attached entity ids as
-            ``entities_touched``, and the aliases processed as the result
-            count. A failed run is recorded with ``status="error"``.
-        user: Authenticated principal attributed on the audit row.
+        audit: The caller's audit context.
         page_size: Aliases fetched and embedded per iteration. Default 500.
 
     Returns:
         A :class:`ResolutionSummary` of per-method counts.
+
+    Raises:
+        AuditFailure: If an audit event could not be written.
     """
-    # Cheap existence check before opening the audit slot so an empty run
-    # never writes a row.
+    # Cheap existence check first, so an empty run writes no event.
     with driver.session() as session:
         probe = session.run(
             "MATCH (a:Alias) WHERE NOT (a)-[:RESOLVED_TO]->(:Entity) RETURN count(a) > 0 AS any"
@@ -584,91 +658,146 @@ def resolve_all(
         return ResolutionSummary()
 
     embed_model = load_inference_env().embed_model
-    params = {
+    params: dict[str, object] = {
         "embed_cluster_threshold": cfg.embed_cluster_threshold,
         "llm_tiebreak_enabled": cfg.llm_tiebreak_enabled,
         "case_normalize": cfg.case_normalize,
         "vector_k": cfg.vector_k,
         "embed_model": embed_model,
+        "llm_tiebreak_model": provider.text_model() if cfg.llm_tiebreak_enabled else None,
     }
-    with audit.time_tool(user, "resolve_all", params) as slot:
-        counts = dict.fromkeys(_METHOD_FIELD.values(), 0)
-        counts["processed"] = 0
-        # Cache key is (normalized surface, label): two case/whitespace variants
-        # cluster only when they share a type, so a PERSON "Apple" never collapses
-        # into a FOOD "apple". Mirrors cluster_candidates' same-type filter.
-        # Persists across pages so intra-run cross-page variants cluster too.
-        run_cache: dict[tuple[str, str | None], str] = {}
-        touched: set[str] = set()
+    counts = dict.fromkeys(_METHOD_FIELD.values(), 0)
+    counts["processed"] = 0
+    touched: set[str] = set()
+    transfers = _Transfers()
+    try:
+        summary = _resolve_pages(driver, cfg, embed_model, page_size, counts, touched, transfers)
+    except Exception:
+        _record_resolution(audit, params, counts, touched, transfers, outcome="error")
+        raise
+    _record_resolution(audit, params, counts, touched, transfers, outcome="ok")
+    return summary
 
-        while True:
-            page = _fetch_unresolved_aliases(driver, limit=page_size)
-            if not page:
-                break
 
-            surfaces = [sf for sf, _ in page]
-            vectors = _embed_in_chunks(surfaces)
-            # Fail before any write if the provider returned a wrong count.
-            if len(vectors) != len(page):
-                raise ValueError(
-                    f"embed returned {len(vectors)} vectors for {len(page)} aliases; "
-                    "aborting resolution before any write"
-                )
+def _resolve_pages(
+    driver: Driver,
+    cfg: ResolutionConfig,
+    embed_model: str,
+    page_size: int,
+    counts: dict[str, int],
+    touched: set[str],
+    transfers: _Transfers,
+) -> ResolutionSummary:
+    """Resolve unresolved aliases page by page; the body of :func:`resolve_all`.
 
-            norm_keys = [normalize_surface(sf, cfg) for sf, _ in page]
+    Args:
+        driver: Open Neo4j driver.
+        cfg: Resolution thresholds/toggles.
+        embed_model: Embedding model id, recorded on each edge.
+        page_size: Aliases fetched and embedded per iteration.
+        counts: Per-method counters, updated as the run goes.
+        touched: Entity ids minted or linked to, updated as the run goes.
+        transfers: Model calls and replaced links, updated as the run goes.
 
-            # Batch cross-run lookup for keys not already in run_cache (one session).
-            unknown = list(
-                {(nk, lbl) for nk, (_, lbl) in zip(norm_keys, page, strict=True) if (nk, lbl) not in run_cache}
+    Returns:
+        A :class:`ResolutionSummary` of per-method counts.
+    """
+    # Cache key is (normalized surface, label): two case/whitespace variants
+    # cluster only when they share a type, so a PERSON "Apple" never collapses
+    # into a FOOD "apple". Mirrors cluster_candidates' same-type filter.
+    # Persists across pages so intra-run cross-page variants cluster too.
+    run_cache: dict[tuple[str, str | None], str] = {}
+
+    while True:
+        page = _fetch_unresolved_aliases(driver, limit=page_size)
+        if not page:
+            break
+
+        surfaces = [sf for sf, _ in page]
+        vectors = _embed_in_chunks(surfaces, transfers=transfers)
+        # Fail before any write if the provider returned a wrong count.
+        if len(vectors) != len(page):
+            raise ValueError(
+                f"embed returned {len(vectors)} vectors for {len(page)} aliases; aborting resolution before any write"
             )
-            cross_run = _batch_lookup_norm_keys(driver, unknown)
 
-            # Collect run-cache and cross-run writes; flush in one UNWIND session.
-            deferred: list[dict[str, Any]] = []
+        norm_keys = [normalize_surface(sf, cfg) for sf, _ in page]
 
-            for (surface, label), vec, norm_key in zip(page, vectors, norm_keys, strict=True):
-                cache_key = (norm_key, label)
+        # Batch cross-run lookup for keys not already in run_cache (one session).
+        unknown = list({(nk, lbl) for nk, (_, lbl) in zip(norm_keys, page, strict=True) if (nk, lbl) not in run_cache})
+        cross_run = _batch_lookup_norm_keys(driver, unknown)
 
-                if cache_key in run_cache:
-                    entity_id = run_cache[cache_key]
-                    deferred.append(
-                        dict(
-                            surface=surface,
-                            entity_id=entity_id,
-                            method="run_cache",
-                            score=None,
-                            embed_model=embed_model,
-                            norm_key=norm_key,
-                        )
+        # Collect run-cache and cross-run writes; flush in one UNWIND session.
+        deferred: list[dict[str, Any]] = []
+
+        for (surface, label), vec, norm_key in zip(page, vectors, norm_keys, strict=True):
+            cache_key = (norm_key, label)
+
+            if cache_key in run_cache:
+                entity_id = run_cache[cache_key]
+                deferred.append(
+                    dict(
+                        surface=surface,
+                        entity_id=entity_id,
+                        method="run_cache",
+                        score=None,
+                        embed_model=embed_model,
+                        norm_key=norm_key,
                     )
-                    counts["attached_cache"] += 1
+                )
+                counts["attached_cache"] += 1
 
-                elif cache_key in cross_run:
-                    entity_id = cross_run[cache_key]
-                    run_cache[cache_key] = entity_id
-                    deferred.append(
-                        dict(
-                            surface=surface,
-                            entity_id=entity_id,
-                            method="cross_run",
-                            score=None,
-                            embed_model=embed_model,
-                            norm_key=norm_key,
-                        )
+            elif cache_key in cross_run:
+                entity_id = cross_run[cache_key]
+                run_cache[cache_key] = entity_id
+                deferred.append(
+                    dict(
+                        surface=surface,
+                        entity_id=entity_id,
+                        method="cross_run",
+                        score=None,
+                        embed_model=embed_model,
+                        norm_key=norm_key,
                     )
-                    counts["attached_cross_run"] += 1
+                )
+                counts["attached_cross_run"] += 1
 
-                else:
-                    # Full vector resolution — norm_key confirmed absent above,
-                    # so lookup_resolved_norm_key is skipped for this path.
-                    candidates = cluster_candidates(
+            else:
+                # Full vector resolution — norm_key confirmed absent above,
+                # so lookup_resolved_norm_key is skipped for this path.
+                candidates = cluster_candidates(
+                    driver,
+                    vec,
+                    cfg.embed_cluster_threshold,
+                    k=cfg.vector_k,
+                    entity_type=label,
+                )
+                if not candidates:
+                    entity_id = mint_entity(
                         driver,
+                        surface,
                         vec,
-                        cfg.embed_cluster_threshold,
-                        k=cfg.vector_k,
                         entity_type=label,
+                        embed_model=embed_model,
+                        norm_key=norm_key,
                     )
-                    if not candidates:
+                    method: str = "minted"
+                elif len(candidates) == 1:
+                    entity_id = candidates[0]["id"]
+                    method = "vector_single"
+                    transfers.relinked += _write_resolved_to(
+                        driver,
+                        surface,
+                        entity_id,
+                        method=method,
+                        score=candidates[0]["score"],
+                        embed_model=embed_model,
+                        norm_key=norm_key,
+                    )
+                elif cfg.llm_tiebreak_enabled:
+                    transfers.tiebreaks += 1
+                    chosen = llm_tiebreaker(surface, candidates, usage=transfers.chat_usage)
+                    if chosen is None:
                         entity_id = mint_entity(
                             driver,
                             surface,
@@ -677,71 +806,118 @@ def resolve_all(
                             embed_model=embed_model,
                             norm_key=norm_key,
                         )
-                        method: str = "minted"
-                    elif len(candidates) == 1:
-                        entity_id = candidates[0]["id"]
-                        method = "vector_single"
-                        _write_resolved_to(
-                            driver,
-                            surface,
-                            entity_id,
-                            method=method,
-                            score=candidates[0]["score"],
-                            embed_model=embed_model,
-                            norm_key=norm_key,
-                        )
-                    elif cfg.llm_tiebreak_enabled:
-                        chosen = llm_tiebreaker(surface, candidates)
-                        if chosen is None:
-                            entity_id = mint_entity(
-                                driver,
-                                surface,
-                                vec,
-                                entity_type=label,
-                                embed_model=embed_model,
-                                norm_key=norm_key,
-                            )
-                            method = "minted"
-                        else:
-                            entity_id = chosen
-                            method = "vector_llm"
-                            score = next((c["score"] for c in candidates if c["id"] == chosen), None)
-                            _write_resolved_to(
-                                driver,
-                                surface,
-                                entity_id,
-                                method=method,
-                                score=score,
-                                embed_model=embed_model,
-                                norm_key=norm_key,
-                            )
+                        method = "minted"
                     else:
-                        entity_id = candidates[0]["id"]
-                        method = "vector_topk"
-                        _write_resolved_to(
+                        transfers.tiebreak_matched += 1
+                        entity_id = chosen
+                        method = "vector_llm"
+                        score = next((c["score"] for c in candidates if c["id"] == chosen), None)
+                        transfers.relinked += _write_resolved_to(
                             driver,
                             surface,
                             entity_id,
                             method=method,
-                            score=candidates[0]["score"],
+                            score=score,
                             embed_model=embed_model,
                             norm_key=norm_key,
                         )
-                    run_cache[cache_key] = entity_id
-                    counts[_METHOD_FIELD[method]] += 1
+                else:
+                    entity_id = candidates[0]["id"]
+                    method = "vector_topk"
+                    transfers.relinked += _write_resolved_to(
+                        driver,
+                        surface,
+                        entity_id,
+                        method=method,
+                        score=candidates[0]["score"],
+                        embed_model=embed_model,
+                        norm_key=norm_key,
+                    )
+                run_cache[cache_key] = entity_id
+                counts[_METHOD_FIELD[method]] += 1
 
-                touched.add(entity_id)
-                counts["processed"] += 1
+            touched.add(entity_id)
+            counts["processed"] += 1
 
-            _batch_write_resolved_to(driver, deferred)
+        transfers.relinked += _batch_write_resolved_to(driver, deferred)
 
-        slot.entities_touched = sorted(touched)
-        slot.result_count = counts["processed"]
-        logger.info("resolution complete: {}", counts)
-        return ResolutionSummary(**counts)
+    logger.info("resolution complete: {}", counts)
+    return ResolutionSummary(**counts)
 
 
-def backfill_norm_keys(driver: Driver, cfg: ResolutionConfig, *, batch: int = 500) -> int:
+def _record_resolution(
+    audit: AuditContext,
+    params: Mapping[str, object],
+    counts: Mapping[str, int],
+    touched: set[str],
+    transfers: _Transfers,
+    *,
+    outcome: str,
+) -> str:
+    """Write a resolution run's audit events.
+
+    Args:
+        audit: The caller's audit context.
+        params: The run configuration, including the model aliases.
+        counts: Per-method counts.
+        touched: Entity ids minted or linked to.
+        transfers: Model calls and replaced links.
+        outcome: ``ok`` or ``error``.
+
+    Returns:
+        The ``combine`` event's id.
+    """
+    combine_id = audit.emit_refs(
+        "combine",
+        RESOLUTION_OPERATION,
+        outcome=outcome,
+        kind="entity",
+        ids=sorted(touched),
+        count=len(touched),
+        criteria={**params, "counts": dict(counts)},
+    )
+    if transfers.embedded:
+        audit.emit(
+            "ai_call",
+            "resolution.embed",
+            outcome=outcome,
+            parent_event_id=combine_id,
+            recipient="inference:embed",
+            target=Target(kind="alias", count=transfers.embedded),
+            ai=AiCall(
+                model_alias=str(params["embed_model"]),
+                sources=[combine_id],
+                input_tokens=transfers.embed_usage.input_tokens,
+            ),
+        )
+    if transfers.tiebreaks:
+        audit.emit(
+            "ai_call",
+            "resolution.tiebreak",
+            outcome=outcome,
+            parent_event_id=combine_id,
+            recipient="inference:chat",
+            target=Target(kind="alias", count=transfers.tiebreaks),
+            criteria={"matched": transfers.tiebreak_matched},
+            ai=AiCall(
+                model_alias=str(params["llm_tiebreak_model"]),
+                sources=[combine_id],
+                input_tokens=transfers.chat_usage.input_tokens,
+                output_tokens=transfers.chat_usage.output_tokens,
+            ),
+        )
+    if transfers.relinked:
+        audit.emit(
+            "modify",
+            "resolution.relink",
+            outcome=outcome,
+            parent_event_id=combine_id,
+            target=Target(kind="alias", count=transfers.relinked),
+        )
+    return combine_id
+
+
+def backfill_norm_keys(driver: Driver, cfg: ResolutionConfig, *, audit: AuditContext, batch: int = 500) -> int:
     """Stamp ``norm_key`` on resolved aliases that predate the durable-key change.
 
     Cross-run dedup matches on ``(norm_key, label)``, so aliases resolved
@@ -753,13 +929,22 @@ def backfill_norm_keys(driver: Driver, cfg: ResolutionConfig, *, batch: int = 50
     avoided. Idempotent: only resolved aliases with a missing ``norm_key`` are
     touched, so re-running is a no-op. See ADR 0012.
 
+    A run that stamps anything writes one ``modify`` /
+    ``resolution.backfill_norm_keys`` audit event with the number of aliases
+    changed; a failed run writes it with ``outcome="error"`` and the number
+    stamped before the failure. A no-op run writes nothing.
+
     Args:
         driver: Open Neo4j driver.
         cfg: Resolution configuration (controls case-normalization).
+        audit: The caller's audit context.
         batch: UNWIND write-back chunk size, mirroring the connections writer.
 
     Returns:
         Number of aliases stamped this run.
+
+    Raises:
+        AuditFailure: If the audit event could not be written.
     """
     fetch = """
     MATCH (a:Alias)-[:RESOLVED_TO]->(:Entity)
@@ -777,8 +962,16 @@ def backfill_norm_keys(driver: Driver, cfg: ResolutionConfig, *, batch: int = 50
     MATCH (a:Alias {surface_form: row.surface_form})
     SET a.norm_key = row.norm_key
     """
-    with driver.session() as session:
-        for i in range(0, len(rows), batch):
-            session.run(write, rows=rows[i : i + batch]).consume()
-    logger.info("norm_key backfill stamped {} aliases", len(rows))
-    return len(rows)
+    stamped = 0
+    try:
+        with driver.session() as session:
+            for i in range(0, len(rows), batch):
+                chunk = rows[i : i + batch]
+                session.run(write, rows=chunk).consume()
+                stamped += len(chunk)
+    except Exception:
+        audit.emit("modify", BACKFILL_OPERATION, outcome="error", target=Target(kind="alias", count=stamped))
+        raise
+    audit.emit("modify", BACKFILL_OPERATION, target=Target(kind="alias", count=stamped))
+    logger.info("norm_key backfill stamped {} aliases", stamped)
+    return stamped

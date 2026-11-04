@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import io
 from typing import Any
 
 import pytest
 from neo4j import Driver
 from pydantic import ValidationError
+
+from chorus.audit.trail import AuditContext, AuditTrail
+from chorus.utils.audit_event import Actor
+from tests._audit import operation_events
 
 
 def _edge_tuples(out: Any) -> set[tuple[str, str, str, bool]]:
@@ -32,15 +37,14 @@ def test_depth_above_two_rejected() -> None:
         SocialNetworkAroundIn(author="anyone", depth=3)
 
 
-def test_empty_seed_returns_empty_network(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_empty_seed_returns_empty_network(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A seed matching no author yields an empty network with no seed node."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="nobody", depth=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert out.nodes == []
     assert out.edges == []
@@ -49,7 +53,7 @@ def test_empty_seed_returns_empty_network(migrated_driver: Driver, in_memory_aud
     assert out.audit_result_count() == 0
 
 
-def test_depth_one_star_covers_all_three_legs(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_depth_one_star_covers_all_three_legs(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """depth=1 returns the seed plus its follows-out, follows-in, and friends ties.
 
     Each edge carries the right ``kind``/``directed``; the friends edge is emitted
@@ -72,8 +76,7 @@ def test_depth_one_star_covers_all_three_legs(migrated_driver: Driver, in_memory
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="seedh", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert out.seed_node_id == "author:seed"
@@ -88,7 +91,7 @@ def test_depth_one_star_covers_all_three_legs(migrated_driver: Driver, in_memory
     }
 
 
-def test_depth_two_expansion_keeps_radial_star(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_depth_two_expansion_keeps_radial_star(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """depth=2 adds ties-of-ties as ring-2 nodes, keeping the seed star (radial superset)."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
@@ -105,8 +108,7 @@ def test_depth_two_expansion_keeps_radial_star(migrated_driver: Driver, in_memor
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="sseedh", depth=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert _node(out, "author:s_seed").ring == 0
@@ -119,7 +121,7 @@ def test_depth_two_expansion_keeps_radial_star(migrated_driver: Driver, in_memor
     assert ("author:m_one", "author:z_two", "friends", False) in edges  # ring1 -> ring2
 
 
-def test_depth_one_omits_second_ring(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_depth_one_omits_second_ring(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """At depth=1 a friend-of-friend is not pulled in."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
@@ -136,13 +138,12 @@ def test_depth_one_omits_second_ring(migrated_driver: Driver, in_memory_audit: A
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="ah", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert _author_ids(out) == {"author:a", "author:b"}  # c (friend-of-friend) absent
 
 
-def test_limit_caps_ring_one(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_limit_caps_ring_one(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """``limit`` caps the direct-tie ring deterministically and flips truncated."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
@@ -159,8 +160,7 @@ def test_limit_caps_ring_one(migrated_driver: Driver, in_memory_audit: Any) -> N
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="lseedh", depth=1, limit=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     ring1 = {n.id for n in out.nodes if n.ring == 1}
     assert len(ring1) == 2
@@ -169,14 +169,13 @@ def test_limit_caps_ring_one(migrated_driver: Driver, in_memory_audit: Any) -> N
     full = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="lseedh", depth=1, limit=50),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert len({n.id for n in full.nodes if n.ring == 1}) == 5
     assert full.truncated is False
 
 
-def test_second_ring_limit_caps_ring_two(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_second_ring_limit_caps_ring_two(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """``second_ring_limit`` caps the ring-2 set and flips truncated; ring 1 is unaffected."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
@@ -195,15 +194,14 @@ def test_second_ring_limit_caps_ring_two(migrated_driver: Driver, in_memory_audi
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="ssh", depth=2, second_ring_limit=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     ring2 = {n.id for n in out.nodes if n.ring == 2}
     assert len(ring2) == 1
     assert out.truncated is True
 
 
-def test_ambiguous_name_picks_lowest_id(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_ambiguous_name_picks_lowest_id(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Two authors sharing a display name resolve to one ego — the lowest id."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
@@ -217,13 +215,12 @@ def test_ambiguous_name_picks_lowest_id(migrated_driver: Driver, in_memory_audit
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="alex", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert out.seed_node_id == "author:a1"
 
 
-def test_handle_match_preferred_over_display_name(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_handle_match_preferred_over_display_name(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A handle match wins over a display-name match even when the latter has a lower id."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
@@ -237,13 +234,12 @@ def test_handle_match_preferred_over_display_name(migrated_driver: Driver, in_me
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="sam", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert out.seed_node_id == "author:x9"  # handle match, despite x1 < x9
 
 
-def test_thin_author_neighbor_appears(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_thin_author_neighbor_appears(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A neighbour that never posted (no :AUTHORED) still appears — the tool joins only the social graph."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
@@ -258,13 +254,12 @@ def test_thin_author_neighbor_appears(migrated_driver: Driver, in_memory_audit: 
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="tsh", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert "author:tt" in _author_ids(out)
 
 
-def test_node_label_falls_back(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_node_label_falls_back(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Label prefers handle, then display_name, then the raw id."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
@@ -281,8 +276,7 @@ def test_node_label_falls_back(migrated_driver: Driver, in_memory_audit: Any) ->
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="nlseedh", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert _node(out, "author:named").label == "Named Person"
     assert _node(out, "author:bare_id").label == "bare_id"
@@ -295,8 +289,8 @@ def test_registered_in_tools(migrated_driver: Driver) -> None:
     assert "social_network_around" in TOOLS
 
 
-def test_audit_entities_are_author_ids(migrated_driver: Driver, in_memory_audit: Any) -> None:
-    """audit_entities() records the author ids in the network (the persons touched)."""
+def test_audit_authors_are_the_network(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
+    """audit_authors() records the author ids in the network (the persons touched)."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
     with migrated_driver.session() as s:
@@ -310,16 +304,13 @@ def test_audit_entities_are_author_ids(migrated_driver: Driver, in_memory_audit:
     out = social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="audsh", depth=1),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
-    assert set(out.audit_entities()) == {"auds", "audf"}
+    assert set(out.audit_authors()) == {"auds", "audf"}
 
 
-def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> None:
-    """One audit row is written per call, with node count as result_count."""
-    import sqlite3
-
+def test_audit_event_written(migrated_driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO) -> None:
+    """One query event per call: node count as the target count, every person by id, seed first."""
     from chorus.tools.social_network_around import SocialNetworkAroundIn, social_network_around
 
     with migrated_driver.session() as s:
@@ -333,13 +324,10 @@ def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> Non
     social_network_around(
         migrated_driver,
         SocialNetworkAroundIn(author="rsh", depth=1),
-        user="alice",
-        audit=in_memory_audit,
+        audit=audit_trail.context(Actor(user="alice", via="edge")),
     )
-    rows = (
-        sqlite3.connect(in_memory_audit.db_path)
-        .execute("SELECT user, tool_name, result_count, status FROM audit_log")
-        .fetchall()
-    )
+    [event] = operation_events(audit_stream)
+    assert (event["action"], event["operation"], event["outcome"]) == ("query", "tool.social_network_around", "ok")
+    assert event["actor"] == {"user": "alice", "via": "edge"}
     # seed + one friend = 2 nodes
-    assert rows == [("alice", "social_network_around", 2, "ok")]
+    assert event["target"] == {"kind": "mixed", "ids": ["author:rs", "author:rf"], "count": 2}

@@ -4,9 +4,11 @@ Lifespan order matters:
   1. init_logger — so anything that logs during startup is captured
   2. check the principal config — a bad CHORUS_EDGE_SECRET stops startup
      before anything else is touched
-  3. open Neo4j driver
-  4. apply pending migrations
-  5. init audit log schema
+  3. open the audit trail — the process's audit chain starts here, with
+     one config.audit event stating the operating mode; an unknown
+     AUDIT_REQUIRE_PURPOSE action or an unwritable stream stops startup
+  4. open Neo4j driver
+  5. apply pending migrations — recorded on the chain as the system
   6. register tool registry (imports the package; tools self-register)
 
 Tool routes are wired up in `chorus.api.routers.tools` and import the
@@ -23,13 +25,39 @@ from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from chorus.api.auth.principal import check_principal_config
+from chorus.api.correlation import RequestIdMiddleware
 from chorus.api.errors import install_error_handlers
-from chorus.audit.logger import AuditLogger
+from chorus.audit.trail import AuditTrail
 from chorus.db.neo4j import close_driver, get_driver
 from chorus.ingestion.jobs import JobRegistry
 from chorus.migrations.runner import apply_all
-from chorus.utils.env_cfg import load_audit_env, load_metrics_env
+from chorus.utils.env_cfg import load_audit_env, load_metrics_env, load_principal_env
 from chorus.utils.logger_cfg import init_logger
+
+
+def _open_audit_trail() -> AuditTrail:
+    """Create and start this process's audit chain.
+
+    Returns:
+        The started trail; its first events are the chain's ``start`` and
+        one ``admin`` / ``config.audit`` event stating the operating mode.
+
+    Raises:
+        ValueError: If ``AUDIT_REQUIRE_PURPOSE`` names an unknown action or
+            ``AUDIT_OUTPUT`` an unknown mode.
+        OSError: If the container stream cannot be opened.
+        AuditFailure: If the first events could not be written.
+    """
+    cfg = load_audit_env()
+    principal = load_principal_env()
+    trail = AuditTrail.open(cfg.output, required=cfg.require_purpose)
+    trail.start(
+        {
+            "edge_secret_enforced": principal.edge_secret is not None,
+            "default_identity_enabled": principal.default_identity is not None and principal.edge_secret is None,
+        }
+    )
+    return trail
 
 
 @asynccontextmanager
@@ -37,12 +65,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan handler: bring up dependencies, then tear them down.
 
     Startup order is intentional and load-bearing — see the module
-    docstring. State that downstream handlers need (Neo4j driver,
-    audit logger) is stashed on ``app.state``.
+    docstring. State that downstream handlers need (Neo4j driver, audit
+    trail) is stashed on ``app.state``. The audit chain is closed last,
+    after the job worker and the driver, with its ``shutdown`` event.
 
     Args:
         app: The FastAPI application; ``app.state`` is populated with
-            ``driver`` and ``audit`` for downstream handlers.
+            ``driver``, ``audit`` (the audit trail) and ``jobs``.
 
     Yields:
         Nothing — control returns to FastAPI for the lifetime of the
@@ -51,31 +80,33 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_logger()
     logger.info("chorus starting")
     check_principal_config()
-
-    driver = get_driver()
-    newly = apply_all(driver)
-    if newly:
-        logger.info("applied migrations: {}", newly)
-    else:
-        logger.info("migrations up to date")
-
-    audit = AuditLogger(load_audit_env().db_path)
-    audit.init_schema()
-
-    app.state.driver = driver
-    app.state.audit = audit
-    app.state.jobs = JobRegistry()
-    logger.info("chorus ready")
+    trail = _open_audit_trail()
+    jobs: JobRegistry | None = None
     try:
+        driver = get_driver()
+        newly = apply_all(driver, audit=trail.system_context())
+        if newly:
+            logger.info("applied migrations: {}", newly)
+        else:
+            logger.info("migrations up to date")
+
+        jobs = JobRegistry()
+        app.state.driver = driver
+        app.state.audit = trail
+        app.state.jobs = jobs
+        logger.info("chorus ready")
         yield
     finally:
         logger.info("chorus shutting down")
-        app.state.jobs.shutdown()
+        if jobs is not None:
+            jobs.shutdown()
         close_driver()
+        trail.close()
 
 
 app = FastAPI(title="chorus", lifespan=lifespan)
 install_error_handlers(app)
+app.add_middleware(RequestIdMiddleware)
 
 # Routers — imported here so the app object owns route registration order.
 from chorus.api.routers import agent as _agent_router  # noqa: E402
@@ -96,7 +127,7 @@ app.include_router(_tools_router.router)
 app.include_router(_whoami_router.router)
 
 # Prometheus metrics — aggregate request counters/latencies only, no user
-# data (§76 audit logging is a separate concern, see chorus/audit/logger.py).
+# data (the §76 audit trail is a separate concern, see chorus/audit/trail.py).
 # Unauthenticated by design, like /health and /config, so the obs-plane
 # scraper can reach it without a principal header.
 if load_metrics_env().enabled:

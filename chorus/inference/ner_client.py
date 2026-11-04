@@ -17,6 +17,9 @@ via env vars (see :func:`chorus.utils.env_cfg.load_ner_client_env`):
 On any network, HTTP, or parse failure the client logs a warning and
 returns an empty span list rather than raising — a missing NER service
 must not block ingestion.
+
+Every request carries the current ``X-Request-ID`` (see
+:mod:`chorus.inference.correlation`), and nothing else about the caller.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ import httpx
 from loguru import logger
 from pydantic import BaseModel
 
+from chorus.inference.correlation import forward_request_id
 from chorus.utils.env_cfg import NERClientConfig, load_ner_client_env
 
 DEFAULT_NER_LABELS: list[str] = [
@@ -100,6 +104,7 @@ def _client() -> httpx.Client:
         base_url=cfg.api_base,
         timeout=cfg.timeout,
         headers=headers,
+        event_hooks={"request": [forward_request_id]},
     )
 
 

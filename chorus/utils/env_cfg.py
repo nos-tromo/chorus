@@ -20,6 +20,9 @@ from typing import Literal
 
 from dotenv import load_dotenv
 
+from chorus.utils.audit_event import ACTIONS
+from chorus.utils.audit_runtime import parse_required_actions, purpose_from_env
+
 load_dotenv()
 
 
@@ -309,17 +312,23 @@ class PrincipalConfig:
 
 @dataclass(frozen=True)
 class AuditConfig:
-    """§76 BDSG audit log configuration.
+    """Data-protection audit trail configuration (§76 BDSG).
 
     Attributes:
-        db_path: Filesystem path to the audit SQLite database.
-        retention_days: How long audit records are meant to be retained.
-            Loaded but not yet enforced: no purge job exists. Defaults to
-            two years.
+        output: ``AUDIT_OUTPUT``: ``None``/``stdout`` writes the chain to the
+            process's stdout, ``container`` to the container's main stdout
+            under the container-wide lock (so a ``docker compose exec`` CLI
+            run lands in the backend's log).
+        require_purpose: The actions that need a stated purpose
+            (``AUDIT_REQUIRE_PURPOSE``); empty by default.
+        cli_user: ``AUDIT_CLI_USER``: the operator a CLI run is attributed
+            to (the make targets pass the invoking host user); ``None``
+            when unset.
     """
 
-    db_path: Path
-    retention_days: int
+    output: str | None
+    require_purpose: frozenset[str]
+    cli_user: str | None
 
 
 @dataclass(frozen=True)
@@ -611,20 +620,37 @@ def load_principal_env() -> PrincipalConfig:
 
 
 def load_audit_env() -> AuditConfig:
-    """Load §76 BDSG audit-log configuration from the environment.
+    """Load the data-protection audit configuration from the environment.
 
-    The audit database path defaults to ``<chorus_home>/audit.sqlite``.
+    ``AUDIT_REQUIRE_PURPOSE`` is a comma-separated list of actions; an
+    unknown name raises, so a misspelt action stops startup instead of
+    silently switching a requirement off.
 
     Returns:
         A populated :class:`AuditConfig`.
+
+    Raises:
+        ValueError: If ``AUDIT_REQUIRE_PURPOSE`` names an unknown action.
     """
-    paths = load_path_env()
-    db_path_raw = _env("AUDIT_DB_PATH")
-    db_path = Path(db_path_raw) if db_path_raw else paths.chorus_home / "audit.sqlite"
     return AuditConfig(
-        db_path=db_path,
-        retention_days=_env_int("AUDIT_RETENTION_DAYS", 365 * 2),
+        output=_env("AUDIT_OUTPUT"),
+        require_purpose=parse_required_actions(_env("AUDIT_REQUIRE_PURPOSE"), known=ACTIONS - {"lifecycle"}),
+        cli_user=(_env("AUDIT_CLI_USER") or "").strip() or None,
     )
+
+
+def load_cli_purpose_env() -> tuple[str | None, str | None]:
+    """Load a CLI run's stated purpose from ``AUDIT_CASE_REF`` / ``AUDIT_REASON``.
+
+    Returns:
+        ``(case_ref, reason)``, each ``None`` when unset or blank.
+
+    Raises:
+        PurposeError: If a value contains control characters or is longer
+            than the audit library accepts. The message names the field,
+            never its value.
+    """
+    return purpose_from_env(os.environ)
 
 
 def load_retention_env() -> RetentionConfig:

@@ -1,13 +1,17 @@
-"""posts_mentioning tool: empty database returns no hits and writes one audit row."""
+"""posts_mentioning tool: matching, alias/entity handling, and its one audit event per call."""
 
 from __future__ import annotations
 
-from typing import Any
+import io
 
 from neo4j import Driver
 
+from chorus.audit.trail import AuditContext, AuditTrail
+from chorus.utils.audit_event import Actor
+from tests._audit import operation_events
 
-def test_posts_mentioning_empty(migrated_driver: Driver, in_memory_audit: Any) -> None:
+
+def test_posts_mentioning_empty(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Empty database returns no hits and zero audit result count.
 
     Verifies the tool degrades gracefully when nothing in the graph
@@ -15,7 +19,7 @@ def test_posts_mentioning_empty(migrated_driver: Driver, in_memory_audit: Any) -
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
     """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
@@ -25,14 +29,13 @@ def test_posts_mentioning_empty(migrated_driver: Driver, in_memory_audit: Any) -
     out = posts_mentioning(
         migrated_driver,
         PostsMentioningIn(entity="Berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert out.hits == []
     assert out.audit_result_count() == 0
 
 
-def test_posts_mentioning_finds_seeded_post(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_posts_mentioning_finds_seeded_post(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A seeded post + MENTIONS edge is found and reported by entity id.
 
     Seeds a posting that mentions an entity named ``Berlin`` and
@@ -41,7 +44,7 @@ def test_posts_mentioning_finds_seeded_post(migrated_driver: Driver, in_memory_a
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
     """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
@@ -63,8 +66,7 @@ def test_posts_mentioning_finds_seeded_post(migrated_driver: Driver, in_memory_a
     out = posts_mentioning(
         migrated_driver,
         PostsMentioningIn(entity="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert len(out.hits) == 1
     assert out.hits[0].uuid == "p-1"
@@ -73,7 +75,7 @@ def test_posts_mentioning_finds_seeded_post(migrated_driver: Driver, in_memory_a
     assert out.audit_entities() == ["ent-1"]
 
 
-def test_posts_mentioning_finds_unresolved_alias(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_posts_mentioning_finds_unresolved_alias(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """An unresolved alias mention is returned without an entity id.
 
     Seeds the current ingestion shape — ``(:Post)-[:MENTIONS]->(:Alias)``
@@ -82,7 +84,7 @@ def test_posts_mentioning_finds_unresolved_alias(migrated_driver: Driver, in_mem
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
     """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
@@ -103,8 +105,7 @@ def test_posts_mentioning_finds_unresolved_alias(migrated_driver: Driver, in_mem
     out = posts_mentioning(
         migrated_driver,
         PostsMentioningIn(entity="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert len(out.hits) == 1
@@ -114,7 +115,7 @@ def test_posts_mentioning_finds_unresolved_alias(migrated_driver: Driver, in_mem
     assert out.audit_entities() == []
 
 
-def test_posts_mentioning_ignores_incomplete_post_stubs(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_posts_mentioning_ignores_incomplete_post_stubs(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Thin :Post stubs with missing text/timestamp must not crash the tool.
 
     Comment and message ingestion can create placeholder parent ``:Post``
@@ -124,7 +125,7 @@ def test_posts_mentioning_ignores_incomplete_post_stubs(migrated_driver: Driver,
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
     """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
@@ -147,8 +148,7 @@ def test_posts_mentioning_ignores_incomplete_post_stubs(migrated_driver: Driver,
     out = posts_mentioning(
         migrated_driver,
         PostsMentioningIn(entity="Deutschland", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert [hit.uuid for hit in out.hits] == ["p-good"]
@@ -156,7 +156,7 @@ def test_posts_mentioning_ignores_incomplete_post_stubs(migrated_driver: Driver,
 
 
 def test_posts_mentioning_time_window_excludes_entity_branch_match(
-    migrated_driver: Driver, in_memory_audit: Any
+    migrated_driver: Driver, audit_ctx: AuditContext
 ) -> None:
     """Entity-branch hits outside the [from, to) window must be excluded.
 
@@ -167,7 +167,7 @@ def test_posts_mentioning_time_window_excludes_entity_branch_match(
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
     """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
@@ -196,14 +196,15 @@ def test_posts_mentioning_time_window_excludes_entity_branch_match(
                 "limit": 10,
             }
         ),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert out.hits == []
 
 
-def test_posts_mentioning_finds_resolved_alias_by_canonical_name(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_posts_mentioning_finds_resolved_alias_by_canonical_name(
+    migrated_driver: Driver, audit_ctx: AuditContext
+) -> None:
     """A canonical-name query resolves through Alias -> Entity when present.
 
     Seeds the graph shape expected after alias resolution lands and
@@ -212,7 +213,7 @@ def test_posts_mentioning_finds_resolved_alias_by_canonical_name(migrated_driver
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
     """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
@@ -236,8 +237,7 @@ def test_posts_mentioning_finds_resolved_alias_by_canonical_name(migrated_driver
     out = posts_mentioning(
         migrated_driver,
         PostsMentioningIn(entity="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert len(out.hits) == 1
@@ -248,7 +248,7 @@ def test_posts_mentioning_finds_resolved_alias_by_canonical_name(migrated_driver
 
 
 def test_posts_mentioning_dedups_alias_with_multiple_resolved_edges(
-    migrated_driver: Driver, in_memory_audit: Any
+    migrated_driver: Driver, audit_ctx: AuditContext
 ) -> None:
     """An alias with two :RESOLVED_TO edges must not return its post twice.
 
@@ -260,7 +260,7 @@ def test_posts_mentioning_dedups_alias_with_multiple_resolved_edges(
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
     """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
@@ -285,14 +285,15 @@ def test_posts_mentioning_dedups_alias_with_multiple_resolved_edges(
     out = posts_mentioning(
         migrated_driver,
         PostsMentioningIn(entity="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert [hit.uuid for hit in out.hits] == ["p-1"]
 
 
-def test_posts_mentioning_limit_not_consumed_by_duplicate_edges(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_posts_mentioning_limit_not_consumed_by_duplicate_edges(
+    migrated_driver: Driver, audit_ctx: AuditContext
+) -> None:
     """Duplicate rows from a multi-edge alias must not eat ``$limit`` slots.
 
     With two posts each mentioning an alias that has two ``:RESOLVED_TO``
@@ -302,7 +303,7 @@ def test_posts_mentioning_limit_not_consumed_by_duplicate_edges(migrated_driver:
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
     """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
@@ -331,8 +332,7 @@ def test_posts_mentioning_limit_not_consumed_by_duplicate_edges(migrated_driver:
     out = posts_mentioning(
         migrated_driver,
         PostsMentioningIn(entity="berlin", limit=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     uuids = [hit.uuid for hit in out.hits]
@@ -340,7 +340,7 @@ def test_posts_mentioning_limit_not_consumed_by_duplicate_edges(migrated_driver:
     assert set(uuids) == {"p-old", "p-new"}
 
 
-def test_posts_mentioning_dedups_post_matched_via_two_aliases(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_posts_mentioning_dedups_post_matched_via_two_aliases(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A post matched via two distinct aliases is returned once, not twice.
 
     A post can mention the query term through more than one alias (e.g. a
@@ -350,7 +350,7 @@ def test_posts_mentioning_dedups_post_matched_via_two_aliases(migrated_driver: D
 
     Args:
         migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
+        audit_ctx: The test's audit context.
     """
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
@@ -375,22 +375,14 @@ def test_posts_mentioning_dedups_post_matched_via_two_aliases(migrated_driver: D
     out = posts_mentioning(
         migrated_driver,
         PostsMentioningIn(entity="berlin", limit=10),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
 
     assert [hit.uuid for hit in out.hits] == ["p-multi"]
 
 
-def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> None:
-    """One audit row is written per tool call, with the resolved user.
-
-    Args:
-        migrated_driver: Driver against a freshly-migrated database.
-        in_memory_audit: Fresh audit logger over a temp SQLite file.
-    """
-    import sqlite3
-
+def test_audit_event_written(migrated_driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO) -> None:
+    """One query event per call, attributed to the caller, with an empty target on no hits."""
     from chorus.tools.posts_mentioning import (
         PostsMentioningIn,
         posts_mentioning,
@@ -399,12 +391,52 @@ def test_audit_row_written(migrated_driver: Driver, in_memory_audit: Any) -> Non
     posts_mentioning(
         migrated_driver,
         PostsMentioningIn(entity="Nowhere"),
-        user="alice",
-        audit=in_memory_audit,
+        audit=audit_trail.context(Actor(user="alice", via="edge")),
     )
-    rows = (
-        sqlite3.connect(in_memory_audit.db_path)
-        .execute("SELECT user, tool_name, result_count, status FROM audit_log")
-        .fetchall()
-    )
-    assert rows == [("alice", "posts_mentioning", 0, "ok")]
+    [event] = operation_events(audit_stream)
+    assert (event["action"], event["operation"], event["outcome"]) == ("query", "tool.posts_mentioning", "ok")
+    assert event["actor"] == {"user": "alice", "via": "edge"}
+    assert event["criteria"] == {"entity": "Nowhere", "from": None, "to": None, "limit": 50}
+    assert event["target"] == {"kind": "mixed", "count": 0}
+
+
+def test_audit_event_references_authors_entities_and_posts(
+    migrated_driver: Driver, audit_ctx: AuditContext, audit_stream: io.StringIO
+) -> None:
+    """The event names whose posts were disclosed (authors and co-authors), the entity, and the posts.
+
+    Post text never reaches the event: only ids and the hit count.
+    """
+    from chorus.tools.posts_mentioning import PostsMentioningIn, posts_mentioning
+
+    with migrated_driver.session() as s:
+        s.run(
+            """
+            MERGE (e:Entity {id: 'ent-1'}) ON CREATE SET e.canonical_name = 'Berlin'
+            MERGE (al:Alias {surface_form: 'Berlin'})
+            MERGE (al)-[:RESOLVED_TO]->(e)
+            MERGE (alice:Author {id: 'auth-alice'})
+            MERGE (bob:Author {id: 'auth-bob'})
+            MERGE (p1:Post:Posting {uuid: 'p-1'})
+              ON CREATE SET p1.text = 'placeholder text one',
+                            p1.timestamp = datetime('2026-05-02T10:00:00+00:00')
+            MERGE (p2:Post:Posting {uuid: 'p-2'})
+              ON CREATE SET p2.text = 'placeholder text two',
+                            p2.timestamp = datetime('2026-05-01T10:00:00+00:00')
+            MERGE (alice)-[:AUTHORED]->(p1)
+            MERGE (bob)-[:CO_AUTHORED]->(p1)
+            MERGE (alice)-[:AUTHORED]->(p2)
+            MERGE (p1)-[:MENTIONS]->(al)
+            MERGE (p2)-[:MENTIONS]->(al)
+            """
+        )
+
+    out = posts_mentioning(migrated_driver, PostsMentioningIn(entity="berlin"), audit=audit_ctx)
+    assert [h.uuid for h in out.hits] == ["p-1", "p-2"]
+    assert "author_ids" not in out.model_dump(mode="json")["hits"][0]
+
+    [event] = operation_events(audit_stream)
+    assert sorted(event["target"]["ids"][:2]) == ["author:auth-alice", "author:auth-bob"]
+    assert event["target"]["ids"][2:] == ["entity:ent-1", "post:p-1", "post:p-2"]
+    assert event["target"]["count"] == 2
+    assert "placeholder text" not in audit_stream.getvalue()

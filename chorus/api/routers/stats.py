@@ -5,6 +5,9 @@ counts, edge counts, named highlights, and a platform breakdown.  The
 query is never empty-graph-fatal: each CALL{} subquery returns 0/[]/null
 independently, so a freshly-initialised database yields a well-formed
 response rather than an error.
+
+The top authors and top entities are personal data, so each call writes
+one ``query`` / ``stats.read`` audit event referencing them.
 """
 
 from __future__ import annotations
@@ -14,9 +17,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from chorus.api.auth.principal import resolve_principal
-from chorus.audit.logger import AuditLogger, AuditRecord
+from chorus.api.audit import request_audit
+from chorus.audit.trail import AuditContext, subject_refs
 from chorus.tools._template_loader import load_template
+
+_OPERATION = "stats.read"
 
 router = APIRouter(tags=["stats"])
 
@@ -148,32 +153,35 @@ class StatsOut(BaseModel):
 @router.get("/stats", response_model=StatsOut)
 def get_stats(
     request: Request,
-    principal: str = Depends(resolve_principal),
+    audit: AuditContext = Depends(request_audit),  # noqa: B008 — FastAPI dependency marker
 ) -> StatsOut:
     """Return a graph-diagnostics snapshot for the authenticated principal.
 
     Runs a single parameterless Cypher statement that uses independent
     ``CALL {}`` subqueries — each isolated so that an empty graph returns
-    zeros rather than raising.  Writes one §76 BDSG audit row (principal +
-    ``"stats"`` action) via the shared :class:`~chorus.audit.logger.AuditLogger`
-    on ``app.state``.
+    zeros rather than raising.  Before returning, writes one ``query`` /
+    ``stats.read`` audit event whose target references the top authors and
+    the resolved top entities it discloses.
 
     Args:
-        request: The active FastAPI request (provides driver + audit logger
-            from ``app.state``).
-        principal: Authenticated identity resolved from the trusted-header
-            or ``CHORUS_DEFAULT_IDENTITY`` fallback.
+        request: The active FastAPI request (provides the driver from
+            ``app.state``).
+        audit: The caller's audit context.
 
     Returns:
         A populated :class:`StatsOut`; never raises on an empty graph.
     """
     driver = request.app.state.driver
-    audit: AuditLogger = request.app.state.audit
+    audit.require_purpose(("query",), _OPERATION)
 
     cypher = load_template("stats")
 
-    with driver.session() as session:
-        record = session.run(cypher).single()
+    try:
+        with driver.session() as session:
+            record = session.run(cypher).single()
+    except Exception:
+        audit.emit("query", _OPERATION, outcome="error")
+        raise
 
     row: dict[str, Any] = dict(record) if record is not None else {}
 
@@ -185,11 +193,8 @@ def get_stats(
         v = row.get(key)
         return list(v) if v is not None else []
 
-    top_entities = [
-        TopEntityItem(name=item["name"], count=int(item["count"]))
-        for item in _list("top_entities")
-        if item.get("name") is not None
-    ]
+    top_entity_rows = [item for item in _list("top_entities") if item.get("name") is not None]
+    top_entities = [TopEntityItem(name=item["name"], count=int(item["count"])) for item in top_entity_rows]
     top_authors = [
         TopAuthorItem(
             author_id=item["author_id"],
@@ -241,17 +246,14 @@ def get_stats(
         ),
     )
 
-    # §76 BDSG audit entry — lightweight: principal + action, no entities or
-    # result counts (this is an aggregate view, not a targeted lookup).
-    audit.record(
-        AuditRecord(
-            user=principal,
-            tool_name="stats",
-            params={"action": "diagnostics"},
-            entities_touched=[],
-            result_count=0,
-            status="ok",
-        )
+    audit.emit_refs(
+        "query",
+        _OPERATION,
+        kind="mixed",
+        ids=subject_refs(
+            authors=[a.author_id for a in top_authors],
+            entities=[eid for item in top_entity_rows for eid in item.get("entity_ids") or [] if eid],
+        ),
+        count=len(top_authors) + len(top_entities),
     )
-
     return out

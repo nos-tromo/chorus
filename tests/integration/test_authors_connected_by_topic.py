@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 from neo4j import Driver
 from pydantic import ValidationError
+
+from chorus.audit.trail import AuditContext
 
 
 def test_max_hops_above_one_rejected() -> None:
@@ -17,7 +17,7 @@ def test_max_hops_above_one_rejected() -> None:
         AuthorsConnectedByTopicIn(seed_author="x", max_hops=2)
 
 
-def test_empty_seed_returns_one_group_no_connections(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_empty_seed_returns_one_group_no_connections(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A seed author with no shared topics yields one group with no connections."""
     from chorus.tools.authors_connected_by_topic import (
         AuthorsConnectedByTopicIn,
@@ -29,15 +29,14 @@ def test_empty_seed_returns_one_group_no_connections(migrated_driver: Driver, in
     out = authors_connected_by_topic(
         migrated_driver,
         AuthorsConnectedByTopicIn(seed_author="Solo"),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert len(out.results) == 1
     assert out.results[0].seed.author_id == "solo"
     assert out.results[0].connected == []
 
 
-def test_connected_by_shared_topic_with_overlap(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_connected_by_shared_topic_with_overlap(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Only authors clearing min_overlap shared topics are returned, ranked."""
     from chorus.tools.authors_connected_by_topic import (
         AuthorsConnectedByTopicIn,
@@ -63,8 +62,7 @@ def test_connected_by_shared_topic_with_overlap(migrated_driver: Driver, in_memo
     out = authors_connected_by_topic(
         migrated_driver,
         AuthorsConnectedByTopicIn(seed_author="Seed", min_overlap=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     conn = out.results[0].connected
     assert [c.author_id for c in conn] == ["b"]  # only B clears min_overlap=2
@@ -73,7 +71,7 @@ def test_connected_by_shared_topic_with_overlap(migrated_driver: Driver, in_memo
     assert out.audit_result_count() == 1
 
 
-def test_audit_entities_surfaces_resolved_ids_only(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_audit_entities_surfaces_resolved_ids_only(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """audit_entities() reports resolved shared-topic entity ids, omitting aliases.
 
     The §76 audit trail must record the canonical entities a query touched. When
@@ -105,8 +103,7 @@ def test_audit_entities_surfaces_resolved_ids_only(migrated_driver: Driver, in_m
     out = authors_connected_by_topic(
         migrated_driver,
         AuthorsConnectedByTopicIn(seed_author="Seed", min_overlap=2),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert [c.author_id for c in out.results[0].connected] == ["b"]
     assert out.audit_entities() == ["e-berlin"]  # resolved id only; 'Paris' omitted

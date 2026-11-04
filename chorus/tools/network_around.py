@@ -27,7 +27,6 @@ from typing import Any, Literal
 from neo4j import Driver
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
-from chorus.audit.logger import AuditLogger
 from chorus.tools._audit import audited, register_tool
 from chorus.tools._template_loader import load_template
 
@@ -135,6 +134,14 @@ class NetworkAroundOut(BaseModel):
     # trail. Private so the public/JSON shape stays the node/edge graph.
     _entity_ids: list[str] = PrivateAttr(default_factory=list)
 
+    def audit_authors(self) -> list[str]:
+        """Return the ids of the author nodes in the network.
+
+        Returns:
+            Author ids in node order.
+        """
+        return [n.id.removeprefix("author:") for n in self.nodes if n.kind == "author"]
+
     def audit_entities(self) -> list[str]:
         """Return distinct resolved entity ids among the topic nodes.
 
@@ -208,13 +215,7 @@ def _pick_seed(variants: list[dict[str, Any]]) -> dict[str, Any] | None:
     output_model=NetworkAroundOut,
 )
 @audited
-def network_around(
-    driver: Driver,
-    params: NetworkAroundIn,
-    *,
-    user: str,
-    audit: AuditLogger,
-) -> NetworkAroundOut:
+def network_around(driver: Driver, params: NetworkAroundIn) -> NetworkAroundOut:
     """Return the author-topic network around an entity for visualization (use the tabular tools to rank).
 
     Loads the ``network_around.cypher`` template and runs it, then assembles the
@@ -225,14 +226,11 @@ def network_around(
     Args:
         driver: Open Neo4j driver.
         params: Validated input parameters.
-        user: Authenticated identity (consumed by ``@audited``).
-        audit: Active audit logger (consumed by ``@audited``).
 
     Returns:
         A :class:`NetworkAroundOut` with the seed topic, author/topic nodes,
         weighted edges, and a ``truncated`` flag.
     """
-    del user, audit  # the @audited decorator owns the audit write
     cypher = load_template("network_around")
     cypher_params: dict[str, Any] = {
         "entity": params.entity,

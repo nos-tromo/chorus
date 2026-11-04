@@ -7,7 +7,7 @@ worker-backed ingest/resolve routes are covered in later commits.
 
 from __future__ import annotations
 
-import sqlite3
+import io
 import threading
 import time
 from pathlib import Path
@@ -19,7 +19,10 @@ from fastapi.testclient import TestClient
 from loguru import logger
 from neo4j import Driver
 
+from chorus.audit.trail import AuditTrail
 from chorus.ingestion.jobs import Job, JobRegistry
+from chorus.utils.audit_runtime import encode_purpose
+from tests._audit import assert_chain_ok, operation_events, started_trail
 
 _MARKER = "MARKER-SECRET-1234"
 
@@ -61,14 +64,9 @@ def _build_app(driver: Any, audit: Any, jobs: JobRegistry) -> FastAPI:
     return app
 
 
-def _audit_rows(audit: Any) -> list[dict[str, Any]]:
-    """Read all audit rows from the logger's SQLite file, oldest first."""
-    conn = sqlite3.connect(audit.db_path)
-    try:
-        conn.row_factory = sqlite3.Row
-        return [dict(r) for r in conn.execute("SELECT * FROM audit_log ORDER BY id")]
-    finally:
-        conn.close()
+def _ops(stream: io.StringIO) -> list[str]:
+    """The operations recorded so far, in order."""
+    return [e["operation"] for e in operation_events(stream)]
 
 
 # --------------------------------------------------------------------------
@@ -76,24 +74,28 @@ def _audit_rows(audit: Any) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------
 
 
-def test_feature_reports_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_feature_reports_disabled_by_default(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """GET /ingestion/feature answers even when the flag is off."""
     monkeypatch.delenv("INGESTION_UI_ENABLED", raising=False)
     jobs = JobRegistry()
     try:
-        resp = TestClient(_build_app(None, None, jobs)).get("/ingestion/feature", headers={"X-Auth-User": "analyst"})
+        resp = TestClient(_build_app(None, audit_trail, jobs)).get(
+            "/ingestion/feature", headers={"X-Auth-User": "analyst"}
+        )
         assert resp.status_code == 200
         assert resp.json() == {"enabled": False}
     finally:
         jobs.shutdown()
 
 
-def test_feature_reports_enabled_when_flag_set(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_feature_reports_enabled_when_flag_set(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """GET /ingestion/feature reflects INGESTION_UI_ENABLED=true."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        resp = TestClient(_build_app(None, None, jobs)).get("/ingestion/feature", headers={"X-Auth-User": "analyst"})
+        resp = TestClient(_build_app(None, audit_trail, jobs)).get(
+            "/ingestion/feature", headers={"X-Auth-User": "analyst"}
+        )
         assert resp.status_code == 200
         assert resp.json() == {"enabled": True}
     finally:
@@ -101,32 +103,46 @@ def test_feature_reports_enabled_when_flag_set(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.parametrize(
-    ("method", "path"),
+    ("method", "path", "refused"),
     [
-        ("get", "/ingestion/migrations"),
-        ("post", "/ingestion/migrate"),
-        ("post", "/ingestion/resolve"),
-        ("get", "/ingestion/jobs/job-1"),
+        ("get", "/ingestion/migrations", None),
+        ("post", "/ingestion/migrate", ("admin", "migration.apply")),
+        ("post", "/ingestion/resolve", ("combine", "resolution.run")),
+        ("get", "/ingestion/jobs/job-1", None),
     ],
 )
-def test_gated_routes_403_when_disabled(monkeypatch: pytest.MonkeyPatch, method: str, path: str) -> None:
-    """Action/data routes are forbidden when the feature flag is off."""
+def test_gated_routes_403_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    audit_trail: AuditTrail,
+    audit_stream: io.StringIO,
+    method: str,
+    path: str,
+    refused: tuple[str, str] | None,
+) -> None:
+    """Action/data routes are forbidden when the feature flag is off; refused actions are recorded."""
     monkeypatch.delenv("INGESTION_UI_ENABLED", raising=False)
     jobs = JobRegistry()
     try:
-        resp = TestClient(_build_app(None, None, jobs)).request(method, path, headers={"X-Auth-User": "analyst"})
+        resp = TestClient(_build_app(None, audit_trail, jobs)).request(method, path, headers={"X-Auth-User": "analyst"})
         assert resp.status_code == 403
     finally:
         jobs.shutdown()
+    events = operation_events(audit_stream)
+    if refused is None:
+        assert events == []  # status routes are not audited operations
+    else:
+        [event] = events
+        assert (event["action"], event["operation"], event["outcome"]) == (*refused, "denied")
+        assert event["actor"] == {"user": "analyst", "via": "edge"}
 
 
-def test_gated_route_401_without_principal(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gated_route_401_without_principal(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """A gated route requires authentication even when enabled."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     monkeypatch.delenv("CHORUS_DEFAULT_IDENTITY", raising=False)
     jobs = JobRegistry()
     try:
-        resp = TestClient(_build_app(None, None, jobs)).get("/ingestion/migrations")
+        resp = TestClient(_build_app(None, audit_trail, jobs)).get("/ingestion/migrations")
         assert resp.status_code == 401
     finally:
         jobs.shutdown()
@@ -137,12 +153,14 @@ def test_gated_route_401_without_principal(monkeypatch: pytest.MonkeyPatch) -> N
 # --------------------------------------------------------------------------
 
 
-def test_migrations_status_on_fresh_db(driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_migrations_status_on_fresh_db(
+    driver: Driver, monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail
+) -> None:
     """On a fresh DB, everything is pending and nothing is applied."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        resp = TestClient(_build_app(driver, None, jobs)).get(
+        resp = TestClient(_build_app(driver, audit_trail, jobs)).get(
             "/ingestion/migrations", headers={"X-Auth-User": "analyst"}
         )
         assert resp.status_code == 200
@@ -153,12 +171,14 @@ def test_migrations_status_on_fresh_db(driver: Driver, monkeypatch: pytest.Monke
         jobs.shutdown()
 
 
-def test_migrations_status_after_migrate(migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_migrations_status_after_migrate(
+    migrated_driver: Driver, monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail
+) -> None:
     """On a migrated DB, nothing is pending and versions are applied."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        resp = TestClient(_build_app(migrated_driver, None, jobs)).get(
+        resp = TestClient(_build_app(migrated_driver, audit_trail, jobs)).get(
             "/ingestion/migrations", headers={"X-Auth-User": "analyst"}
         )
         assert resp.status_code == 200
@@ -170,49 +190,46 @@ def test_migrations_status_after_migrate(migrated_driver: Driver, monkeypatch: p
 
 
 def test_migrate_applies_on_fresh_db_and_audits(
-    driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """POST /ingestion/migrate applies pending migrations and writes one audit row."""
+    """POST /ingestion/migrate applies pending migrations and records each one for the caller."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        resp = TestClient(_build_app(driver, in_memory_audit, jobs)).post(
+        resp = TestClient(_build_app(driver, audit_trail, jobs)).post(
             "/ingestion/migrate", headers={"X-Auth-User": "analyst"}
         )
         assert resp.status_code == 200
-        assert resp.json()["applied"], "expected freshly applied versions"
+        applied = resp.json()["applied"]
+        assert applied, "expected freshly applied versions"
 
-        rows = [r for r in _audit_rows(in_memory_audit) if r["tool_name"] == "migrate"]
-        assert len(rows) == 1
-        assert rows[0]["user"] == "analyst"
-        assert rows[0]["status"] == "ok"
-        assert rows[0]["result_count"] >= 1
+        events = operation_events(audit_stream)
+        assert [e["target"]["ids"] for e in events] == [[v] for v in applied]
+        assert all((e["action"], e["operation"]) == ("admin", "migration.apply") for e in events)
+        assert all(e["actor"] == {"user": "analyst", "via": "edge"} for e in events)
     finally:
         jobs.shutdown()
 
 
-def test_migrate_noop_on_migrated_db_audits_zero(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+def test_migrate_noop_on_migrated_db_records_nothing(
+    migrated_driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A migrate with nothing pending returns [] and audits result_count 0."""
+    """A migrate with nothing pending returns [] and records nothing: nothing happened."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        resp = TestClient(_build_app(migrated_driver, in_memory_audit, jobs)).post(
+        resp = TestClient(_build_app(migrated_driver, audit_trail, jobs)).post(
             "/ingestion/migrate", headers={"X-Auth-User": "analyst"}
         )
         assert resp.status_code == 200
         assert resp.json()["applied"] == []
-
-        rows = [r for r in _audit_rows(in_memory_audit) if r["tool_name"] == "migrate"]
-        assert len(rows) == 1
-        assert rows[0]["result_count"] == 0
+        assert operation_events(audit_stream) == []
     finally:
         jobs.shutdown()
 
 
 def test_migrate_409_when_a_job_is_active(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_trail: AuditTrail, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Migrate is rejected while a background job is in flight (no DDL interleave)."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
@@ -227,7 +244,7 @@ def test_migrate_409_when_a_job_is_active(
     try:
         jobs.submit("ingest", _block)
         assert started.wait(timeout=5.0)
-        resp = TestClient(_build_app(migrated_driver, in_memory_audit, jobs)).post(
+        resp = TestClient(_build_app(migrated_driver, audit_trail, jobs)).post(
             "/ingestion/migrate", headers={"X-Auth-User": "analyst"}
         )
         assert resp.status_code == 409
@@ -242,14 +259,14 @@ def test_migrate_409_when_a_job_is_active(
 
 
 def test_ingest_happy_path_runs_job_and_audits(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Uploading a valid postings.csv runs an ingest job to done and audits it."""
+    """A valid postings.csv runs to done: one collect event, then the staged copy's deletion."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     monkeypatch.setenv("NER_ENABLED", "false")
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(migrated_driver, in_memory_audit, jobs))
+        client = TestClient(_build_app(migrated_driver, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
@@ -267,21 +284,70 @@ def test_ingest_happy_path_runs_job_and_audits(
             rec = s.run("MATCH (p:Post:Posting {uuid:'p-1'}) RETURN count(p) AS n").single()
         assert rec is not None and rec["n"] == 1
 
-        rows = [r for r in _audit_rows(in_memory_audit) if r["tool_name"] == "ingest"]
-        assert len(rows) == 1
-        assert rows[0]["user"] == "analyst"
-        assert rows[0]["status"] == "ok"
-        assert rows[0]["result_count"] >= 1
+        collect, deleted = operation_events(audit_stream)
+        assert (collect["action"], collect["operation"], collect["outcome"]) == ("collect", "ingest.upload", "ok")
+        assert collect["actor"] == {"user": "analyst", "via": "edge"}
+        assert collect["target"] == {"kind": "author", "ids": ["a-1"], "count": 1}
+        assert collect["criteria"]["files"] == ["postings.csv"]
+        assert collect["criteria"]["graph"]["postings"] == 1
+        assert collect["criteria"]["raw_store"]["postings"] == 1
+        assert (deleted["action"], deleted["operation"], deleted["outcome"]) == (
+            "delete",
+            "ingest.staging.delete",
+            "ok",
+        )
+        assert deleted["target"] == {"kind": "file", "ids": ["postings.csv"], "count": 1, "container": "uploads"}
+        assert "hello berlin" not in audit_stream.getvalue()
     finally:
         jobs.shutdown()
 
 
-def test_ingest_rejects_unrecognized_filename(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ingest_records_the_ner_transfer(
+    migrated_driver: Driver, audit_trail: AuditTrail, audit_stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With NER on, the post texts sent to the NER service are one ai_call event per pass."""
+    from chorus.inference import ner_client
+
+    monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
+    monkeypatch.setenv("NER_ENABLED", "true")
+    monkeypatch.setenv("NER_MODEL_VERSION", "example-ner-model")
+    from chorus.inference.correlation import REQUEST_ID
+
+    ids_at_ner: list[str | None] = []
+
+    def _extract(text: str, **kw: Any) -> list[Any]:
+        ids_at_ner.append(REQUEST_ID.get())  # what the NER call would forward
+        return []
+
+    monkeypatch.setattr(ner_client, "extract_entities", _extract)
+    jobs = JobRegistry()
+    try:
+        client = TestClient(_build_app(migrated_driver, audit_trail, jobs))
+        resp = client.post(
+            "/ingestion/ingest",
+            files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
+            headers={"X-Auth-User": "analyst", "X-Request-ID": "req-0001"},
+        )
+        assert _await_job(client, resp.json()["job_id"])["status"] == "done"
+    finally:
+        jobs.shutdown()
+    assert ids_at_ner == ["req-0001"]  # the job carries its request's id to inference
+
+    collect, ner, _deleted = operation_events(audit_stream)
+    assert collect["request_id"] == "req-0001"
+    assert (ner["action"], ner["operation"], ner["outcome"]) == ("ai_call", "ingest.ner", "ok")
+    assert ner["recipient"] == "inference:ner"
+    assert ner["target"] == {"kind": "post", "count": 1}
+    assert ner["ai"] == {"model_alias": "example-ner-model", "sources": [collect["event_id"]]}
+    assert ner["parent_event_id"] == collect["event_id"]
+
+
+def test_ingest_rejects_unrecognized_filename(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """A mis-named upload is 422'd and no job is created (no silent 0-row run)."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(None, None, jobs))
+        client = TestClient(_build_app(None, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", ("data.csv", _POSTINGS_CSV, "text/csv"))],
@@ -295,12 +361,14 @@ def test_ingest_rejects_unrecognized_filename(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.parametrize("evil", ["../postings.csv", "sub/postings.csv", "..\\postings.csv"])
-def test_ingest_rejects_path_traversal_filename(monkeypatch: pytest.MonkeyPatch, evil: str) -> None:
+def test_ingest_rejects_path_traversal_filename(
+    monkeypatch: pytest.MonkeyPatch, evil: str, audit_trail: AuditTrail
+) -> None:
     """A filename carrying a path or '..' is 422'd and never staged or run."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(None, None, jobs))
+        client = TestClient(_build_app(None, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", (evil, _POSTINGS_CSV, "text/csv"))],
@@ -312,12 +380,12 @@ def test_ingest_rejects_path_traversal_filename(monkeypatch: pytest.MonkeyPatch,
         jobs.shutdown()
 
 
-def test_ingest_rejects_bad_since(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ingest_rejects_bad_since(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """An unparseable 'since' is 422'd before any job is created."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(None, None, jobs))
+        client = TestClient(_build_app(None, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
@@ -330,24 +398,26 @@ def test_ingest_rejects_bad_since(monkeypatch: pytest.MonkeyPatch) -> None:
         jobs.shutdown()
 
 
-def test_ingest_requires_files(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ingest_requires_files(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """Posting with no files is rejected."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(None, None, jobs))
+        client = TestClient(_build_app(None, audit_trail, jobs))
         resp = client.post("/ingestion/ingest", headers={"X-Auth-User": "analyst"})
         assert resp.status_code == 422
     finally:
         jobs.shutdown()
 
 
-def test_ingest_403_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A valid upload is still forbidden when the feature flag is off."""
+def test_ingest_403_when_disabled(
+    monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail, audit_stream: io.StringIO
+) -> None:
+    """A valid upload is still forbidden when the feature flag is off, and the refusal recorded."""
     monkeypatch.delenv("INGESTION_UI_ENABLED", raising=False)
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(None, None, jobs))
+        client = TestClient(_build_app(None, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
@@ -357,9 +427,11 @@ def test_ingest_403_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
         assert jobs.get("job-1") is None
     finally:
         jobs.shutdown()
+    [event] = operation_events(audit_stream)
+    assert (event["action"], event["operation"], event["outcome"]) == ("collect", "ingest.upload", "denied")
 
 
-def test_ingest_409_when_a_job_is_active(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ingest_409_when_a_job_is_active(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """A second ingest is rejected while a job is in flight."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
@@ -373,7 +445,7 @@ def test_ingest_409_when_a_job_is_active(monkeypatch: pytest.MonkeyPatch) -> Non
     try:
         jobs.submit("ingest", _block)
         assert started.wait(timeout=5.0)
-        client = TestClient(_build_app(None, None, jobs))
+        client = TestClient(_build_app(None, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
@@ -385,21 +457,30 @@ def test_ingest_409_when_a_job_is_active(monkeypatch: pytest.MonkeyPatch) -> Non
         jobs.shutdown()
 
 
+class _FailingAdapter:
+    """An upstream adapter whose first read fails, like a vanished upload."""
+
+    def fetch_postings(self, since: Any) -> Any:
+        """Fail like an unreadable file."""
+        raise RuntimeError("disk full")
+
+
 def test_ingest_error_marks_job_error_and_cleans_staging(
-    migrated_driver: Driver, in_memory_audit: Any, chorus_env: Path, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver,
+    audit_trail: AuditTrail,
+    audit_stream: io.StringIO,
+    chorus_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If run_once raises, the job ends 'error', audits an error row, and removes staging."""
+    """If the pass raises, the job ends 'error', records an error collection, and removes staging."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     from chorus.api.routers import ingestion as ing
 
-    def _boom(*_a: Any, **_k: Any) -> dict[str, Any]:
-        raise RuntimeError("disk full")
-
-    monkeypatch.setattr(ing, "run_once", _boom)
+    monkeypatch.setattr(ing, "FileUpstreamAdapter", lambda _staging: _FailingAdapter())
 
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(migrated_driver, in_memory_audit, jobs))
+        client = TestClient(_build_app(migrated_driver, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
@@ -410,9 +491,11 @@ def test_ingest_error_marks_job_error_and_cleans_staging(
         assert done["status"] == "error"
         assert done["error"] == "Job failed."
 
-        rows = [r for r in _audit_rows(in_memory_audit) if r["tool_name"] == "ingest"]
-        assert len(rows) == 1
-        assert rows[0]["status"] == "error"
+        collect, deleted = operation_events(audit_stream)
+        assert (collect["operation"], collect["outcome"]) == ("ingest.upload", "error")
+        assert collect["target"] == {"kind": "author", "count": 0}
+        assert "disk full" not in audit_stream.getvalue()
+        assert (deleted["operation"], deleted["outcome"]) == ("ingest.staging.delete", "ok")
 
         uploads = chorus_env / "uploads"
         leftovers: list[Path] = list(uploads.iterdir()) if uploads.exists() else []
@@ -423,10 +506,11 @@ def test_ingest_error_marks_job_error_and_cleans_staging(
 
 def test_ingest_then_resolve_chains_and_audits_twice(
     migrated_driver: Driver,
-    in_memory_audit: Any,
+    audit_trail: AuditTrail,
+    audit_stream: io.StringIO,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """then_resolve=true runs ingest then resolution in one job, auditing both."""
+    """then_resolve=true runs ingest then resolution in one job; both are recorded, then the cleanup."""
     from chorus.inference import provider
 
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
@@ -437,7 +521,7 @@ def test_ingest_then_resolve_chains_and_audits_twice(
 
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(migrated_driver, in_memory_audit, jobs))
+        client = TestClient(_build_app(migrated_driver, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
@@ -450,16 +534,15 @@ def test_ingest_then_resolve_chains_and_audits_twice(
         assert done["result"]["counts"]["postings"] == 1
         assert done["result"]["resolution"]["processed"] >= 1
 
-        kinds = [r["tool_name"] for r in _audit_rows(in_memory_audit)]
-        assert kinds.count("ingest") == 1
-        assert kinds.count("resolve_all") == 1
+        assert _ops(audit_stream) == ["ingest.upload", "resolution.run", "resolution.embed", "ingest.staging.delete"]
+        assert all(e["actor"] == {"user": "analyst", "via": "edge"} for e in operation_events(audit_stream))
     finally:
         jobs.shutdown()
 
 
 def test_ingest_then_resolve_failure_is_generic_and_logged(
     migrated_driver: Driver,
-    in_memory_audit: Any,
+    audit_trail: AuditTrail,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A resolve_all crash surfaces a static resolution_error; detail goes to logs only.
@@ -481,7 +564,7 @@ def test_ingest_then_resolve_failure_is_generic_and_logged(
     sink_id = logger.add(lambda m: records.append(str(m)), level="DEBUG")
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(migrated_driver, in_memory_audit, jobs))
+        client = TestClient(_build_app(migrated_driver, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
@@ -501,10 +584,11 @@ def test_ingest_then_resolve_failure_is_generic_and_logged(
 
 def test_resolve_runs_job_and_self_audits(
     migrated_driver: Driver,
-    in_memory_audit: Any,
+    audit_trail: AuditTrail,
+    audit_stream: io.StringIO,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """POST /ingestion/resolve resolves aliases; resolve_all writes its own row."""
+    """POST /ingestion/resolve resolves aliases; resolve_all records the run, the route adds nothing."""
     from chorus.inference import provider
 
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
@@ -514,8 +598,15 @@ def test_resolve_runs_job_and_self_audits(
 
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(migrated_driver, in_memory_audit, jobs))
-        resp = client.post("/ingestion/resolve", headers={"X-Auth-User": "analyst"})
+        client = TestClient(_build_app(migrated_driver, audit_trail, jobs))
+        resp = client.post(
+            "/ingestion/resolve",
+            headers={
+                "X-Auth-User": "analyst",
+                "X-Request-ID": "req-0001",
+                "X-Audit-Purpose": encode_purpose("case-0001", None),
+            },
+        )
         assert resp.status_code == 202, resp.text
         assert resp.json()["kind"] == "resolve"
 
@@ -523,14 +614,92 @@ def test_resolve_runs_job_and_self_audits(
         assert done["status"] == "done", done
         assert done["result"]["resolution"]["processed"] >= 1
 
-        kinds = [r["tool_name"] for r in _audit_rows(in_memory_audit)]
-        assert kinds.count("resolve_all") == 1
-        assert "resolve" not in kinds  # the route must not add a wrapper audit row
+        assert _ops(audit_stream) == ["resolution.run", "resolution.embed"]
+        for event in operation_events(audit_stream):  # the job writes with the request's caller
+            assert event["actor"] == {"user": "analyst", "via": "edge"}
+            assert event["request_id"] == "req-0001"
+            assert event["purpose"] == {"case_ref": "case-0001"}
     finally:
         jobs.shutdown()
 
 
-def test_resolve_409_when_a_job_is_active(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("method", "path", "required", "operation", "upload"),
+    [
+        ("post", "/ingestion/ingest", "collect", "ingest.upload", True),
+        ("post", "/ingestion/resolve", "combine", "resolution.run", False),
+        ("post", "/ingestion/migrate", "admin", "migration.apply", False),
+    ],
+)
+def test_action_routes_428_without_a_purpose(
+    driver: Driver,
+    chorus_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    path: str,
+    required: str,
+    operation: str,
+    upload: bool,
+) -> None:
+    """With the route's action required and no purpose stated: 428, one denied event, nothing staged."""
+    from chorus.api.errors import install_error_handlers
+
+    monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
+    stream = io.StringIO()
+    trail = started_trail(stream, required=frozenset({required}))
+    jobs = JobRegistry()
+    try:
+        app = _build_app(driver, trail, jobs)
+        install_error_handlers(app)
+        kwargs: dict[str, Any] = {"headers": {"X-Auth-User": "analyst"}}
+        if upload:
+            kwargs["files"] = [("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))]
+        resp = TestClient(app).request(method, path, **kwargs)
+        assert resp.status_code == 428, resp.text
+        assert jobs.get("job-1") is None
+    finally:
+        jobs.shutdown()
+        trail.close()
+
+    [event] = operation_events(stream)
+    assert (event["action"], event["operation"], event["outcome"]) == (required, operation, "denied")
+    assert "target" not in event
+    assert_chain_ok(stream)
+    uploads = chorus_env / "uploads"
+    assert not uploads.exists() or list(uploads.iterdir()) == []
+
+
+def test_job_audit_failure_marks_the_job_failed(
+    migrated_driver: Driver, chorus_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A job whose collection cannot be recorded ends 'error'; the staged copy is still removed."""
+    import atexit
+
+    monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
+    monkeypatch.setenv("NER_ENABLED", "false")
+    stream = io.StringIO()
+    trail = started_trail(stream)
+    stream.close()
+    jobs = JobRegistry()
+    try:
+        client = TestClient(_build_app(migrated_driver, trail, jobs))
+        resp = client.post(
+            "/ingestion/ingest",
+            files=[("files", ("postings.csv", _POSTINGS_CSV, "text/csv"))],
+            headers={"X-Auth-User": "analyst"},
+        )
+        assert resp.status_code == 202
+        done = _await_job(client, resp.json()["job_id"])
+        assert done["status"] == "error"
+        assert done["result"] is None
+    finally:
+        jobs.shutdown()
+        atexit.unregister(trail.emitter.close)  # the broken chain cannot write its shutdown event
+    uploads = chorus_env / "uploads"
+    assert not uploads.exists() or list(uploads.iterdir()) == []
+
+
+def test_resolve_409_when_a_job_is_active(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """A resolve is rejected while a job is in flight."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
@@ -544,7 +713,7 @@ def test_resolve_409_when_a_job_is_active(monkeypatch: pytest.MonkeyPatch) -> No
     try:
         jobs.submit("ingest", _block)
         assert started.wait(timeout=5.0)
-        client = TestClient(_build_app(None, None, jobs))
+        client = TestClient(_build_app(None, audit_trail, jobs))
         resp = client.post("/ingestion/resolve", headers={"X-Auth-User": "analyst"})
         assert resp.status_code == 409
     finally:
@@ -552,12 +721,12 @@ def test_resolve_409_when_a_job_is_active(monkeypatch: pytest.MonkeyPatch) -> No
         jobs.shutdown()
 
 
-def test_job_status_404_for_unknown_id(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_job_status_404_for_unknown_id(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """An unknown job id is a 404."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(None, None, jobs))
+        client = TestClient(_build_app(None, audit_trail, jobs))
         resp = client.get("/ingestion/jobs/job-999", headers={"X-Auth-User": "analyst"})
         assert resp.status_code == 404
     finally:
@@ -572,7 +741,7 @@ def test_job_status_404_for_unknown_id(monkeypatch: pytest.MonkeyPatch) -> None:
     ],
 )
 def test_ingest_rejection_log_omits_submitted_values(
-    monkeypatch: pytest.MonkeyPatch, filename: str, data: dict[str, str], expected: str
+    monkeypatch: pytest.MonkeyPatch, filename: str, data: dict[str, str], expected: str, audit_trail: AuditTrail
 ) -> None:
     """A rejected upload name or 'since' value is never echoed into the log."""
     monkeypatch.setenv("INGESTION_UI_ENABLED", "true")
@@ -580,7 +749,7 @@ def test_ingest_rejection_log_omits_submitted_values(
     sink_id = logger.add(lambda m: records.append(str(m)), level="DEBUG")
     jobs = JobRegistry()
     try:
-        client = TestClient(_build_app(None, None, jobs))
+        client = TestClient(_build_app(None, audit_trail, jobs))
         resp = client.post(
             "/ingestion/ingest",
             files=[("files", (filename, _POSTINGS_CSV, "text/csv"))],

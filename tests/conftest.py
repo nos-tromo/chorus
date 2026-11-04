@@ -9,22 +9,30 @@ driver wired to the testcontainer.
 
 from __future__ import annotations
 
+import io
 import sys
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
 from neo4j import Driver
 from testcontainers.neo4j import Neo4jContainer
 
+from chorus.audit.trail import AuditContext, AuditTrail
+from chorus.utils.audit_event import Actor, AuditEmitter
+from tests._audit import assert_chain_ok
+
 _CHORUS_ENV_MODULES = (
     "chorus.utils.env_cfg",
     "chorus.utils.logger_cfg",
     "chorus.db.neo4j",
-    "chorus.audit.logger",
     "chorus.api.auth.principal",
+    # NOTE: chorus.audit.trail and chorus.audit.cli are deliberately NOT
+    # reloaded: neither snapshots env at import, and AuditFailure /
+    # PurposeRequired must keep one class identity for every `except` that
+    # catches them.
+    "chorus.api.audit",
     "chorus.api.routers.health",
     "chorus.api.routers.tools",
     "chorus.api.routers.agent",
@@ -171,6 +179,9 @@ def driver(chorus_env: Path) -> Iterator[Driver]:
 def migrated_driver(driver: Driver) -> Driver:
     """Driver against a database that has had all migrations applied.
 
+    The migrations are recorded on a throwaway audit chain of their own, so
+    they never show up in a test's ``audit_stream``.
+
     Args:
         driver: The clean :func:`driver` fixture.
 
@@ -179,7 +190,12 @@ def migrated_driver(driver: Driver) -> Driver:
     """
     from chorus.migrations.runner import apply_all
 
-    apply_all(driver)
+    stream = io.StringIO()
+    trail = AuditTrail(AuditEmitter("chorus", "test", stream=stream, heartbeat_interval_s=0))
+    trail.start({})
+    apply_all(driver, audit=trail.system_context())
+    trail.close()
+    assert_chain_ok(stream)
     return driver
 
 
@@ -217,20 +233,44 @@ def fake_inference(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def in_memory_audit(chorus_env: Path) -> Any:
-    """Return a fresh :class:`AuditLogger` backed by a temp SQLite file.
-
-    For tools that want a real audit logger rather than a stub.
-
-    Args:
-        chorus_env: Provides ``CHORUS_HOME`` for the temp DB location.
+def audit_stream() -> io.StringIO:
+    """Capture buffer for the test's audit chain.
 
     Returns:
-        A :class:`chorus.audit.logger.AuditLogger` whose schema has
-        already been applied.
+        An empty ``io.StringIO`` the :func:`audit_trail` emitter writes to.
     """
-    from chorus.audit.logger import AuditLogger
+    return io.StringIO()
 
-    a = AuditLogger(chorus_env / "audit.sqlite")
-    a.init_schema()
-    return a
+
+@pytest.fixture
+def audit_trail(audit_stream: io.StringIO) -> Iterator[AuditTrail]:
+    """A started audit trail writing to :func:`audit_stream`, no heartbeat.
+
+    At teardown the chain is closed and verified with ``verify_chain()``, so
+    every test that emits through it also checks the chain it wrote.
+
+    Args:
+        audit_stream: The capture buffer.
+
+    Yields:
+        The started :class:`~chorus.audit.trail.AuditTrail`.
+    """
+    trail = AuditTrail(AuditEmitter("chorus", "test", stream=audit_stream, heartbeat_interval_s=0))
+    trail.start({"edge_secret_enforced": False, "default_identity_enabled": True})
+    yield trail
+    trail.close()
+    assert_chain_ok(audit_stream)
+
+
+@pytest.fixture
+def audit_ctx(audit_trail: AuditTrail) -> AuditContext:
+    """The audit trail bound to a synthetic dev caller.
+
+    Args:
+        audit_trail: The test's audit trail.
+
+    Returns:
+        An :class:`~chorus.audit.trail.AuditContext` for
+        ``Actor("test-user", "system")`` with no stated purpose.
+    """
+    return audit_trail.context(Actor(user="test-user", via="system"))

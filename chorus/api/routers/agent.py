@@ -14,7 +14,8 @@ from loguru import logger
 from pydantic import BaseModel
 
 from chorus.agent.loop import AgentInferenceError, run_agent
-from chorus.api.auth.principal import resolve_principal
+from chorus.api.audit import request_audit
+from chorus.audit.trail import AuditContext
 from chorus.utils.env_cfg import load_agent_env, load_language_env
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -47,20 +48,19 @@ class AgentQueryIn(BaseModel):
 def agent_query(
     body: AgentQueryIn,
     request: Request,
-    user: str = Depends(resolve_principal),
+    audit: AuditContext = Depends(request_audit),  # noqa: B008 — FastAPI dependency marker
 ) -> dict[str, Any]:
     """Run the agent over the conversation and return its answer and trace.
 
     Validates the body, then dispatches into
-    :func:`chorus.agent.loop.run_agent` with the shared driver and audit
-    logger from ``app.state``. The turn is recorded as a parent
-    ``agent_query`` audit row; each tool the agent calls writes its own row.
+    :func:`chorus.agent.loop.run_agent` with the shared driver from
+    ``app.state``. Each tool the agent calls writes its own ``query`` audit
+    event; the turn ends with one ``ai_call`` / ``agent.answer`` event.
 
     Args:
         body: The visible conversation turns (server is stateless).
-        request: Active request; supplies ``app.state.driver`` and
-            ``app.state.audit``.
-        user: Resolved principal, attributed on every audit row.
+        request: Active request; supplies ``app.state.driver``.
+        audit: The caller's audit context.
 
     Returns:
         The agent result serialized as JSON: ``answer``, ``trace``, and
@@ -75,8 +75,7 @@ def agent_query(
     try:
         result = run_agent(
             request.app.state.driver,
-            request.app.state.audit,
-            user=user,
+            audit,
             messages=[m.model_dump() for m in body.messages],
             max_iterations=cfg.max_tool_iterations,
             model=cfg.model,

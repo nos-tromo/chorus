@@ -24,7 +24,48 @@ fields the `profiles` ingestion stage writes onto `:Author` (`bio`,
 `date_of_birth`, and the rest), which are retained indefinitely by
 deliberate decision. See `compliance.md` and ADR 0006.
 
-The audit log has its own retention setting (`AUDIT_RETENTION_DAYS`). It is
-loaded but not yet enforced: the purge is designed as a separate privileged
-job, not row-level DELETE — the audit table has triggers that reject
-UPDATE/DELETE on individual rows.
+## Audit trail
+
+Chorus no longer keeps audit data of its own (apart from the frozen legacy
+file below). Its audit events leave through the backend's stdout as they are
+written and are kept by obs-plane's audit store, under that store's retention
+and access rules (obs-plane's
+[`docs/audit.md`](https://github.com/nos-tromo/obs-plane/blob/main/docs/audit.md));
+what chorus records is in [audit.md](audit.md).
+
+## Legacy SQLite audit log
+
+Releases before 0.8.0 wrote audit rows to `$CHORUS_HOME/audit.sqlite` on the
+`chorus-state` volume (`/var/lib/chorus/audit.sqlite` in the container, or
+wherever `AUDIT_DB_PATH` pointed). Chorus no longer reads or writes that file.
+It stays where it is, frozen: its own triggers reject `UPDATE` and `DELETE`
+on its rows.
+
+Its rows are kept until the end of the calendar year after the year the last
+row was written, and then deleted by the operator. The last row's timestamp:
+
+```bash
+sudo sqlite3 -readonly "$(docker volume inspect chorus-state --format '{{ .Mountpoint }}')/audit.sqlite" \
+  'SELECT max(ts) FROM audit_log;'
+```
+
+To read the rows for a review in the meantime, query the file read-only where
+it lies, as JSON (no copy leaves the volume):
+
+```bash
+sudo sqlite3 -readonly "$(docker volume inspect chorus-state --format '{{ .Mountpoint }}')/audit.sqlite" \
+  '.mode json' 'SELECT * FROM audit_log ORDER BY id;'
+```
+
+On a host without the `sqlite3` CLI, the backend's Python reads it the same
+way: `docker compose -f docker/compose.yaml exec -T backend python -c "import
+json, sqlite3; c = sqlite3.connect('file:/var/lib/chorus/audit.sqlite?mode=ro',
+uri=True); c.row_factory = sqlite3.Row; print(json.dumps([dict(r) for r in
+c.execute('SELECT * FROM audit_log ORDER BY id')], ensure_ascii=False))"`.
+
+When the period is over, delete the file (with its write-ahead log, if one is
+left) from the chorus checkout, with the backend up:
+
+```bash
+docker compose -f docker/compose.yaml exec backend sh -c 'rm -f "$CHORUS_HOME/audit.sqlite" "$CHORUS_HOME/audit.sqlite-wal" "$CHORUS_HOME/audit.sqlite-shm"'
+```

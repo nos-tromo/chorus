@@ -55,10 +55,11 @@ Concretely:
   claim. Tool calls, agent queries, `/stats`, and ingestion jobs
   resolve their Neo4j driver from the authenticated principal's active
   project — there is no code path from user input to a bolt URI.
-- **Audit.** The §76 BDSG audit logger records the project id on every
-  entry, alongside user, parameters, and entities touched.
-- **Chorus-side state.** Everything under `$CHORUS_HOME` (audit log,
-  raw store, job state, operational logs) is partitioned per project
+- **Audit.** Every audit event records the project id, alongside the
+  actor, parameters, and the data subjects and objects touched (the events
+  go to the federation audit stream, ADR 0018).
+- **Chorus-side state.** Everything under `$CHORUS_HOME` (raw store,
+  upload staging, job state) is partitioned per project
   (per-project subdirectories on the `chorus-state` volume, or
   per-project volumes). Isolating the graph while sharing the raw
   store would leak upstream rows across projects.

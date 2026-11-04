@@ -12,8 +12,10 @@ whose ``X-Edge-Secret`` matches it, a value only the gateway sends; on any
 other request they are ignored as if absent. Unset, they are trusted from
 every caller.
 
-`CHORUS_DEFAULT_IDENTITY` exists as a dev-only fallback. Production should
-leave it unset so missing headers fail closed.
+`CHORUS_DEFAULT_IDENTITY` exists as a dev-only fallback, honoured only
+while ``CHORUS_EDGE_SECRET`` is unset: with the secret set, a request
+without the gateway's verified identity gets 401 whatever the fallback
+says. Production leaves it unset so missing headers fail closed.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, Request, status
 from loguru import logger
 
+from chorus.utils.audit_event import Actor
 from chorus.utils.env_cfg import load_principal_env
 
 EDGE_SECRET_HEADER = "X-Edge-Secret"
@@ -53,7 +56,8 @@ def check_principal_config() -> None:
     Loading the config raises on a too-short ``CHORUS_EDGE_SECRET``, so a
     misconfigured backend stops before it serves anything. When neither
     the edge secret nor a default identity is set, one warning records
-    that the identity headers are trusted from any caller.
+    that the identity headers are trusted from any caller. When both are
+    set, one warning records that the default identity is ignored.
 
     Raises:
         RuntimeError: If ``CHORUS_EDGE_SECRET`` is set but too short.
@@ -63,6 +67,11 @@ def check_principal_config() -> None:
         logger.warning(
             "identity headers are trusted from any caller that can reach the backend; "
             "set CHORUS_EDGE_SECRET (see edge-plane docs/identity-contract.md)"
+        )
+    elif cfg.edge_secret is not None and cfg.default_identity is not None:
+        logger.warning(
+            "CHORUS_DEFAULT_IDENTITY is ignored while CHORUS_EDGE_SECRET is set; "
+            "requests without the gateway's verified identity get 401"
         )
 
 
@@ -124,8 +133,9 @@ def resolve_principal(
 
     Takes the identity header that :func:`resolve_identity_headers`
     trusts. Falls back to ``CHORUS_DEFAULT_IDENTITY`` only when that env
-    var is set — production deployments leave it unset, which makes a
-    missing or ignored header fail closed with ``401``.
+    var is set and ``CHORUS_EDGE_SECRET`` is not — production deployments
+    leave the fallback unset, and with the secret set it never applies, so
+    a missing or ignored header fails closed with ``401``.
 
     Args:
         identity: The request's trusted identity headers.
@@ -139,11 +149,33 @@ def resolve_principal(
     """
     if identity.user:
         return identity.user
-    default_identity = load_principal_env().default_identity
-    if default_identity:
-        return default_identity
+    cfg = load_principal_env()
+    if cfg.default_identity and cfg.edge_secret is None:
+        return cfg.default_identity
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Missing authenticated principal.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def resolve_actor(
+    principal: str = Depends(resolve_principal),
+    identity: IdentityHeaders = Depends(resolve_identity_headers),  # noqa: B008 — FastAPI dependency marker
+) -> Actor:
+    """Return the audit actor of an authenticated request.
+
+    A trusted identity header makes the gateway-asserted account the actor
+    (``via="edge"``); the dev fallback identity is the system acting under a
+    configured name (``via="system"``). Both dependencies are cached per
+    request, so the edge-secret check still runs once.
+
+    Args:
+        principal: The resolved principal (401s closed).
+        identity: The request's trusted identity headers.
+
+    Returns:
+        The :class:`~chorus.utils.audit_event.Actor` for the request's
+        audit events.
+    """
+    return Actor(user=principal, via="edge" if identity.user else "system")

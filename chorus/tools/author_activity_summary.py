@@ -18,7 +18,6 @@ from typing import Any, cast
 from neo4j import Driver
 from pydantic import BaseModel, Field
 
-from chorus.audit.logger import AuditLogger
 from chorus.tools._audit import audited, register_tool
 from chorus.tools._template_loader import load_template
 
@@ -123,6 +122,14 @@ class AuthorActivitySummaryOut(BaseModel):
 
     summaries: list[AuthorSummary]
 
+    def audit_authors(self) -> list[str]:
+        """Return the ids of the authors whose activity this result summarizes.
+
+        Returns:
+            Author ids in result order.
+        """
+        return [su.author_id for su in self.summaries]
+
     def audit_entities(self) -> list[str]:
         """Return distinct resolved entity ids surfaced in top topics.
 
@@ -152,13 +159,7 @@ class AuthorActivitySummaryOut(BaseModel):
     output_model=AuthorActivitySummaryOut,
 )
 @audited
-def author_activity_summary(
-    driver: Driver,
-    params: AuthorActivitySummaryIn,
-    *,
-    user: str,
-    audit: AuditLogger,
-) -> AuthorActivitySummaryOut:
+def author_activity_summary(driver: Driver, params: AuthorActivitySummaryIn) -> AuthorActivitySummaryOut:
     """Summarize each matched author's activity over an optional time range.
 
     Loads the ``author_activity_summary.cypher`` template and runs it. The
@@ -168,14 +169,11 @@ def author_activity_summary(
     Args:
         driver: Open Neo4j driver.
         params: Validated input parameters.
-        user: Authenticated identity (consumed by ``@audited``).
-        audit: Active audit logger (consumed by ``@audited``).
 
     Returns:
         An :class:`AuthorActivitySummaryOut` with one entry per matched
         author.
     """
-    del user, audit  # the @audited decorator owns the audit write
     cypher = load_template("author_activity_summary")
     cypher_params: dict[str, Any] = {
         "author": params.author,

@@ -21,7 +21,6 @@ from typing import Any
 from neo4j import Driver
 from pydantic import BaseModel, Field, field_validator
 
-from chorus.audit.logger import AuditLogger
 from chorus.tools._audit import audited, register_tool
 from chorus.tools._template_loader import load_template
 
@@ -125,6 +124,19 @@ class AuthorsConnectedByTopicOut(BaseModel):
 
     results: list[SeedConnections]
 
+    def audit_authors(self) -> list[str]:
+        """Return the ids of the seed authors and the authors connected to them.
+
+        Returns:
+            Each group's seed id followed by its connected authors' ids, in
+            result order. The decorator deduplicates them.
+        """
+        ids: list[str] = []
+        for group in self.results:
+            ids.append(group.seed.author_id)
+            ids.extend(connected.author_id for connected in group.connected)
+        return ids
+
     def audit_entities(self) -> list[str]:
         """Return distinct resolved entity ids among the shared topics.
 
@@ -156,13 +168,7 @@ class AuthorsConnectedByTopicOut(BaseModel):
     output_model=AuthorsConnectedByTopicOut,
 )
 @audited
-def authors_connected_by_topic(
-    driver: Driver,
-    params: AuthorsConnectedByTopicIn,
-    *,
-    user: str,
-    audit: AuditLogger,
-) -> AuthorsConnectedByTopicOut:
+def authors_connected_by_topic(driver: Driver, params: AuthorsConnectedByTopicIn) -> AuthorsConnectedByTopicOut:
     """Return authors sharing topics with ``params.seed_author``.
 
     Loads the ``authors_connected_by_topic.cypher`` template and runs it.
@@ -172,14 +178,11 @@ def authors_connected_by_topic(
     Args:
         driver: Open Neo4j driver.
         params: Validated input parameters.
-        user: Authenticated identity (consumed by ``@audited``).
-        audit: Active audit logger (consumed by ``@audited``).
 
     Returns:
         An :class:`AuthorsConnectedByTopicOut` with one group per matched
         seed author.
     """
-    del user, audit  # the @audited decorator owns the audit write
     cypher = load_template("authors_connected_by_topic")
     cypher_params: dict[str, Any] = {
         "seed_author": params.seed_author,

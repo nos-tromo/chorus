@@ -8,13 +8,17 @@ real against the migrated test database.
 from __future__ import annotations
 
 import dataclasses
+import io
 import json
-import sqlite3
 from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
 from neo4j import Driver
+
+from chorus.audit.trail import AuditContext
+from chorus.utils.audit_event import sha256_text
+from tests._audit import operation_events
 
 
 class _FakeFunction:
@@ -66,7 +70,7 @@ def _install_fake_tool_run(monkeypatch: pytest.MonkeyPatch, name: str, fn: Calla
 
 
 def test_no_tool_call_returns_content(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When the model answers without tools, the answer is returned, trace empty."""
     from chorus.agent.loop import run_agent
@@ -74,8 +78,7 @@ def test_no_tool_call_returns_content(
     _script(monkeypatch, [_FakeMessage(content="I can help with that.")])
     result = run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="u",
+        audit_ctx,
         messages=[{"role": "user", "content": "hi"}],
     )
     assert result.answer == "I can help with that."
@@ -84,9 +87,13 @@ def test_no_tool_call_returns_content(
 
 
 def test_one_tool_call_executes_and_answers(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, audit_stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A tool_call is executed against the graph, then the model's answer returns."""
+    """A tool_call is executed against the graph, then the model's answer returns.
+
+    The audit trail gets the tool's query event, then one ai_call event for
+    the turn whose sources name that tool event.
+    """
     from chorus.agent.loop import run_agent
 
     with migrated_driver.session() as s:
@@ -108,8 +115,7 @@ def test_one_tool_call_executes_and_answers(
     )
     result = run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="analyst",
+        audit_ctx,
         messages=[{"role": "user", "content": "posts about Berlin?"}],
     )
     assert result.answer == "Found 1 post mentioning Berlin."
@@ -118,18 +124,21 @@ def test_one_tool_call_executes_and_answers(
     assert result.trace[0].result_count == 1
     assert result.trace[0].error is None
 
-    tool_names = [
-        row[0]
-        for row in sqlite3.connect(in_memory_audit.db_path)
-        .execute("SELECT tool_name FROM audit_log ORDER BY id")
-        .fetchall()
-    ]
-    assert "posts_mentioning" in tool_names  # child row
-    assert "agent_query" in tool_names  # parent row
+    tool_event, turn_event = operation_events(audit_stream)
+    assert (tool_event["action"], tool_event["operation"]) == ("query", "tool.posts_mentioning")
+    assert tool_event["target"] == {"kind": "mixed", "ids": ["post:p-1"], "count": 1}
+    assert (turn_event["action"], turn_event["operation"], turn_event["outcome"]) == ("ai_call", "agent.answer", "ok")
+    assert turn_event["recipient"] == "inference:chat"
+    assert turn_event["ai"]["sources"] == [tool_event["event_id"]]
+    assert turn_event["ai"]["output_sha256"] == sha256_text("Found 1 post mentioning Berlin.")
+    assert turn_event["criteria"]["question_sha256"] == sha256_text("posts about Berlin?")
+    assert turn_event["criteria"]["tool_calls"] == 1
+    assert "posts about Berlin?" not in audit_stream.getvalue()
+    assert "Found 1 post" not in audit_stream.getvalue()
 
 
 def test_max_iterations_truncates(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """If the model never stops calling tools, the loop stops and flags truncated."""
     from chorus.agent.loop import run_agent
@@ -140,8 +149,7 @@ def test_max_iterations_truncates(
     )
     result = run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="u",
+        audit_ctx,
         messages=[{"role": "user", "content": "loop forever"}],
         max_iterations=3,
     )
@@ -151,7 +159,7 @@ def test_max_iterations_truncates(
 
 
 def test_unknown_tool_records_error_and_continues(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An unknown tool name is fed back as an error; the loop recovers."""
     from chorus.agent.loop import run_agent
@@ -165,8 +173,7 @@ def test_unknown_tool_records_error_and_continues(
     )
     result = run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="u",
+        audit_ctx,
         messages=[{"role": "user", "content": "do the impossible"}],
     )
     assert result.answer == "Sorry, I can't do that."
@@ -176,7 +183,7 @@ def test_unknown_tool_records_error_and_continues(
 
 
 def test_invalid_arguments_records_error(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Schema-violating tool arguments are fed back as an error; the loop recovers."""
     from chorus.agent.loop import run_agent
@@ -191,8 +198,7 @@ def test_invalid_arguments_records_error(
     )
     result = run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="u",
+        audit_ctx,
         messages=[{"role": "user", "content": "bad args"}],
     )
     assert result.answer == "Let me try differently."
@@ -201,7 +207,7 @@ def test_invalid_arguments_records_error(
 
 
 def test_tool_calling_unsupported_is_raised(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A backend that rejects the tools request surfaces ToolCallingUnsupportedError."""
     import openai
@@ -216,14 +222,13 @@ def test_tool_calling_unsupported_is_raised(
     with pytest.raises(ToolCallingUnsupportedError):
         run_agent(
             migrated_driver,
-            in_memory_audit,
-            user="u",
+            audit_ctx,
             messages=[{"role": "user", "content": "hi"}],
         )
 
 
 def test_vllm_auto_tool_choice_error_mentions_backend_flags(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The vLLM auto-tool-choice rejection is reported as a backend config issue."""
     import openai
@@ -241,8 +246,7 @@ def test_vllm_auto_tool_choice_error_mentions_backend_flags(
     with pytest.raises(ToolCallingUnsupportedError) as excinfo:
         run_agent(
             migrated_driver,
-            in_memory_audit,
-            user="u",
+            audit_ctx,
             messages=[{"role": "user", "content": "hi"}],
         )
     detail = str(excinfo.value)
@@ -347,7 +351,7 @@ def test_tool_message_keeps_non_ascii_unescaped() -> None:
 
 
 def test_context_window_error_is_raised(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A backend context-window overflow surfaces a dedicated agent error."""
     import openai
@@ -365,15 +369,14 @@ def test_context_window_error_is_raised(
     with pytest.raises(ContextWindowExceededError) as excinfo:
         run_agent(
             migrated_driver,
-            in_memory_audit,
-            user="u",
+            audit_ctx,
             messages=[{"role": "user", "content": "hi"}],
         )
     assert "context window" in str(excinfo.value).lower()
 
 
 def test_context_window_error_mentioning_tools_is_not_misclassified(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A context overflow whose text also mentions tools is a context error.
 
@@ -398,15 +401,14 @@ def test_context_window_error_mentioning_tools_is_not_misclassified(
     with pytest.raises(ContextWindowExceededError) as excinfo:
         run_agent(
             migrated_driver,
-            in_memory_audit,
-            user="u",
+            audit_ctx,
             messages=[{"role": "user", "content": "hi"}],
         )
     assert "context window" in str(excinfo.value).lower()
 
 
 def test_inference_error_raises_agent_inference_error(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A connection/other inference failure surfaces as AgentInferenceError, not tool-unsupported."""
     import openai
@@ -421,15 +423,14 @@ def test_inference_error_raises_agent_inference_error(
     with pytest.raises(AgentInferenceError) as excinfo:
         run_agent(
             migrated_driver,
-            in_memory_audit,
-            user="u",
+            audit_ctx,
             messages=[{"role": "user", "content": "hi"}],
         )
     assert not isinstance(excinfo.value, ToolCallingUnsupportedError)
 
 
 def test_model_not_found_is_inference_error_not_unsupported(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A 404 (e.g. wrong model tag) is a generic inference error, not tool-unsupported."""
     import openai
@@ -447,15 +448,14 @@ def test_model_not_found_is_inference_error_not_unsupported(
     with pytest.raises(AgentInferenceError) as excinfo:
         run_agent(
             migrated_driver,
-            in_memory_audit,
-            user="u",
+            audit_ctx,
             messages=[{"role": "user", "content": "hi"}],
         )
     assert not isinstance(excinfo.value, ToolCallingUnsupportedError)
 
 
 def test_language_selects_system_prompt(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """run_agent(language='de') sends the German system prompt to the provider."""
     from chorus.agent.loop import run_agent
@@ -471,8 +471,7 @@ def test_language_selects_system_prompt(
     monkeypatch.setattr(provider, "chat_message", _capture)
     run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="u",
+        audit_ctx,
         messages=[{"role": "user", "content": "hallo"}],
         language="de",
     )
@@ -481,7 +480,7 @@ def test_language_selects_system_prompt(
 
 
 def test_default_language_is_english_prompt(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With no language argument, the English prompt is used."""
     from chorus.agent.loop import run_agent
@@ -497,15 +496,14 @@ def test_default_language_is_english_prompt(
     monkeypatch.setattr(provider, "chat_message", _capture)
     run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="u",
+        audit_ctx,
         messages=[{"role": "user", "content": "hi"}],
     )
     assert captured[0]["content"] == get_system_prompt("en")
 
 
 def test_trace_carries_graph_tool_result(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A graph tool's full node/edge payload rides on the trace, uncompacted."""
     from chorus.agent.loop import run_agent
@@ -521,7 +519,7 @@ def test_trace_carries_graph_tool_result(
         edges=[NetworkEdge(source="author:a1", target="topic:berlin", weight=1)],
         truncated=False,
     )
-    _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, user, audit: fake_out)
+    _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, audit: fake_out)
     _script(
         monkeypatch,
         [
@@ -531,8 +529,7 @@ def test_trace_carries_graph_tool_result(
     )
     result = run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="u",
+        audit_ctx,
         messages=[{"role": "user", "content": "show network around Berlin"}],
     )
     assert len(result.trace) == 1
@@ -542,7 +539,7 @@ def test_trace_carries_graph_tool_result(
 
 
 def test_trace_omits_result_for_non_graph_tools(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A non-graph tool (e.g. posts_mentioning) never populates trace.result."""
     from chorus.agent.loop import run_agent
@@ -566,8 +563,7 @@ def test_trace_omits_result_for_non_graph_tools(
     )
     result = run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="analyst",
+        audit_ctx,
         messages=[{"role": "user", "content": "posts about Berlin?"}],
     )
     assert len(result.trace) == 1
@@ -577,7 +573,7 @@ def test_trace_omits_result_for_non_graph_tools(
 
 
 def test_trace_omits_oversized_graph_result(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A graph tool result over the node cap is withheld, but result_count still reports the true size."""
     from chorus.agent.loop import run_agent
@@ -587,7 +583,7 @@ def test_trace_omits_oversized_graph_result(
         NetworkNode(id=f"author:a{i}", kind="author", label=f"a{i}", entity_id=None, is_seed=False) for i in range(501)
     ]
     fake_out = NetworkAroundOut(seed="Berlin", seed_node_id="topic:berlin", nodes=nodes, edges=[], truncated=True)
-    _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, user, audit: fake_out)
+    _install_fake_tool_run(monkeypatch, "network_around", lambda driver, params, *, audit: fake_out)
     _script(
         monkeypatch,
         [
@@ -597,8 +593,7 @@ def test_trace_omits_oversized_graph_result(
     )
     result = run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="u",
+        audit_ctx,
         messages=[{"role": "user", "content": "show network around Berlin"}],
     )
     assert len(result.trace) == 1
@@ -607,7 +602,7 @@ def test_trace_omits_oversized_graph_result(
 
 
 def test_trace_result_none_on_tool_error(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failed tool call (unknown tool) leaves trace.result None alongside the error."""
     from chorus.agent.loop import run_agent
@@ -621,8 +616,7 @@ def test_trace_result_none_on_tool_error(
     )
     result = run_agent(
         migrated_driver,
-        in_memory_audit,
-        user="u",
+        audit_ctx,
         messages=[{"role": "user", "content": "do the impossible"}],
     )
     assert len(result.trace) == 1
@@ -631,7 +625,7 @@ def test_trace_result_none_on_tool_error(
 
 
 def test_tool_exception_error_is_generic_and_logged(
-    migrated_driver: Driver, in_memory_audit: Any, monkeypatch: pytest.MonkeyPatch
+    migrated_driver: Driver, audit_ctx: AuditContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A raising tool leaves a static TraceStep.error; the exception text only reaches logs.
 
@@ -662,8 +656,7 @@ def test_tool_exception_error_is_generic_and_logged(
     try:
         result = run_agent(
             migrated_driver,
-            in_memory_audit,
-            user="u",
+            audit_ctx,
             messages=[{"role": "user", "content": "posts about Berlin?"}],
         )
     finally:
@@ -679,7 +672,7 @@ def test_tool_exception_error_is_generic_and_logged(
 def test_invalid_arguments_log_omits_submitted_values() -> None:
     """Invalid arguments are logged by field and error type; the model still gets the detail.
 
-    Validation fails before the tool runs, so no driver or audit logger is needed.
+    Validation fails before the tool runs, so no driver or audit context is needed.
     """
     from loguru import logger
 
@@ -693,7 +686,7 @@ def test_invalid_arguments_log_omits_submitted_values() -> None:
     records: list[str] = []
     sink_id = logger.add(lambda m: records.append(str(m)), level="DEBUG")
     try:
-        step, tool_message = _execute_tool_call(tc, driver, audit, user="u")
+        step, tool_message = _execute_tool_call(tc, driver, audit)
     finally:
         logger.remove(sink_id)
 

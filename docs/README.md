@@ -13,8 +13,9 @@ upstream format, invariants) with topic-by-topic detail.
 | [tutorial-first-queries.md](tutorial-first-queries.md) | Guided first pass: the tool registry, seeding a row into an empty graph, invoking a tool, asking the agent |
 | [architecture.md](architecture.md) | Runtime surface, the frontend tier and SPA bootstrap, the auth seam, the data-plane and inference contracts, observability |
 | [ingestion.md](ingestion.md) | Running the ingestion and alias-resolution stages: CLI, env knobs, thresholds, the make and UI paths |
-| [retention.md](retention.md) | `retention_until` timers, the nightly sweep, and the cascade rules for expiry |
-| [compliance.md](compliance.md) | §76 BDSG audit logging across the query tools and the resolution write path, profile-data retention, and the v1 compliance posture |
+| [retention.md](retention.md) | `retention_until` timers, the nightly sweep, the cascade rules for expiry, and the legacy audit file's retention |
+| [audit.md](audit.md) | The data-protection audit log (§76 BDSG): what each endpoint and CLI command records, the stated-purpose rule, the knobs, fail-closed writes |
+| [compliance.md](compliance.md) | The compliance posture: what the audit log covers, profile-data retention, the frozen legacy audit file |
 | [airgap.md](airgap.md) | What the airgapped production constraint implies for dependencies, images, and inference |
 | [decisions/](decisions/) | ADRs — one file per load-bearing architectural choice, with the alternatives considered |
 
@@ -33,9 +34,9 @@ current reference.
   *Adding a graph tool* and *Data model* in [`CLAUDE.md`](../CLAUDE.md), then
   the relevant record in [decisions/](decisions/) before changing anything
   load-bearing.
-- **Compliance and security reviewers** — [compliance.md](compliance.md) and
-  [airgap.md](airgap.md), plus ADR 0010 (resolution audit logging) and
-  ADR 0011 (retention anchored on `ingested_at`).
+- **Compliance and security reviewers** — [compliance.md](compliance.md),
+  [audit.md](audit.md) and [airgap.md](airgap.md), plus ADR 0018 (audit events
+  on the federation stream) and ADR 0011 (retention anchored on `ingested_at`).
 
 ## Conventions used in these docs
 

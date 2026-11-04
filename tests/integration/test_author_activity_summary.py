@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from neo4j import Driver
 
+from chorus.audit.trail import AuditContext
 
-def test_empty_returns_no_summaries(migrated_driver: Driver, in_memory_audit: Any) -> None:
+
+def test_empty_returns_no_summaries(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A name matching no author yields an empty summary list, not an error."""
     from chorus.tools.author_activity_summary import (
         AuthorActivitySummaryIn,
@@ -17,14 +17,13 @@ def test_empty_returns_no_summaries(migrated_driver: Driver, in_memory_audit: An
     out = author_activity_summary(
         migrated_driver,
         AuthorActivitySummaryIn(author="nobody"),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert out.summaries == []
     assert out.audit_result_count() == 0
 
 
-def test_aggregates_counts_and_topics(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_aggregates_counts_and_topics(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """A seeded author's posts aggregate by type with engagement + top topics."""
     from chorus.tools.author_activity_summary import (
         AuthorActivitySummaryIn,
@@ -51,8 +50,7 @@ def test_aggregates_counts_and_topics(migrated_driver: Driver, in_memory_audit: 
     out = author_activity_summary(
         migrated_driver,
         AuthorActivitySummaryIn(author="Jane Doe"),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert len(out.summaries) == 1
     su = out.summaries[0]
@@ -68,7 +66,7 @@ def test_aggregates_counts_and_topics(migrated_driver: Driver, in_memory_audit: 
     assert out.audit_result_count() == 1
 
 
-def test_time_window_excludes_out_of_range_posts(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_time_window_excludes_out_of_range_posts(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Regression: a [from, to) bound must constrain the aggregation."""
     from chorus.tools.author_activity_summary import (
         AuthorActivitySummaryIn,
@@ -94,14 +92,13 @@ def test_time_window_excludes_out_of_range_posts(migrated_driver: Driver, in_mem
                 "to": "2026-06-01T00:00:00+00:00",
             }
         ),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert len(out.summaries) == 1  # author still matched
     assert out.summaries[0].post_count == 0  # but the out-of-range post is excluded
 
 
-def test_same_name_authors_not_merged(migrated_driver: Driver, in_memory_audit: Any) -> None:
+def test_same_name_authors_not_merged(migrated_driver: Driver, audit_ctx: AuditContext) -> None:
     """Two distinct authors sharing a display name return two summaries."""
     from chorus.tools.author_activity_summary import (
         AuthorActivitySummaryIn,
@@ -118,8 +115,7 @@ def test_same_name_authors_not_merged(migrated_driver: Driver, in_memory_audit: 
     out = author_activity_summary(
         migrated_driver,
         AuthorActivitySummaryIn(author="Sam"),
-        user="test-user",
-        audit=in_memory_audit,
+        audit=audit_ctx,
     )
     assert {s.author_id for s in out.summaries} == {"dup-1", "dup-2"}
 

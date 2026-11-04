@@ -1,8 +1,13 @@
 # 0010 — §76 audit logging for the resolution write path
 
-Status: accepted
+Status: superseded by [0018](0018-audit-events-on-the-federation-stream.md)
 Date: 2026-05-31
 Relates to: [0009](0009-agent-tool-calling.md)
+
+> Superseded by ADR 0018: resolution runs are now recorded as `combine` /
+> `resolution.run` events (plus the model-stage `ai_call` events) on the
+> federation audit stream; the SQLite `AuditLogger` and the `--user` flag are
+> gone. The one-event-per-run decision below still holds.
 
 ## Context
 

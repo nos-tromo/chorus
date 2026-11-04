@@ -84,7 +84,11 @@ unchanged for bulk/server-side loads.
    `time_tool(user, "migrate", …)`. `resolve_all` **does** write its own
    `resolve_all` row (and none on an empty run), so neither `/resolve` nor the
    `then_resolve` chain wraps it — a successful chain therefore writes exactly two
-   rows (`ingest`, `resolve_all`).
+   rows (`ingest`, `resolve_all`). *(Amended by ADR 0018: the job records the
+   pass through `orchestrator.run_audited` as `collect` / `ingest.upload`,
+   `apply_all` and `resolve_all` record themselves on the federation audit
+   stream, the staged upload's deletion is recorded, and a job writes with
+   the actor, purpose and request id of the request that started it.)*
 
 7. **Authorization = any authenticated user when enabled.** There is no RBAC in
    v1; the deploy-time flag is the capability gate and the §76 log records who ran

@@ -18,7 +18,6 @@ from typing import Any, cast
 from neo4j import Driver
 from pydantic import BaseModel, Field, PrivateAttr
 
-from chorus.audit.logger import AuditLogger
 from chorus.tools._audit import audited, register_tool
 from chorus.tools._template_loader import load_template
 
@@ -99,6 +98,14 @@ class AuthorsMentioningOut(BaseModel):
     # Private so the public/JSON shape stays ``{"authors": [...]}``.
     _entity_ids: list[str] = PrivateAttr(default_factory=list)
 
+    def audit_authors(self) -> list[str]:
+        """Return the ids of the authors this result discloses.
+
+        Returns:
+            Author ids in rank order.
+        """
+        return [a.author_id for a in self.authors]
+
     def audit_entities(self) -> list[str]:
         """Return distinct resolved entity ids the seed matched.
 
@@ -128,13 +135,7 @@ class AuthorsMentioningOut(BaseModel):
     output_model=AuthorsMentioningOut,
 )
 @audited
-def authors_mentioning(
-    driver: Driver,
-    params: AuthorsMentioningIn,
-    *,
-    user: str,
-    audit: AuditLogger,
-) -> AuthorsMentioningOut:
+def authors_mentioning(driver: Driver, params: AuthorsMentioningIn) -> AuthorsMentioningOut:
     """Rank the authors who mention an entity, by how many of their posts mention it, within an optional time range.
 
     Loads the ``authors_mentioning.cypher`` template and runs it. The
@@ -144,13 +145,10 @@ def authors_mentioning(
     Args:
         driver: Open Neo4j driver.
         params: Validated input parameters.
-        user: Authenticated identity (consumed by ``@audited``).
-        audit: Active audit logger (consumed by ``@audited``).
 
     Returns:
         An :class:`AuthorsMentioningOut` ranked by mention-post count.
     """
-    del user, audit  # the @audited decorator owns the audit write
     cypher = load_template("authors_mentioning")
     cypher_params: dict[str, Any] = {
         "entity": params.entity,

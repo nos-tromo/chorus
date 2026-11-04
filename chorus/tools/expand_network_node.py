@@ -25,7 +25,6 @@ from typing import Any
 from neo4j import Driver
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
-from chorus.audit.logger import AuditLogger
 from chorus.tools._audit import audited, register_tool
 from chorus.tools._template_loader import load_template
 from chorus.tools.network_around import NetworkEdge, NetworkNode
@@ -87,6 +86,18 @@ class ExpandNetworkNodeOut(BaseModel):
     # Resolved entity ids among the topic nodes, stashed for the §76 audit
     # trail — same convention as network_around.
     _entity_ids: list[str] = PrivateAttr(default_factory=list)
+    # The clicked author (when the expanded node is one) and the author
+    # neighbours: whose mentions the expansion discloses.
+    _author_ids: list[str] = PrivateAttr(default_factory=list)
+
+    def audit_authors(self) -> list[str]:
+        """Return the ids of the authors this expansion discloses.
+
+        Returns:
+            The clicked author's id when the expanded node is an author,
+            then the author neighbours' ids.
+        """
+        return list(self._author_ids)
 
     def audit_entities(self) -> list[str]:
         """Return distinct resolved entity ids among the returned topic nodes.
@@ -116,13 +127,7 @@ class ExpandNetworkNodeOut(BaseModel):
     output_model=ExpandNetworkNodeOut,
 )
 @audited
-def expand_network_node(
-    driver: Driver,
-    params: ExpandNetworkNodeIn,
-    *,
-    user: str,
-    audit: AuditLogger,
-) -> ExpandNetworkNodeOut:
+def expand_network_node(driver: Driver, params: ExpandNetworkNodeIn) -> ExpandNetworkNodeOut:
     """Return the next-hop neighbours of one network node; grows a network_around graph around a clicked node.
 
     Splits the namespaced id, runs the ``expand_network_node.cypher`` template,
@@ -132,14 +137,11 @@ def expand_network_node(
     Args:
         driver: Open Neo4j driver.
         params: Validated input parameters.
-        user: Authenticated identity (consumed by ``@audited``).
-        audit: Active audit logger (consumed by ``@audited``).
 
     Returns:
         An :class:`ExpandNetworkNodeOut` with neighbour nodes, anchored edges,
         and a ``truncated`` flag.
     """
-    del user, audit  # the @audited decorator owns the audit write
     kind, key = params.node_id.split(":", 1)
     cypher = load_template("expand_network_node")
     cypher_params: dict[str, Any] = {"kind": kind, "key": key, "limit": params.limit}
@@ -180,4 +182,6 @@ def expand_network_node(
 
     out = ExpandNetworkNodeOut(nodes=nodes, edges=edges, truncated=bool(record["truncated"]))
     out._entity_ids = [n.entity_id for n in nodes if n.kind == "topic" and n.entity_id]
+    out._author_ids = [key] if kind == "author" else []
+    out._author_ids.extend(n.id.removeprefix("author:") for n in nodes if n.kind == "author")
     return out

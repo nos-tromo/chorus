@@ -18,6 +18,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from chorus.api.errors import install_error_handlers
+from chorus.audit.trail import AuditTrail
 
 MARKER = "MARKER-SECRET-1234"
 
@@ -88,7 +89,7 @@ def test_request_validation_error_is_generic_and_logged() -> None:
         logger.remove(sink_id)
 
 
-def _build_agent_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+def _build_agent_app(monkeypatch: pytest.MonkeyPatch, trail: AuditTrail) -> FastAPI:
     """Minimal app with the agent router, stubbed state, and global handlers."""
     from chorus.api.routers import agent as agent_router
 
@@ -101,16 +102,16 @@ def _build_agent_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     install_error_handlers(app)
     app.include_router(agent_router.router)
     app.state.driver = object()
-    app.state.audit = object()
+    app.state.audit = trail
     return app
 
 
-def test_agent_query_failure_is_generic_and_logged(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_agent_query_failure_is_generic_and_logged(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """An agent-loop crash never puts the raw exception text in the response body."""
     monkeypatch.setenv("CHORUS_DEFAULT_IDENTITY", "test-user")
     records, sink_id = _capture_logs()
     try:
-        client = TestClient(_build_agent_app(monkeypatch), raise_server_exceptions=False)
+        client = TestClient(_build_agent_app(monkeypatch, audit_trail), raise_server_exceptions=False)
         resp = client.post("/agent/query", json={"messages": [{"role": "user", "content": "hi"}]})
         assert resp.status_code == 500
         assert resp.json() == {"detail": "Internal server error."}
@@ -120,7 +121,7 @@ def test_agent_query_failure_is_generic_and_logged(monkeypatch: pytest.MonkeyPat
         logger.remove(sink_id)
 
 
-def _build_tools_app() -> FastAPI:
+def _build_tools_app(trail: AuditTrail) -> FastAPI:
     """Minimal app with the real tools router and global handlers."""
     from chorus.api.routers import tools as tools_router
 
@@ -128,14 +129,14 @@ def _build_tools_app() -> FastAPI:
     install_error_handlers(app)
     app.include_router(tools_router.router)
     app.state.driver = object()
-    app.state.audit = object()
+    app.state.audit = trail
     return app
 
 
-def test_tool_input_validation_error_is_generic(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tool_input_validation_error_is_generic(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """An invalid tool payload returns a generic body, no pydantic error structure."""
     monkeypatch.setenv("CHORUS_DEFAULT_IDENTITY", "test-user")
-    client = TestClient(_build_tools_app())
+    client = TestClient(_build_tools_app(audit_trail))
     # posts_mentioning requires "entity"; omit it to trigger a ValidationError.
     resp = client.post("/tools/posts_mentioning", json={})
     assert resp.status_code == 422
@@ -144,12 +145,12 @@ def test_tool_input_validation_error_is_generic(monkeypatch: pytest.MonkeyPatch)
     assert "msg" not in resp.text
 
 
-def test_tool_input_validation_logs_shape_not_value(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tool_input_validation_logs_shape_not_value(monkeypatch: pytest.MonkeyPatch, audit_trail: AuditTrail) -> None:
     """A rejected tool payload is logged by tool, field and error type; never by value."""
     monkeypatch.setenv("CHORUS_DEFAULT_IDENTITY", "test-user")
     records, sink_id = _capture_logs()
     try:
-        client = TestClient(_build_tools_app())
+        client = TestClient(_build_tools_app(audit_trail))
         resp = client.post("/tools/posts_mentioning", json={"entity": "placeholder-entity", "limit": MARKER})
         assert resp.status_code == 422
         logged = "\n".join(records)

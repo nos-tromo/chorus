@@ -17,6 +17,15 @@ polled via the job-status route; migrate is fast and synchronous. The
 registry serializes heavy Neo4j writers, and migrate is rejected with
 ``409`` while a job is active so its DDL never interleaves an in-flight
 ingest.
+
+Audit trail: the three action routes are audited operations — an ingest
+job writes ``collect`` / ``ingest.upload`` (plus the NER transfer and the
+deletion of its staged upload), a resolve job the resolution events, a
+migrate call one ``migration.apply`` event per applied migration. A job
+writes them with the actor, purpose and request id of the request that
+started it. An action route refused because the feature is off (403) or
+because a required purpose is missing (428) writes one ``denied`` event;
+the status routes are not audited.
 """
 
 from __future__ import annotations
@@ -31,13 +40,23 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from loguru import logger
 from pydantic import BaseModel
 
+from chorus.api.audit import request_audit
 from chorus.api.auth.principal import resolve_principal
+from chorus.audit.trail import AuditContext, AuditFailure
+from chorus.inference.correlation import request_id_scope
 from chorus.ingestion.jobs import Job, JobBusyError, JobKind, JobStatus
-from chorus.ingestion.orchestrator import run_once
+from chorus.ingestion.orchestrator import ingest_actions, run_audited
 from chorus.ingestion.raw_store import RawStore
-from chorus.ingestion.resolution import resolve_all
+from chorus.ingestion.resolution import RESOLUTION_ACTIONS, RESOLUTION_OPERATION, resolve_all
 from chorus.ingestion.upstream import TABLES, FileUpstreamAdapter, table_for_filename
-from chorus.migrations.runner import applied_versions, apply_all, pending_versions
+from chorus.migrations.runner import (
+    MIGRATION_OPERATION,
+    applied_versions,
+    apply_all,
+    migration_actions,
+    pending_migrations,
+    pending_versions,
+)
 from chorus.utils.env_cfg import (
     load_ingestion_ui_env,
     load_path_env,
@@ -45,17 +64,41 @@ from chorus.utils.env_cfg import (
     load_retention_env,
 )
 
+#: The audit operation of a UI ingestion pass.
+UPLOAD_OPERATION = "ingest.upload"
+#: The audit operation of deleting a staged upload once its job is over.
+STAGING_DELETE_OPERATION = "ingest.staging.delete"
 
-def require_ingestion_ui_enabled() -> None:
+# The action routes and the audited operation each would have run; a refusal
+# at the feature gate is recorded against it.
+_GATED_OPERATIONS: dict[str, tuple[str, str]] = {
+    "/ingestion/migrate": ("admin", MIGRATION_OPERATION),
+    "/ingestion/ingest": ("collect", UPLOAD_OPERATION),
+    "/ingestion/resolve": ("combine", RESOLUTION_OPERATION),
+}
+
+
+def require_ingestion_ui_enabled(
+    request: Request,
+    audit: AuditContext = Depends(request_audit),  # noqa: B008 — FastAPI dependency marker
+) -> None:
     """Gate dependency: 403 unless ``INGESTION_UI_ENABLED`` is set.
 
     Read at request time so toggling the env var takes effect without a
-    restart (and so tests can flip it per-case).
+    restart (and so tests can flip it per-case). Refusing an action route
+    writes one ``denied`` audit event for the operation it would have run.
+
+    Args:
+        request: The active request; its matched route names the operation.
+        audit: The caller's audit context.
 
     Raises:
         HTTPException: ``403 Forbidden`` when the feature flag is off.
     """
     if not load_ingestion_ui_env().enabled:
+        refused = _GATED_OPERATIONS.get(getattr(request.scope.get("route"), "path", ""))
+        if refused is not None:
+            audit.deny(*refused)
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             detail="The data-ingestion UI is disabled (set INGESTION_UI_ENABLED=true to enable).",
@@ -191,17 +234,21 @@ def migrations_status(request: Request) -> MigrationStatus:
 
 
 @router.post("/migrate")
-def migrate(request: Request, user: str = Depends(resolve_principal)) -> MigrateResult:
+def migrate(
+    request: Request,
+    audit: AuditContext = Depends(request_audit),  # noqa: B008 — FastAPI dependency marker
+) -> MigrateResult:
     """Apply pending Neo4j migrations (synchronous, idempotent).
 
     Rejected with ``409`` while a background job is active so its DDL
-    cannot interleave an in-flight ingest. The call is recorded as one
-    ``migrate`` audit row.
+    cannot interleave an in-flight ingest. Each applied migration writes one
+    ``migration.apply`` audit event; with nothing pending, nothing is
+    written.
 
     Args:
-        request: Active request, for the shared driver, audit logger, and
-            job registry on ``app.state``.
-        user: Resolved principal, attributed on the audit row.
+        request: Active request, for the shared driver and job registry on
+            ``app.state``.
+        audit: The caller's audit context.
 
     Returns:
         A :class:`MigrateResult` listing versions applied on this call.
@@ -211,11 +258,52 @@ def migrate(request: Request, user: str = Depends(resolve_principal)) -> Migrate
     """
     _reject_if_busy(request)
     driver = request.app.state.driver
-    audit = request.app.state.audit
-    with audit.time_tool(user, "migrate", {}) as slot:
-        newly = apply_all(driver)
-        slot.result_count = len(newly)
+    pending = pending_migrations(driver)
+    if pending:
+        versions = [m.version for m in pending]
+        audit.require_purpose(migration_actions(pending), MIGRATION_OPERATION, {"versions": versions})
+    newly = apply_all(driver, audit=audit)
     return MigrateResult(applied=newly)
+
+
+def _upload_actions(then_resolve: bool) -> tuple[str, ...]:
+    """Return the audit actions an upload job performs.
+
+    Args:
+        then_resolve: Whether resolution runs in the same job.
+
+    Returns:
+        The ingestion actions, the resolution actions when chained, and
+        ``delete`` for discarding the staged upload.
+    """
+    chained: tuple[str, ...] = RESOLUTION_ACTIONS if then_resolve else ()
+    return (*ingest_actions(), *chained, "delete")
+
+
+def _discard_staging(audit: AuditContext, staging: Path) -> None:
+    """Delete a staged upload and record the deletion.
+
+    The staged files are a transient copy of the upload (the raw store keeps
+    the rows verbatim); deleting them is still an erasure of personal data,
+    so it writes one ``delete`` / ``ingest.staging.delete`` event naming the
+    files. ``outcome`` is ``error`` when the directory survived.
+
+    Args:
+        audit: The audit context of the request that staged the upload.
+        staging: The staging directory.
+    """
+    names: list[str] = sorted(p.name for p in staging.iterdir()) if staging.is_dir() else []
+    shutil.rmtree(staging, ignore_errors=True)
+    if names:
+        audit.emit_refs(
+            "delete",
+            STAGING_DELETE_OPERATION,
+            outcome="error" if staging.exists() else "ok",
+            kind="file",
+            ids=names,
+            count=len(names),
+            container="uploads",
+        )
 
 
 @router.post("/ingest", status_code=status.HTTP_202_ACCEPTED)
@@ -224,7 +312,7 @@ def ingest(
     files: list[UploadFile] = File(...),  # noqa: B008 — FastAPI reads this marker from the default
     since: str | None = Form(default=None),
     then_resolve: bool = Form(default=False),
-    user: str = Depends(resolve_principal),
+    audit: AuditContext = Depends(request_audit),  # noqa: B008 — FastAPI dependency marker
 ) -> JobAccepted:
     """Accept uploaded CSV table dumps and run one ingestion pass as a job.
 
@@ -235,13 +323,13 @@ def ingest(
     is rejected so a mis-named file cannot produce a silent zero-row run.
 
     Args:
-        request: Active request, for the shared driver, audit logger, and
-            job registry on ``app.state``.
+        request: Active request, for the shared driver and job registry on
+            ``app.state``.
         files: Uploaded CSV files (one or more), named per upstream table.
         since: Optional ISO-8601 cutoff; only rows newer than this are pulled.
         then_resolve: When true, run alias→entity resolution in the same job
             after ingestion succeeds (the common end-to-end path).
-        user: Resolved principal, attributed on the ingest audit row.
+        audit: The caller's audit context; the job writes its events with it.
 
     Returns:
         A :class:`JobAccepted` with the new job id.
@@ -284,6 +372,8 @@ def ingest(
             logger.warning("rejected an ingest request: 'since' is not an ISO-8601 timestamp")
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid request.") from exc
 
+    criteria: dict[str, object] = {"since": since, "files": sorted(safe_names), "then_resolve": then_resolve}
+    audit.require_purpose(_upload_actions(then_resolve), UPLOAD_OPERATION, criteria)
     _reject_if_busy(request)
 
     uploads_root = load_path_env().chorus_home / "uploads"
@@ -294,41 +384,53 @@ def ingest(
             with (staging / safe).open("wb") as dest:
                 shutil.copyfileobj(upload.file, dest)
     except Exception:
-        shutil.rmtree(staging, ignore_errors=True)
+        _discard_staging(audit, staging)
         raise
 
     driver = request.app.state.driver
-    audit = request.app.state.audit
 
     def _ingest_job(_job: Job) -> dict[str, Any]:
         """Run one ingestion pass over the staged files; clean up on exit."""
+        with request_id_scope(audit.request_id):
+            return _ingest_and_clean_up(_job)
+
+    def _ingest_and_clean_up(_job: Job) -> dict[str, Any]:
+        """The ingest job's body, inside its request's correlation scope."""
         try:
             adapter = FileUpstreamAdapter(staging)
             raw = RawStore(load_path_env().raw_store)
             raw.init_schema()
-            params = {"since": since, "files": sorted(safe_names)}
-            with audit.time_tool(user, "ingest", params) as slot:
-                out = run_once(adapter, driver, raw, load_retention_env(), since=since_dt)
-                slot.result_count = sum(out["counts"].values())
+            out = run_audited(
+                adapter,
+                driver,
+                raw,
+                load_retention_env(),
+                audit=audit,
+                operation=UPLOAD_OPERATION,
+                criteria=criteria,
+                since=since_dt,
+            )
             if then_resolve:
-                # Chain resolution after a successful ingest. resolve_all writes
-                # its own audit row, so it is not wrapped in time_tool here. A
-                # resolution failure must not discard the (successful) ingest
-                # counts — record it alongside them instead.
+                # Chain resolution after a successful ingest. resolve_all
+                # records itself. A resolution failure must not discard the
+                # (successful) ingest counts — record it alongside them
+                # instead; an audit failure fails the job.
                 try:
-                    summary = resolve_all(driver, load_resolution_env(), audit, user=user)
+                    summary = resolve_all(driver, load_resolution_env(), audit)
                     out = {**out, "resolution": summary.as_dict()}
+                except AuditFailure:
+                    raise
                 except Exception as exc:  # keep ingest counts; surface the resolve failure
                     logger.opt(exception=exc).error(f"Ingestion job {_job.id} resolution failed")
                     out = {**out, "resolution_error": "Resolution failed."}
             return out
         finally:
-            shutil.rmtree(staging, ignore_errors=True)
+            _discard_staging(audit, staging)
 
     try:
-        job = request.app.state.jobs.submit("ingest", _ingest_job, created_by=user)
+        job = request.app.state.jobs.submit("ingest", _ingest_job, created_by=audit.actor.user or "")
     except JobBusyError as exc:
-        shutil.rmtree(staging, ignore_errors=True)
+        _discard_staging(audit, staging)
         raise HTTPException(
             status.HTTP_409_CONFLICT, "An ingestion job is already running; wait for it to finish."
         ) from exc
@@ -336,18 +438,21 @@ def ingest(
 
 
 @router.post("/resolve", status_code=status.HTTP_202_ACCEPTED)
-def resolve(request: Request, user: str = Depends(resolve_principal)) -> JobAccepted:
+def resolve(
+    request: Request,
+    audit: AuditContext = Depends(request_audit),  # noqa: B008 — FastAPI dependency marker
+) -> JobAccepted:
     """Run alias→entity resolution over the graph as a background job.
 
     Returns ``202`` with a job id; poll ``GET /ingestion/jobs/{job_id}`` for the
-    per-method resolution summary. ``resolve_all`` writes its own
-    ``resolve_all`` audit row (and none on an empty run), so this route adds no
-    wrapper audit row.
+    per-method resolution summary. ``resolve_all`` records the run on the
+    audit trail itself (and writes nothing on an empty run), with this
+    request's actor, purpose and request id.
 
     Args:
-        request: Active request, for the shared driver, audit logger, and job
-            registry on ``app.state``.
-        user: Resolved principal, attributed on the resolution audit row.
+        request: Active request, for the shared driver and job registry on
+            ``app.state``.
+        audit: The caller's audit context; the job writes its events with it.
 
     Returns:
         A :class:`JobAccepted` with the new job id.
@@ -355,16 +460,17 @@ def resolve(request: Request, user: str = Depends(resolve_principal)) -> JobAcce
     Raises:
         HTTPException: ``409`` when a job is already running.
     """
+    audit.require_purpose(RESOLUTION_ACTIONS, RESOLUTION_OPERATION)
     _reject_if_busy(request)
     driver = request.app.state.driver
-    audit = request.app.state.audit
 
     def _resolve_job(_job: Job) -> dict[str, Any]:
-        summary = resolve_all(driver, load_resolution_env(), audit, user=user)
+        with request_id_scope(audit.request_id):
+            summary = resolve_all(driver, load_resolution_env(), audit)
         return {"resolution": summary.as_dict()}
 
     try:
-        job = request.app.state.jobs.submit("resolve", _resolve_job, created_by=user)
+        job = request.app.state.jobs.submit("resolve", _resolve_job, created_by=audit.actor.user or "")
     except JobBusyError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "An ingestion job is already running; wait for it to finish."

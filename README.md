@@ -16,7 +16,9 @@ just enough to get the app running locally. Everything else lives in
   tools — it never writes Cypher itself.
 - Resolves the `:Alias` surface forms extraction writes onto canonical
   `:Entity` nodes, so results cluster by entity rather than by spelling.
-- Logs every tool invocation to an append-only §76 BDSG audit log.
+- Records every tool call, agent turn, ingestion pass and resolution run as
+  a hash-chained §76 BDSG audit event on the federation's audit stream
+  ([audit.md](docs/audit.md)).
 
 Inference is reached over the network at the shared vllm-service router;
 chorus ships no model weights and runs airgapped in production. Full
@@ -67,7 +69,8 @@ CHORUS_DEFAULT_IDENTITY=dev
 principal seam. Leave it unset in production — without it, requests
 without an `X-Auth-User` header fail with 401. Production also sets
 `CHORUS_EDGE_SECRET`, so that header counts only on requests from the edge
-gateway — see [Authentication seam](docs/architecture.md#authentication-seam).
+gateway, and the fallback is then ignored even if set — see
+[Authentication seam](docs/architecture.md#authentication-seam).
 
 ### 3. Apply migrations
 
@@ -85,8 +88,9 @@ uv run python -m chorus.migrations.cli status
 uv run uvicorn chorus.api.main:app --reload --port 8000
 ```
 
-The lifespan opens the Neo4j driver, applies any remaining migrations, and
-initialises the audit log SQLite file under `./var/`.
+The lifespan opens the audit chain, then the Neo4j driver, and applies any
+remaining migrations. Audit events print to this terminal's stdout as JSON
+lines carrying `"stream":"audit"`; the server's own logs go to stderr.
 
 ### 5. (Optional) Start the frontend dev server
 
@@ -161,7 +165,9 @@ screen (the nav item and route are hidden by default).
   architecture notes.
 - [`docs/airgap.md`](docs/airgap.md) — what the airgapped production
   constraint implies for dependencies, images, and inference.
-- [`docs/compliance.md`](docs/compliance.md) — §76 BDSG audit logging,
+- [`docs/audit.md`](docs/audit.md) — what the §76 BDSG audit log records,
+  per endpoint and CLI command.
+- [`docs/compliance.md`](docs/compliance.md) — the compliance posture,
   retention, OIDC.
 - [`docs/retention.md`](docs/retention.md) — retention timers and the
   cascade rules for expiry.

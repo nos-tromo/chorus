@@ -9,9 +9,9 @@ diagrams) as they stabilize.
 The FastAPI app boots, applies Neo4j migrations on startup, and exposes
 `/health`. On top of that:
 
-- **Nine graph tools** dispatched end-to-end with §76 BDSG audit
-  logging — seven retrieval tools (`posts_mentioning`,
-  `authors_mentioning`, `author_activity_summary`,
+- **Nine graph tools** dispatched end-to-end, each call recorded on the
+  §76 BDSG audit trail ([audit.md](audit.md)) — seven retrieval tools
+  (`posts_mentioning`, `authors_mentioning`, `author_activity_summary`,
   `topic_co_occurrence`, `authors_connected_by_topic`, `network_around`,
   `social_network_around`) plus two click-to-expand tools
   (`expand_network_node`, `expand_social_node`; ADR 0016). Each has a
@@ -73,8 +73,9 @@ forward-auth — which strips any client-supplied identity headers and injects
 the trusted `X-Auth-User`; the chorus nginx forwards that header unchanged to
 the backend. The backend's `api/auth/principal.py` seam reads it and falls
 back to `CHORUS_DEFAULT_IDENTITY` when absent (dev only; production leaves it
-unset, so an unheadered request is rejected). This ensures the §76 BDSG audit
-log records the real per-user principal on every tool invocation.
+unset, so an unheadered request is rejected). This is what lets the audit
+trail attribute every event to the real per-user principal
+([audit.md](audit.md)).
 
 #### Edge secret
 
@@ -89,8 +90,9 @@ with the other request headers. With the secret set:
   names) and the decorative `X-Auth-Name` shown by `/whoami` — count only on
   a request whose `X-Edge-Secret` equals the configured value, compared in
   constant time.
-- On any other request they are ignored as if absent: it gets
-  `CHORUS_DEFAULT_IDENTITY` when that is set, else `401`. If it sent an
+- On any other request they are ignored as if absent, and the request gets
+  `401`: with the secret set, `CHORUS_DEFAULT_IDENTITY` never applies (the
+  backend warns once at startup when both are set). If it sent an
   identity header, the backend logs a warning with the method and path only —
   no header value, no query string, never the secret.
 - The secret must be at least 32 characters, or the backend refuses to start.
@@ -126,9 +128,9 @@ chorus expects the data-plane Compose project to publish a Neo4j service on
 chorus reads `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`
 from its env. **All graph state** lives in the data-plane project's named
 volumes — chorus declares none of it. chorus does declare one volume of its
-own, `chorus-state` (audit log and raw store under `CHORUS_HOME`), and it is
-`external: true`, so `docker compose down -v` in this repo cannot destroy it
-either.
+own, `chorus-state` (the raw store, upload staging and the frozen legacy audit
+file under `CHORUS_HOME`), and it is `external: true`, so
+`docker compose down -v` in this repo cannot destroy it either.
 
 ## Inference contract
 
@@ -147,6 +149,11 @@ host run one provider for chat/embed/rerank and vllm-service's ner-only stack
 (`NER_API_BASE=http://gliner-ner:8000`) for NER. See *Inference provider
 abstraction* in [`CLAUDE.md`](../CLAUDE.md).
 
+Every inference call — chat, embed, rerank and NER — carries the request's
+`X-Request-ID` (background jobs carry the id of the request that started
+them), so a model call can be matched to its audit events; nothing else about
+the caller is sent (`chorus/inference/correlation.py`).
+
 ## Observability
 
 ```bash
@@ -157,3 +164,12 @@ Unauthenticated, like `/health`, so the obs-plane Prometheus scraper can
 reach it without a principal header. Reports aggregate request counters
 and latency histograms only — no user data. Set `METRICS_ENABLED=false`
 to disable.
+
+### Audit events
+
+The backend's stdout carries the data-protection audit stream and nothing
+else: operational logs, including uvicorn's access log, go to stderr. With
+`AUDIT_OUTPUT=container` (set in `docker/compose.yaml`), CLI runs started
+with `docker compose exec` write to the same stream. What is recorded is in
+[audit.md](audit.md); obs-plane collects, stores and verifies it.
+

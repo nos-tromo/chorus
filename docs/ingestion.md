@@ -41,10 +41,24 @@ entity with no tool change. Thresholds are env-driven
 (`RES_EMBED_THRESHOLD`, `RES_LLM_TIEBREAK`, `RES_VECTOR_K`).
 
 `make ingest` and `make resolve` run the same two stages inside the
-backend container; use them for bulk or server-side loads. An
-authenticated user can also drive upload plus migrate/ingest/resolve as
+running backend container (`docker compose exec`, so the backend must be
+up); use them for bulk or server-side loads. `make ingest` reads
+`INGESTION_SOURCE_DIR` as the running backend sees it: the host drop dir
+(`INGEST_HOST_DIR`, default `~/chorus/ingest`, mounted read-only) when the
+backend was started with the dev overlay (`make dev` / `make up-dev`),
+`CHORUS_HOME/ingest` on the `chorus-state` volume in the production shape.
+An authenticated user can also drive upload plus migrate/ingest/resolve as
 background jobs from the React SPA's ingestion screen, gated by
 `INGESTION_UI_ENABLED` (default off; ADR 0014).
+
+Every pass, resolve run and migration is recorded on the data-protection
+audit trail ([audit.md](audit.md)): the make targets attribute it to the
+invoking host user and take the stated purpose from `CASE_REF` / `REASON`
+(required when `AUDIT_REQUIRE_PURPOSE` names the command's actions):
+
+```bash
+make ingest CASE_REF=case-0001 REASON="monthly import"
+```
 
 ## Related
 
@@ -52,8 +66,9 @@ background jobs from the React SPA's ingestion screen, gated by
   inference contracts, the nginx upload limit that bounds CSV uploads.
 - [retention.md](retention.md) — `retention_until`, set at ingestion, and
   the cascade rules for expiry.
-- [compliance.md](compliance.md) — §76 BDSG audit logging and the
-  retention posture.
+- [audit.md](audit.md) — what each pass, resolve run and migration records
+  on the §76 BDSG audit trail.
+- [compliance.md](compliance.md) — the compliance and retention posture.
 - [`docs/decisions/`](decisions/) — ADR 0006 (profiles), ADR 0007
   (connections), ADR 0011 (retention anchored on `ingested_at`),
   ADR 0012 (durable alias `norm_key`), ADR 0014 (frontend ingestion).
