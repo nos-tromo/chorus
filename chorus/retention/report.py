@@ -165,7 +165,9 @@ RETURN count(q) AS total,
        count(CASE WHEN q.retention_until IS NULL AND q.ingested_at IS NULL AND q.text IS NOT NULL THEN 1 END)
          AS before_ingestion_times,
        count(CASE WHEN q.retention_until IS NULL AND q.ingested_at IS NULL AND q.text IS NULL THEN 1 END)
-         AS parent_refs
+         AS parent_refs,
+       count(CASE WHEN q.retention_until IS NULL AND q.ingested_at IS NULL AND q.text IS NULL
+                   AND EXISTS { (q)<-[:AUTHORED]-(:Author) } THEN 1 END) AS unfilled
 """
 )
 
@@ -406,6 +408,7 @@ def build_report(
                     "retention_off": int(kept.get("retention_off", 0)),
                     "before_ingestion_times": int(kept.get("before_ingestion_times", 0)),
                     "parent_refs": kept_parent_refs,
+                    "unfilled": int(kept.get("unfilled", 0)),
                 },
             },
             "authors": {**{key: int(value) for key, value in authors.items()}, "already": already},
@@ -512,7 +515,13 @@ def render_report(report: Mapping[str, Any]) -> str:
         + (f" (next deadline {kept['next_deadline'][:10]})" if kept["next_deadline"] else ""),
         f"    without a deadline: ingested with retention off {without['retention_off']}, "
         f"ingested before ingestion times were recorded {without['before_ingestion_times']}, "
-        f"bare parent references {without['parent_refs']}",
+        f"bare parent references {without['parent_refs']}"
+        + (
+            f" ({without['unfilled']} of them with an author: their own row was never applied; "
+            "re-ingest it to give them a deadline)"
+            if without["unfilled"]
+            else ""
+        ),
         f"  raw-store author rows: {_counts(raw['kept_author_rows'], ('profiles', 'connections'))}",
         "  authors (kept indefinitely, ADR 0006):",
         f"    of the deleted posts: {authors['of_deleted_posts']}",

@@ -117,7 +117,10 @@ deadline of their own; they are skipped while `RETENTION_ENABLED` is off.
   also when a sweep leaves them without an alias or a post; the dry run
   counts those too.
 - **Posts without a deadline**, unless they belong to an expired post's
-  thread.
+  thread. Releases before 0.10.0 left a post whose own row arrived after a
+  reply had referenced it with an author but no text and no deadline; the
+  dry run counts these, and re-ingesting their source rows fills them and
+  gives them one.
 - Outside chorus's stores: the CSV exports under `INGESTION_SOURCE_DIR` are
   the operator's files, read by `make ingest` and never deleted by chorus;
   remove them once they are ingested. Neo4j backups are data-plane's: a

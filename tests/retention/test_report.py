@@ -241,13 +241,24 @@ def test_the_report_shows_posts_kept_without_a_deadline(migrated_driver: Driver,
     with d.session() as s:
         s.run("CREATE (:Post:Posting {uuid: 'p-before', text: 'synthetic'})").consume()
     message(d, "m-reply", sender="author-bob", replies_to="m-missing", at=RECENT)
+    with d.session() as s:
+        # A parent whose own row an earlier release never applied: an author, no text, no deadline.
+        s.run(
+            "MERGE (a:Author {id: 'author-carol'}) CREATE (a)-[:AUTHORED]->(:Post:Message {uuid: 'm-unfilled'})"
+        ).consume()
 
     report = _report(d, chorus_env)
 
     kept = report["keep"]["posts"]
-    assert kept["without_deadline"] == {"retention_off": 1, "before_ingestion_times": 1, "parent_refs": 1}
+    assert kept["without_deadline"] == {
+        "retention_off": 1,
+        "before_ingestion_times": 1,
+        "parent_refs": 2,
+        "unfilled": 1,
+    }
     assert kept["not_due"] == 1
     assert report["delete"]["posts"]["total"] == 0
+    assert "1 of them with an author" in render_report(report)
 
 
 def test_the_report_carries_no_ids_names_or_texts(migrated_driver: Driver, chorus_env: Path) -> None:
