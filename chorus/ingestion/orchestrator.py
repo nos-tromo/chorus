@@ -87,7 +87,9 @@ def ingest_actions() -> tuple[str, ...]:
     return ("collect", "ai_call") if load_ner_client_env().enabled else ("collect",)
 
 
-_UUID_SHAPE = re.compile(r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}")
+#: An upstream ``UUID`` cell that may be quoted in logs and audit events. A cell
+#: of any other shape may be a fragment of post text (see :func:`_row_ref`).
+UUID_SHAPE = re.compile(r"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}")
 
 T = TypeVar("T")
 
@@ -111,7 +113,7 @@ def _row_ref(row: dict[str, Any]) -> str:
     text = "" if value is None else str(value).strip()
     if not text:
         return "<no uuid>"
-    return text if _UUID_SHAPE.fullmatch(text) else "<malformed uuid>"
+    return text if UUID_SHAPE.fullmatch(text) else "<malformed uuid>"
 
 
 def _error_shape(exc: Exception) -> list[dict[str, Any]] | str:

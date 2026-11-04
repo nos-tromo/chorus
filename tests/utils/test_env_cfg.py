@@ -271,3 +271,56 @@ def test_load_ingestion_ui_env_falsey(monkeypatch: pytest.MonkeyPatch, value: st
     from chorus.utils.env_cfg import load_ingestion_ui_env
 
     assert load_ingestion_ui_env().enabled is False
+
+
+def test_load_retention_sweep_env_defaults_to_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing is deleted until an operator switches the sweeper on; a daily run when on."""
+    for key in ("RETENTION_SWEEP_ENABLED", "RETENTION_SWEEP_INTERVAL_S", "RETENTION_SWEEP_BATCH_SIZE"):
+        monkeypatch.setenv(key, "")
+
+    from chorus.utils.env_cfg import load_retention_sweep_env
+
+    cfg = load_retention_sweep_env()
+    assert (cfg.enabled, cfg.interval_s, cfg.batch_size) == (False, 86400.0, 500)
+
+
+def test_load_retention_sweep_env_reads_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The switch, the interval (0 = no schedule) and the batch size come from the environment."""
+    monkeypatch.setenv("RETENTION_SWEEP_ENABLED", "true")
+    monkeypatch.setenv("RETENTION_SWEEP_INTERVAL_S", "0")
+    monkeypatch.setenv("RETENTION_SWEEP_BATCH_SIZE", "50")
+    monkeypatch.setenv("RETENTION_DAYS_DEFAULT", "30")
+
+    from chorus.utils.env_cfg import load_retention_sweep_env
+
+    cfg = load_retention_sweep_env()
+    assert (cfg.enabled, cfg.interval_s, cfg.batch_size) == (True, 0.0, 50)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("RETENTION_SWEEP_INTERVAL_S", "-1"), ("RETENTION_SWEEP_BATCH_SIZE", "0")],
+)
+def test_load_retention_sweep_env_rejects_nonsense(monkeypatch: pytest.MonkeyPatch, key: str, value: str) -> None:
+    """A negative interval or an empty batch stops startup instead of looping or doing nothing."""
+    monkeypatch.setenv(key, value)
+
+    from chorus.utils.env_cfg import load_retention_sweep_env
+
+    with pytest.raises(ValueError, match=key):
+        load_retention_sweep_env()
+
+
+def test_sweeping_needs_a_period_of_at_least_one_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With the sweeper on, a period under a day would take rows of an ingestion still running."""
+    monkeypatch.setenv("RETENTION_DAYS_DEFAULT", "0")
+    monkeypatch.setenv("RETENTION_SWEEP_INTERVAL_S", "")
+    monkeypatch.setenv("RETENTION_SWEEP_BATCH_SIZE", "")
+
+    from chorus.utils.env_cfg import load_retention_sweep_env
+
+    monkeypatch.setenv("RETENTION_SWEEP_ENABLED", "false")
+    assert load_retention_sweep_env().enabled is False
+    monkeypatch.setenv("RETENTION_SWEEP_ENABLED", "true")
+    with pytest.raises(ValueError, match="RETENTION_DAYS_DEFAULT"):
+        load_retention_sweep_env()
