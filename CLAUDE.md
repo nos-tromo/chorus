@@ -166,7 +166,7 @@ redesign of the ingestion pipeline, not an incremental feature add.
 ## Tech stack
 
 - **Backend**: Python 3.12, FastAPI, Uvicorn
-- **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.15.0`), served by nginx which reverse-proxies the API same-origin (no CORS)
+- **Frontend**: React SPA (Vite 8 + TypeScript 6 + Tailwind v4, `@infra/ui#v0.21.0`), served by nginx which reverse-proxies the API same-origin (no CORS)
 - **Graph DB**: Neo4j Community Edition (5.11+ for native vector indexes)
 - **Raw store**: SQLite under `CHORUS_HOME`
 - **Audit**: hash-chained JSON events on stdout — the federation audit lane,
