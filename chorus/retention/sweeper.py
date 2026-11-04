@@ -722,8 +722,8 @@ def sweep(
     totals = totals if totals is not None else SweepTotals()
     cutoff = (now or datetime.now(UTC)).astimezone(UTC)
     with sweep_lock(home):
-        raw.init_schema()
         try:
+            raw.init_schema()
             _Sweep(
                 driver,
                 raw,
