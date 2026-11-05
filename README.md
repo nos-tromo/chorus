@@ -16,9 +16,12 @@ just enough to get the app running locally. Everything else lives in
   tools — it never writes Cypher itself.
 - Resolves the `:Alias` surface forms extraction writes onto canonical
   `:Entity` nodes, so results cluster by entity rather than by spelling.
-- Records every tool call, agent turn, ingestion pass and resolution run as
-  a hash-chained §76 BDSG audit event on the federation's audit stream
-  ([audit.md](docs/audit.md)).
+- Records every tool call, agent turn, ingestion pass, resolution run and
+  deletion as a hash-chained §76 BDSG audit event on the federation's audit
+  stream ([audit.md](docs/audit.md)).
+- Deletes posts whose retention period has passed, with every copy it keeps
+  of them, once an operator switches the sweeper on; a dry run shows first
+  what it would delete ([retention.md](docs/retention.md)).
 
 Inference is reached over the network at the shared vllm-service router;
 chorus ships no model weights and runs airgapped in production. Full
@@ -150,7 +153,10 @@ The frontend is nginx (the unprivileged image, uid 101) on port 8080
 inside the container, published on `${CHORUS_FRONTEND_HOST_PORT:-8501}` by
 `make up-dev`; `make down` never touches graph data. Set
 `INGESTION_UI_ENABLED=true` on the backend service to expose the ingestion
-screen (the nav item and route are hidden by default).
+screen (the nav item and route are hidden by default). Nothing is deleted
+until `RETENTION_SWEEP_ENABLED=true`; run `make retention-report` first to
+see what the configured retention period would delete
+([retention.md](docs/retention.md)).
 
 ## Further reading
 
@@ -169,8 +175,8 @@ screen (the nav item and route are hidden by default).
   per endpoint and CLI command.
 - [`docs/compliance.md`](docs/compliance.md) — the compliance posture,
   retention, OIDC.
-- [`docs/retention.md`](docs/retention.md) — retention timers and the
-  cascade rules for expiry.
+- [`docs/retention.md`](docs/retention.md) — retention deadlines, the
+  sweeper and its dry run, what a sweep deletes and what it keeps.
 - [`docs/decisions/`](docs/decisions/) — ADRs for the load-bearing
   architectural choices.
 

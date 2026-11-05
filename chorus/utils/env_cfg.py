@@ -336,12 +336,14 @@ class RetentionConfig:
     """Per-post retention configuration.
 
     Attributes:
-        default_days: Default retention window applied to ingested posts
-            when the upstream row does not specify one.
+        default_days: Retention window in days (``RETENTION_DAYS_DEFAULT``),
+            added to a post's ``ingested_at`` to stamp its
+            ``retention_until``. The sweeper also applies it to raw-store
+            rows no post holds and to stale staged uploads.
         enabled: When ``False``, retention is fully bypassed: :meth:`until`
             returns ``None`` for every row, so no post is stamped with a
-            ``retention_until`` deadline and the nightly sweep never targets
-            it. Toggled by ``RETENTION_ENABLED`` (default on).
+            ``retention_until`` deadline and the sweeper never targets it.
+            Toggled by ``RETENTION_ENABLED`` (default on).
     """
 
     default_days: int
@@ -351,10 +353,9 @@ class RetentionConfig:
         """Compute a post's retention deadline from an anchor timestamp.
 
         Args:
-            basis: The timestamp retention is measured from — ingestion
-                (``crawled_at``) time for postings and comments, the
-                message's own ``timestamp`` for chat messages (which carry
-                no crawl time). ``None`` when the row has no usable anchor.
+            basis: The timestamp retention is measured from: the post's
+                chorus-set ``ingested_at`` (ADR 0011). ``None`` when there
+                is no anchor.
 
         Returns:
             ``basis + default_days`` when retention is enabled and an anchor
@@ -364,6 +365,29 @@ class RetentionConfig:
         if not self.enabled or basis is None:
             return None
         return basis + timedelta(days=self.default_days)
+
+
+@dataclass(frozen=True)
+class RetentionSweepConfig:
+    """Retention sweeper configuration (``docs/retention.md``).
+
+    Attributes:
+        enabled: ``RETENTION_SWEEP_ENABLED`` (default off): whether anything
+            is deleted at all. Off, the backend runs no sweep and the
+            one-off sweep command refuses; the dry-run report works either
+            way.
+        interval_s: ``RETENTION_SWEEP_INTERVAL_S`` (default one day): seconds
+            between the backend's sweeps while enabled. ``0`` schedules
+            none, leaving sweeps to the one-off command.
+        batch_size: ``RETENTION_SWEEP_BATCH_SIZE`` (default 500): posts
+            deleted per transaction, and raw-store rows checked per batch. A
+            post is always deleted in one transaction with the comments and
+            replies that go with it, so a batch can exceed it by one thread.
+    """
+
+    enabled: bool
+    interval_s: float
+    batch_size: int
 
 
 @dataclass(frozen=True)
@@ -668,6 +692,37 @@ def load_retention_env() -> RetentionConfig:
         default_days=_env_int("RETENTION_DAYS_DEFAULT", 365),
         enabled=_env_bool("RETENTION_ENABLED", True),
     )
+
+
+def load_retention_sweep_env() -> RetentionSweepConfig:
+    """Load the retention sweeper configuration from the environment.
+
+    ``RETENTION_SWEEP_ENABLED`` (default ``false``) is the switch: nothing is
+    deleted until an operator turns it on. ``RETENTION_SWEEP_INTERVAL_S``
+    (default ``86400``) and ``RETENTION_SWEEP_BATCH_SIZE`` (default ``500``)
+    shape the runs.
+
+    Returns:
+        A populated :class:`RetentionSweepConfig`.
+
+    Raises:
+        ValueError: If the interval is negative or the batch size below 1,
+            or if the sweeper is enabled while ``RETENTION_DAYS_DEFAULT`` is
+            below 1 day (rows of an ingestion still in progress would count
+            as expired).
+    """
+    cfg = RetentionSweepConfig(
+        enabled=_env_bool("RETENTION_SWEEP_ENABLED", False),
+        interval_s=_env_float("RETENTION_SWEEP_INTERVAL_S", 86400.0),
+        batch_size=_env_int("RETENTION_SWEEP_BATCH_SIZE", 500),
+    )
+    if cfg.interval_s < 0:
+        raise ValueError("RETENTION_SWEEP_INTERVAL_S must be 0 or more seconds")
+    if cfg.batch_size < 1:
+        raise ValueError("RETENTION_SWEEP_BATCH_SIZE must be at least 1")
+    if cfg.enabled and load_retention_env().default_days < 1:
+        raise ValueError("RETENTION_DAYS_DEFAULT must be at least 1 while RETENTION_SWEEP_ENABLED is on")
+    return cfg
 
 
 def load_resolution_env() -> ResolutionConfig:

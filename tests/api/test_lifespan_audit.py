@@ -42,7 +42,17 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
         return cls(AuditEmitter("chorus", "test", stream=stream, heartbeat_interval_s=0), required=required)
 
     monkeypatch.setattr(AuditTrail, "open", classmethod(_open))
-    for key in ("CHORUS_EDGE_SECRET", "CHORUS_DEFAULT_IDENTITY", "AUDIT_REQUIRE_PURPOSE", "AUDIT_OUTPUT"):
+    for key in (
+        "CHORUS_EDGE_SECRET",
+        "CHORUS_DEFAULT_IDENTITY",
+        "AUDIT_REQUIRE_PURPOSE",
+        "AUDIT_OUTPUT",
+        "RETENTION_ENABLED",
+        "RETENTION_DAYS_DEFAULT",
+        "RETENTION_SWEEP_ENABLED",
+        "RETENTION_SWEEP_INTERVAL_S",
+        "RETENTION_SWEEP_BATCH_SIZE",
+    ):
         monkeypatch.setenv(key, "")
     return stream
 
@@ -74,10 +84,57 @@ def test_open_records_the_operating_mode(
 
     config = audit_events(captured)[1]
     assert (config["action"], config["operation"]) == ("admin", "config.audit")
-    assert config["criteria"] == {**expected, "require_purpose": ["disclose", "query"]}
+    assert config["criteria"] == {
+        **expected,
+        "retention_sweep": "off",
+        "retention_period_days": 365,
+        "require_purpose": ["disclose", "query"],
+    }
     assert SECRET not in captured.getvalue()
     assert "dev-default" not in captured.getvalue()
     assert_chain_ok(captured)
+
+
+@pytest.mark.parametrize(
+    ("env", "mode", "period"),
+    [
+        ({}, "off", 365),
+        ({"RETENTION_SWEEP_ENABLED": "true"}, "scheduled", 365),
+        ({"RETENTION_SWEEP_ENABLED": "true", "RETENTION_SWEEP_INTERVAL_S": "0"}, "on_demand", 365),
+        ({"RETENTION_ENABLED": "false", "RETENTION_DAYS_DEFAULT": "30"}, "off", None),
+    ],
+    ids=["default-off", "scheduled", "on-demand", "retention-off"],
+)
+def test_open_records_how_expired_posts_are_deleted(
+    monkeypatch: pytest.MonkeyPatch,
+    captured: io.StringIO,
+    env: dict[str, str],
+    mode: str,
+    period: int | None,
+) -> None:
+    """config.audit states whether this process deletes expired posts, and the period stamped on new posts."""
+    from chorus.api import main
+
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    trail = main._open_audit_trail()
+    trail.close()
+
+    criteria = audit_events(captured)[1]["criteria"]
+    assert (criteria["retention_sweep"], criteria["retention_period_days"]) == (mode, period)
+    assert_chain_ok(captured)
+
+
+def test_an_invalid_sweeper_configuration_stops_startup(monkeypatch: pytest.MonkeyPatch, captured: io.StringIO) -> None:
+    """A sweeper switched on with a period under a day never starts, and writes nothing."""
+    from chorus.api import main
+
+    monkeypatch.setenv("RETENTION_SWEEP_ENABLED", "true")
+    monkeypatch.setenv("RETENTION_DAYS_DEFAULT", "0")
+
+    with pytest.raises(ValueError, match="RETENTION_DAYS_DEFAULT"):
+        main._open_audit_trail()
+    assert captured.getvalue() == ""
 
 
 def test_unknown_required_action_stops_startup_before_the_driver(

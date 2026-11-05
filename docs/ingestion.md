@@ -68,7 +68,7 @@ make ingest CASE_REF=case-0001 REASON="monthly import"
 - [architecture.md](architecture.md) — runtime shape, the data-plane and
   inference contracts, the nginx upload limit that bounds CSV uploads.
 - [retention.md](retention.md) — `retention_until`, set at ingestion, and
-  the cascade rules for expiry.
+  the sweeper that deletes expired posts with their threads and copies.
 - [audit.md](audit.md) — what each pass, resolve run and migration records
   on the §76 BDSG audit trail.
 - [compliance.md](compliance.md) — the compliance and retention posture.

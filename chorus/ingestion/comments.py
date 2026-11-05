@@ -47,10 +47,10 @@ class CommentDTO(BaseModel):
         system_tags: Upstream ``Tags`` field as a string list.
         ingested_at: Time chorus ingested this row (chorus-set, not from the
             upstream). The anchor retention is measured from.
-        retention_until: Absolute time the nightly sweeper should
-            hard-delete this comment (``ingested_at`` + the configured
-            window); ``None`` when retention is disabled, leaving the comment
-            non-expiring.
+        retention_until: Absolute time from which the retention sweep
+            deletes this comment (``ingested_at`` + the configured window),
+            once it is switched on; ``None`` when retention is disabled,
+            leaving the comment non-expiring.
     """
 
     uuid: str
@@ -137,6 +137,12 @@ def write(driver: Driver, dto: CommentDTO) -> None:
     comment via ``[:AUTHORED]``, ``[:ON_PLATFORM]``, ``[:ON]``, and
     optionally ``[:REPLIES_TO]``.
 
+    The comment's own properties, ``ingested_at`` and ``retention_until``
+    included, are written once: when the node is created, or when a reply
+    written earlier in the batch created it as a bare reference to its
+    parent. A later re-ingest leaves them as they are, so retention keeps
+    counting from the first ingestion.
+
     Args:
         driver: Open Neo4j driver.
         dto: Validated comment DTO to write.
@@ -148,7 +154,8 @@ def write(driver: Driver, dto: CommentDTO) -> None:
     MERGE (pl:Platform {name: $network})
     MERGE (parent:Post:Posting {uuid: $parent_posting_uuid})
     MERGE (c:Post:Comment {uuid: $uuid})
-      ON CREATE SET
+    FOREACH (_ IN CASE WHEN c.ingested_at IS NULL THEN [1] ELSE [] END |
+      SET
         c.network_object_id = $network_object_id,
         c.url               = $url,
         c.text              = $text,
@@ -159,6 +166,7 @@ def write(driver: Driver, dto: CommentDTO) -> None:
         c.system_tags       = $system_tags,
         c.ingested_at       = datetime($ingested_at),
         c.retention_until   = datetime($retention_until)
+    )
     MERGE (a)-[:AUTHORED]->(c)
     MERGE (c)-[:ON_PLATFORM]->(pl)
     MERGE (c)-[:ON]->(parent)
