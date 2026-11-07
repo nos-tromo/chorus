@@ -13,12 +13,12 @@ dependencies = [
     "httpx>=0.28.1",
     "loguru>=0.7.3",
     "neo4j>=6.4.1",
-    "openai>=3.37.0",
-    "prometheus-client>=0.25.0",
+    "openai>=3.42.0",
+    "prometheus-client>=0.26.0",
     "prometheus-fastapi-instrumentator>=8.1.0",
-    "pydantic>=2.14.1",
+    "pydantic>=2.14.2",
     "python-dotenv>=1.2.4",
-    "python-multipart>=0.0.32",
+    "python-multipart>=0.0.33",
     "tenacity>=9.2.1",
     "uvicorn[standard]>=0.54.0",
 ]
@@ -34,8 +34,8 @@ packages = ["chorus"]
 dev = [
     "pre-commit>=4.7.0",
     "pyrefly==1.1.1",
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
     "ruff==0.15.14",
     "testcontainers[neo4j]>=4.15.0",
 ]
